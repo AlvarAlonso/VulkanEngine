@@ -38,8 +38,13 @@ namespace std {
 	};
 }
 
-struct Mesh
+class Mesh
 {
+public:
+	Mesh();
+
+	VmaAllocator _allocator;
+
 	std::vector<Vertex> _vertices;
 	std::vector<uint32_t> _indices;
 
@@ -47,5 +52,10 @@ struct Mesh
 	AllocatedBuffer _indexBuffer;
 
 	bool load_from_obj(const char* filename);
+
+	void create_vertex_buffer();
+	void create_index_buffer();
+
+	void destroy_buffers();
 };
 

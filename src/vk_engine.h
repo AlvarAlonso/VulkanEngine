@@ -103,6 +103,8 @@ public:
 	int _frameNumber {0};
 	int _pipelineSelected{ 0 };
 
+	static VulkanEngine* cinstance;
+
 	VkExtent2D _windowExtent{ 1700 , 900 };
 
 	struct SDL_Window* _window{ nullptr };

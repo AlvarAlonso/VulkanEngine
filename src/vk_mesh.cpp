@@ -2,6 +2,7 @@
 #define TINYOBJLOADER_IMPLEMENTATION
 #include <tiny_obj_loader.h>
 #include <iostream>
+#include "vk_engine.h"
 
 VertexInputDescription Vertex::get_vertex_description()
 {
@@ -45,6 +46,10 @@ VertexInputDescription Vertex::get_vertex_description()
     description.attributes.push_back(uvAttribute);
 
     return description;
+}
+
+Mesh::Mesh()
+{
 }
 
 bool Mesh::load_from_obj(const char* filename)
@@ -109,4 +114,112 @@ bool Mesh::load_from_obj(const char* filename)
     }
 
     return true;
+}
+
+void Mesh::create_vertex_buffer()
+{
+    const size_t bufferSize = _vertices.size() * sizeof(Vertex);
+
+    VkBufferCreateInfo stagingBufferInfo = {};
+    stagingBufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    stagingBufferInfo.pNext = nullptr;
+    stagingBufferInfo.size = bufferSize;
+    stagingBufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+
+    VmaAllocationCreateInfo vmaAllocInfo = {};
+    vmaAllocInfo.usage = VMA_MEMORY_USAGE_CPU_ONLY;
+
+    AllocatedBuffer stagingBuffer;
+
+    VK_CHECK(vmaCreateBuffer(_allocator, &stagingBufferInfo, &vmaAllocInfo,
+        &stagingBuffer._buffer,
+        &stagingBuffer._allocation,
+        nullptr));
+
+    void* data;
+    vmaMapMemory(_allocator, stagingBuffer._allocation, &data);
+    memcpy(data, _vertices.data(), _vertices.size() * sizeof(Vertex));
+    vmaUnmapMemory(_allocator, stagingBuffer._allocation);
+
+    VkBufferCreateInfo vertexBufferInfo = {};
+    vertexBufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    vertexBufferInfo.pNext = nullptr;
+    vertexBufferInfo.size = bufferSize;
+    vertexBufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+
+    vmaAllocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+
+    VK_CHECK(vmaCreateBuffer(_allocator, &vertexBufferInfo, &vmaAllocInfo,
+        &_vertexBuffer._buffer,
+        &_vertexBuffer._allocation,
+        nullptr));
+
+    VulkanEngine::cinstance->immediate_submit([=](VkCommandBuffer cmd)
+        {
+            VkBufferCopy copy;
+            copy.dstOffset = 0;
+            copy.srcOffset = 0;
+            copy.size = bufferSize;
+
+            vkCmdCopyBuffer(cmd, stagingBuffer._buffer, _vertexBuffer._buffer, 1, &copy);
+        });
+
+    vmaDestroyBuffer(_allocator, stagingBuffer._buffer, stagingBuffer._allocation);
+}
+
+void Mesh::create_index_buffer()
+{
+    const size_t bufferSize = _indices.size() * sizeof(uint32_t);
+
+    VkBufferCreateInfo stagingBufferInfo = {};
+    stagingBufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    stagingBufferInfo.pNext = nullptr;
+    stagingBufferInfo.size = bufferSize;
+    stagingBufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+
+    VmaAllocationCreateInfo vmaAllocInfo = {};
+    vmaAllocInfo.usage = VMA_MEMORY_USAGE_CPU_ONLY;
+
+    AllocatedBuffer stagingBuffer;
+
+    VK_CHECK(vmaCreateBuffer(_allocator, &stagingBufferInfo, &vmaAllocInfo,
+        &stagingBuffer._buffer,
+        &stagingBuffer._allocation,
+        nullptr));
+
+    void* data;
+    vmaMapMemory(_allocator, stagingBuffer._allocation, &data);
+    memcpy(data, _indices.data(), _indices.size() * sizeof(uint32_t));
+    vmaUnmapMemory(_allocator, stagingBuffer._allocation);
+
+    VkBufferCreateInfo indexBufferInfo = {};
+    indexBufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    indexBufferInfo.pNext = nullptr;
+    indexBufferInfo.size = bufferSize;
+    indexBufferInfo.usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+
+    vmaAllocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+
+    VK_CHECK(vmaCreateBuffer(_allocator, &indexBufferInfo, &vmaAllocInfo,
+        &_indexBuffer._buffer,
+        &_indexBuffer._allocation,
+        nullptr));
+
+    VulkanEngine::cinstance->immediate_submit([=](VkCommandBuffer cmd)
+        {
+            VkBufferCopy copy;
+            copy.dstOffset = 0;
+            copy.srcOffset = 0;
+            copy.size = bufferSize;
+
+            vkCmdCopyBuffer(cmd, stagingBuffer._buffer, _indexBuffer._buffer, 1, &copy);
+        });
+
+    vmaDestroyBuffer(_allocator, stagingBuffer._buffer, stagingBuffer._allocation);
+}
+
+void Mesh::destroy_buffers()
+{
+    vmaDestroyBuffer(_allocator, _indexBuffer._buffer, _indexBuffer._allocation);
+    vmaDestroyBuffer(_allocator, _vertexBuffer._buffer, _indexBuffer._allocation);
 }

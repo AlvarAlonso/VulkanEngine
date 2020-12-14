@@ -1,18 +1,7 @@
 ﻿#define VMA_IMPLEMENTATION
 #include "vk_mem_alloc.h"
 #include <iostream>
-
-using namespace std;
-#define VK_CHECK(x)                                                 \
-	do                                                              \
-	{                                                               \
-		VkResult err = x;                                           \
-		if (err)                                                    \
-		{                                                           \
-			std::cout <<"Detected Vulkan error: " << err << std::endl; \
-			abort();                                                \
-		}                                                           \
-	} while (0)
+#include "vk_types.h"
 
 #include "vk_engine.h"
 #include "vk_textures.h"
@@ -26,7 +15,6 @@ using namespace std;
 
 #include <glm/gtx/transform.hpp>
 
-#include "vk_types.h"
 #include "vk_initializers.h"
 
 #include "VkBootstrap.h"
@@ -36,8 +24,12 @@ using namespace std;
 
 #include <chrono>
 
+VulkanEngine* VulkanEngine::cinstance = nullptr;
+
 void VulkanEngine::init()
 {
+	cinstance = this;
+
 	// We initialize SDL and create a window with it. 
 	SDL_Init(SDL_INIT_VIDEO);
 
@@ -1627,7 +1619,7 @@ void VulkanEngine::load_meshes()
 	Mesh monkeyMesh;
 	monkeyMesh.load_from_obj("../assets/monkey_smooth.obj");
 
-	Mesh lostEmpire{};
+	Mesh lostEmpire;
 	lostEmpire.load_from_obj("../assets/lost_empire.obj");
 
 	//upload_mesh(triangleMesh);
