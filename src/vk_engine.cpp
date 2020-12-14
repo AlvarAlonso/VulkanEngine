@@ -1616,137 +1616,13 @@ void VulkanEngine::load_meshes()
 	
 	triangleMesh._indices = { 0, 1, 2 };
 	*/
-	Mesh monkeyMesh;
-	monkeyMesh.load_from_obj("../assets/monkey_smooth.obj");
+	Mesh monkeyMesh("../assets/monkey_smooth.obj");
 
-	Mesh lostEmpire;
-	lostEmpire.load_from_obj("../assets/lost_empire.obj");
-
-	//upload_mesh(triangleMesh);
-	upload_mesh(monkeyMesh);
-	upload_mesh(lostEmpire);
+	Mesh lostEmpire("../assets/lost_empire.obj");
 
 	//_meshes["triangle"] = triangleMesh;
 	_meshes["monkey"] = monkeyMesh;
 	_meshes["empire"] = lostEmpire;
-}
-
-void VulkanEngine::upload_mesh(Mesh& mesh)
-{
-
-	mesh.create_vertex_buffer();
-	mesh.create_index_buffer();
-
-	/*
-	//vertex buffer
-	const size_t bufferSize = mesh._vertices.size() * sizeof(Vertex);
-	//allocate staging buffer
-	VkBufferCreateInfo stagingBufferInfo = {};
-	stagingBufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-	stagingBufferInfo.pNext = nullptr;
-	stagingBufferInfo.size = bufferSize;
-	stagingBufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-
-	VmaAllocationCreateInfo vmaallocInfo = {};
-	vmaallocInfo.usage = VMA_MEMORY_USAGE_CPU_ONLY;
-
-	AllocatedBuffer stagingBuffer;
-
-	VK_CHECK(vmaCreateBuffer(_allocator, &stagingBufferInfo, &vmaallocInfo,
-		&stagingBuffer._buffer,
-		&stagingBuffer._allocation,
-		nullptr));
-
-	void* data;
-	vmaMapMemory(_allocator, stagingBuffer._allocation, &data);
-	memcpy(data, mesh._vertices.data(), mesh._vertices.size() * sizeof(Vertex));
-	vmaUnmapMemory(_allocator, stagingBuffer._allocation);
-
-	VkBufferCreateInfo vertexBufferInfo = {};
-	vertexBufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-	vertexBufferInfo.pNext = nullptr;
-	vertexBufferInfo.size = bufferSize;
-	vertexBufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-
-	vmaallocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-
-	VK_CHECK(vmaCreateBuffer(_allocator, &vertexBufferInfo, &vmaallocInfo,
-		&mesh._vertexBuffer._buffer,
-		&mesh._vertexBuffer._allocation,
-		nullptr));
-	
-	/*
-	immediate_submit([=](VkCommandBuffer cmd)
-		{
-			VkBufferCopy copy;
-			copy.dstOffset = 0;
-			copy.srcOffset = 0;
-			copy.size = bufferSize;
-			vkCmdCopyBuffer(cmd, stagingBuffer._buffer, mesh._vertexBuffer._buffer, 1, &copy);
-		});
-	*/
-	/*
-	//index buffer
-	const size_t index_bufferSize = sizeof(uint32_t) * mesh._indices.size();
-	std::cout <<"Indices size: "<< index_bufferSize << std::endl;
-
-	VkBufferCreateInfo index_stagingBufferInfo = {};
-	index_stagingBufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-	index_stagingBufferInfo.pNext = nullptr;
-	index_stagingBufferInfo.size = index_bufferSize;
-	index_stagingBufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-
-	VmaAllocationCreateInfo index_vmaallocInfo = {};
-	index_vmaallocInfo.usage = VMA_MEMORY_USAGE_CPU_ONLY;
-
-	AllocatedBuffer index_stagingBuffer;
-	
-	VK_CHECK(vmaCreateBuffer(_allocator, &index_stagingBufferInfo, &index_vmaallocInfo,
-		&index_stagingBuffer._buffer,
-		&index_stagingBuffer._allocation,
-		nullptr));
-
-	void* index_data;
-	vmaMapMemory(_allocator, index_stagingBuffer._allocation, &index_data);
-	memcpy(index_data, mesh._indices.data(), mesh._indices.size() * sizeof(uint32_t));
-	vmaUnmapMemory(_allocator, index_stagingBuffer._allocation);
-	
-	VkBufferCreateInfo indexBufferInfo = {};
-	indexBufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-	indexBufferInfo.pNext = nullptr;
-	indexBufferInfo.size = index_bufferSize;
-	indexBufferInfo.usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
-
-	index_vmaallocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-	
-	VK_CHECK(vmaCreateBuffer(_allocator, &indexBufferInfo, &index_vmaallocInfo,
-		&mesh._indexBuffer._buffer,
-		&mesh._indexBuffer._allocation,
-		nullptr));
-
-	immediate_submit([=](VkCommandBuffer cmd)
-		{
-			VkBufferCopy vertex_copy;
-			vertex_copy.dstOffset = 0;
-			vertex_copy.srcOffset = 0;
-			vertex_copy.size = bufferSize;
-
-			VkBufferCopy index_copy;
-			index_copy.dstOffset = 0;
-			index_copy.srcOffset = 0;
-			index_copy.size = index_bufferSize;
-
-			vkCmdCopyBuffer(cmd, stagingBuffer._buffer, mesh._vertexBuffer._buffer, 1, &vertex_copy);
-			vkCmdCopyBuffer(cmd, index_stagingBuffer._buffer, mesh._indexBuffer._buffer, 1, &index_copy);
-		});
-	
-	_mainDeletionQueue.push_function([=]() {
-		vmaDestroyBuffer(_allocator, mesh._indexBuffer._buffer, mesh._indexBuffer._allocation);
-		vmaDestroyBuffer(_allocator, mesh._vertexBuffer._buffer, mesh._vertexBuffer._allocation);
-	});
-
-	vmaDestroyBuffer(_allocator, index_stagingBuffer._buffer, index_stagingBuffer._allocation);
-	vmaDestroyBuffer(_allocator, stagingBuffer._buffer, stagingBuffer._allocation);*/
 }
 
 Material* VulkanEngine::create_material(VkPipeline pipeline, VkPipelineLayout layout, const std::string& name)

@@ -52,6 +52,25 @@ Mesh::Mesh()
 {
 }
 
+Mesh::Mesh(const char* filename)
+{
+    load_from_obj(filename);
+    upload_to_gpu();
+}
+
+void Mesh::upload_to_gpu()
+{
+    if(_vertices.size() > 0 && _indices.size() > 0)
+    {
+        create_vertex_buffer();
+        create_index_buffer();
+    }
+    else
+    {
+        std::cout << "Failed tu upload mesh to the gpu!" << std::endl;
+    }
+}
+
 bool Mesh::load_from_obj(const char* filename)
 {
     tinyobj::attrib_t attrib;

@@ -43,11 +43,15 @@ class Mesh
 public:
 	Mesh();
 
+	Mesh(const char* filename);
+
 	std::vector<Vertex> _vertices;
 	std::vector<uint32_t> _indices;
 
 	AllocatedBuffer _vertexBuffer;
 	AllocatedBuffer _indexBuffer;
+
+	void upload_to_gpu();
 
 	bool load_from_obj(const char* filename);
 
