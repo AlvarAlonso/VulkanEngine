@@ -43,8 +43,6 @@ class Mesh
 public:
 	Mesh();
 
-	VmaAllocator _allocator;
-
 	std::vector<Vertex> _vertices;
 	std::vector<uint32_t> _indices;
 

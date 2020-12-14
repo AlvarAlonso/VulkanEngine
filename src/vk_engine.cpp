@@ -1633,6 +1633,11 @@ void VulkanEngine::load_meshes()
 
 void VulkanEngine::upload_mesh(Mesh& mesh)
 {
+
+	mesh.create_vertex_buffer();
+	mesh.create_index_buffer();
+
+	/*
 	//vertex buffer
 	const size_t bufferSize = mesh._vertices.size() * sizeof(Vertex);
 	//allocate staging buffer
@@ -1680,7 +1685,7 @@ void VulkanEngine::upload_mesh(Mesh& mesh)
 			vkCmdCopyBuffer(cmd, stagingBuffer._buffer, mesh._vertexBuffer._buffer, 1, &copy);
 		});
 	*/
-
+	/*
 	//index buffer
 	const size_t index_bufferSize = sizeof(uint32_t) * mesh._indices.size();
 	std::cout <<"Indices size: "<< index_bufferSize << std::endl;
@@ -1741,7 +1746,7 @@ void VulkanEngine::upload_mesh(Mesh& mesh)
 	});
 
 	vmaDestroyBuffer(_allocator, index_stagingBuffer._buffer, index_stagingBuffer._allocation);
-	vmaDestroyBuffer(_allocator, stagingBuffer._buffer, stagingBuffer._allocation);
+	vmaDestroyBuffer(_allocator, stagingBuffer._buffer, stagingBuffer._allocation);*/
 }
 
 Material* VulkanEngine::create_material(VkPipeline pipeline, VkPipelineLayout layout, const std::string& name)
