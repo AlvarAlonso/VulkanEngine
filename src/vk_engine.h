@@ -195,6 +195,8 @@ public:
 	AllocatedImage _albedoImage;
 	VkFormat _albedoFormat;
 
+	Mesh deferred_quad;
+
 	// Descriptors
 	VkDescriptorPool _descriptorPool;
 	VkDescriptorSetLayout _globalSetLayout;

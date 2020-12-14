@@ -18,6 +18,11 @@ vec2 uvs[6] = vec2[](
 	vec2(1.0, 0.0)
 );
 
+layout (location = 0) in vec3 vPosition;
+layout (location = 1) in vec3 vNormal;
+layout (location = 2) in vec3 vColor;
+layout (location = 3) in vec2 vTexCoord;
+
 layout(set = 0, binding = 0) uniform CameraBuffer {
 	mat4 view;
 	mat4 proj;
@@ -28,6 +33,9 @@ layout (location = 0) out vec2 v_uv;
 
 void main() 
 {	
-	v_uv = uvs[gl_VertexIndex];
-	gl_Position = vec4(positions[gl_VertexIndex], 1.0);
+	//v_uv = uvs[gl_VertexIndex];
+	//gl_Position = vec4(positions[gl_VertexIndex], 1.0);
+
+	v_uv = vTexCoord;
+	gl_Position = vec4(vPosition, 1.0);
 }

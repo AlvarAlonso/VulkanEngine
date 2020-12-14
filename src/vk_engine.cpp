@@ -324,7 +324,7 @@ void VulkanEngine::run()
 			int xMouseDiff = xMouse - xMouseOld;
 			int yMouseDiff = yMouse - yMouseOld;
 
-			camera->rotate(-xMouseDiff, -yMouseDiff);
+			camera->rotate(xMouseDiff, -yMouseDiff);
 
 			int window_width, window_height;
 			SDL_GetWindowSize(_window, &window_width, &window_height);
@@ -1397,12 +1397,6 @@ void VulkanEngine::init_deferred_pipelines()
 
 	//LIGHT PIPELINE CREATION
 
-	//Light Vertex Info
-	pipelineBuilder._vertexInputInfo.vertexAttributeDescriptionCount = 0;
-	pipelineBuilder._vertexInputInfo.pVertexAttributeDescriptions = nullptr;
-	pipelineBuilder._vertexInputInfo.vertexBindingDescriptionCount = 0;
-	pipelineBuilder._vertexInputInfo.pVertexBindingDescriptions = nullptr;
-
 	//Light Depth Stencil
 	pipelineBuilder._depthStencil = vkinit::depth_stencil_create_info(false, false, VK_COMPARE_OP_ALWAYS);
 
@@ -1623,6 +1617,9 @@ void VulkanEngine::load_meshes()
 	//_meshes["triangle"] = triangleMesh;
 	_meshes["monkey"] = monkeyMesh;
 	_meshes["empire"] = lostEmpire;
+
+	//quad for deferred
+	deferred_quad.create_quad();
 }
 
 Material* VulkanEngine::create_material(VkPipeline pipeline, VkPipelineLayout layout, const std::string& name)
@@ -1840,7 +1837,12 @@ void VulkanEngine::draw_objects_deferred(VkCommandBuffer cmd, RenderObject* firs
 
 	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _lightPipelineLayout, 1, 1, &_deferred_descriptor_set, 0, nullptr);
 
-	vkCmdDraw(cmd, 6, 1, 0, 0);
+	//deferred quad
+	VkDeviceSize offset = 0;
+	vkCmdBindVertexBuffers(cmd, 0, 1, &deferred_quad._vertexBuffer._buffer, &offset);
+	vkCmdBindIndexBuffer(cmd, deferred_quad._indexBuffer._buffer, 0, VK_INDEX_TYPE_UINT32);
+
+	vkCmdDrawIndexed(cmd, static_cast<uint32_t>(deferred_quad._indices.size()), 1, 0, 0, 0);
 
 	ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
 

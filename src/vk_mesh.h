@@ -59,5 +59,7 @@ public:
 	void create_index_buffer();
 
 	void destroy_buffers();
+
+	void create_quad();
 };
 

@@ -250,3 +250,38 @@ void Mesh::destroy_buffers()
     vmaDestroyBuffer(VulkanEngine::cinstance->_allocator, _indexBuffer._buffer, _indexBuffer._allocation);
     vmaDestroyBuffer(VulkanEngine::cinstance->_allocator, _vertexBuffer._buffer, _indexBuffer._allocation);
 }
+
+void Mesh::create_quad()
+{
+    _vertices.clear();
+    _indices.clear();
+    destroy_buffers();
+
+    //Quad vertices
+    _vertices.resize(4);
+
+    _vertices[0].position = { -1.0f, -1.0f, 0.0f };
+    _vertices[1].position = { 1.0f, -1.0f, 0.0f };
+    _vertices[2].position = { 1.0f, 1.0f, 0.0f };
+    _vertices[3].position = { -1.0f, 1.0f, 0.0f };
+    
+    _vertices[0].normal = { 0.0f, 0.0f, 1.0f };
+    _vertices[1].normal = { 0.0f, 0.0f, 1.0f };
+    _vertices[2].normal = { 0.0f, 0.0f, 1.0f };
+    _vertices[3].normal = { 0.0f, 0.0f, 1.0f };
+
+    _vertices[0].color = { 1.0f, 1.0f, 1.0f };
+    _vertices[1].color = { 1.0f, 1.0f, 1.0f };
+    _vertices[2].color = { 1.0f, 1.0f, 1.0f };
+    _vertices[3].color = { 1.0f, 1.0f, 1.0f };
+
+    _vertices[0].uv = { 1.0f, 0.0f };
+    _vertices[1].uv = { 0.0f, 0.0f };
+    _vertices[2].uv = { 0.0f, 1.0f };
+    _vertices[3].uv = { 1.0f, 1.0f };
+
+    //Quad indices
+    _indices = {0, 1, 2, 2, 3, 0};
+
+    upload_to_gpu();
+}
