@@ -608,15 +608,15 @@ void VulkanEngine::init_commands()
 		_mainDeletionQueue.push_function([=]() {
 			vkDestroyCommandPool(_device, _frames[i]._commandPool, nullptr);
 		});
-
-		VkCommandPoolCreateInfo uploadCommandPoolInfo = vkinit::command_pool_create_info(_graphicsQueueFamily);
-		//create pool for upload context
-		VK_CHECK(vkCreateCommandPool(_device, &uploadCommandPoolInfo, nullptr, &_uploadContext._commandPool));
-
-		_mainDeletionQueue.push_function([=]() {
-			vkDestroyCommandPool(_device, _uploadContext._commandPool, nullptr);
-		});
 	}
+
+	VkCommandPoolCreateInfo uploadCommandPoolInfo = vkinit::command_pool_create_info(_graphicsQueueFamily);
+	//create pool for upload context
+	VK_CHECK(vkCreateCommandPool(_device, &uploadCommandPoolInfo, nullptr, &_uploadContext._commandPool));
+
+	_mainDeletionQueue.push_function([=]() {
+		vkDestroyCommandPool(_device, _uploadContext._commandPool, nullptr);
+		});
 
 	VK_CHECK(vkCreateCommandPool(_device, &commandPoolInfo, nullptr, &_deferredCommandPool));
 

@@ -38,6 +38,10 @@ namespace GRAPHICS
 
 	private:
 
+		//Queues
+		VkQueue _graphicsQueue;
+		uint32_t _graphicsQueueFamily;
+
 		//Depth Buffer
 		VkImageView _depthImageView;
 		AllocatedImage _depthImage;
@@ -83,18 +87,24 @@ namespace GRAPHICS
 
 		void create_deferred_attachments();
 
-		void render_forward();
+		void init_commands();
+
+		void init_framebuffers();
+
+		void init_sync_structures();
+
+		void init_default_render_pass();
+
+		void init_deferred_render_pass();
 
 		void record_forward_command_buffers();
 
 		void record_deferred_command_buffers();
 
-		void init_sync_structures();
-
 		//draw functions
-		void render_deferred();
+		void render_forward();
 
-		void init_commands();
+		void render_deferred();
 	};
 }
 
