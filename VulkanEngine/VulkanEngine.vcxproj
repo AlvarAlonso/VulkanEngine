@@ -162,6 +162,7 @@
     <ClCompile Include="..\src\vk_engine.cpp" />
     <ClCompile Include="..\src\vk_initializers.cpp" />
     <ClCompile Include="..\src\vk_mesh.cpp" />
+    <ClCompile Include="..\src\vk_renderer.cpp" />
     <ClCompile Include="..\src\vk_textures.cpp" />
     <ClCompile Include="..\third_party\vkbootstrap\VkBootstrap.cpp" />
   </ItemGroup>
@@ -170,6 +171,7 @@
     <ClInclude Include="..\src\vk_engine.h" />
     <ClInclude Include="..\src\vk_initializers.h" />
     <ClInclude Include="..\src\vk_mesh.h" />
+    <ClInclude Include="..\src\vk_renderer.h" />
     <ClInclude Include="..\src\vk_textures.h" />
     <ClInclude Include="..\src\vk_types.h" />
   </ItemGroup>

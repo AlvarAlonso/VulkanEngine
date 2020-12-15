@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "vk_types.h"
+#include "vk_renderer.h"
 #include "vk_mesh.h"
 #include "Camera.h"
 
@@ -211,8 +211,6 @@ public:
 	VkDescriptorSet _objectDescriptorSet;
 
 	VkSemaphore _offscreenSemaphore;
-	VkSemaphore _presentSemaphore;
-	VkSemaphore _renderSemaphore;
 
 	VkSampler _defaultSampler;
 
