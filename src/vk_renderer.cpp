@@ -3,6 +3,10 @@
 #include "vk_engine.h"
 #include <iostream>
 
+#include <imgui.h>
+#include <imgui_impl_sdl.h>
+#include <imgui_impl_vulkan.h>
+
 #include <array>
 
 using namespace GRAPHICS;
@@ -11,10 +15,7 @@ Renderer::Renderer()
 {
 	_graphicsQueue = VulkanEngine::cinstance->_graphicsQueue;
 	_graphicsQueueFamily = VulkanEngine::cinstance->_graphicsQueueFamily;
-}
-
-void Renderer::draw_scene()
-{
+	_renderMode = RENDER_MODE_DEFERRED;
 }
 
 void Renderer::init_renderer()
@@ -23,6 +24,21 @@ void Renderer::init_renderer()
 	create_deferred_attachments();
 	init_commands();
 	init_sync_structures();
+}
+
+void Renderer::draw_scene()
+{
+	ImGui::Render();
+	
+	if(_renderMode == RENDER_MODE_FORWARD)
+	{
+		render_forward();
+	}
+	else if(_renderMode == RENDER_MODE_DEFERRED)
+	{
+		render_deferred();
+	}
+	
 }
 
 void Renderer::create_depth_buffer()
@@ -379,14 +395,271 @@ void Renderer::record_forward_command_buffers()
 {
 }
 
-void Renderer::record_deferred_command_buffers()
+void Renderer::record_deferred_command_buffers(RenderObject* first, int count)
 {
+	//FIRST PASS
+
+	VkCommandBufferBeginInfo deferredCmdBeginInfo = vkinit::command_buffer_begin_info(VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
+
+	VK_CHECK(vkBeginCommandBuffer(_deferredCommandBuffer, &deferredCmdBeginInfo));
+
+	VkClearValue first_clearValue;
+	first_clearValue.color = { {0.0f, 0.0f, 0.0f, 1.0f} };
+
+	VkClearValue first_depthClear;
+	first_depthClear.depthStencil.depth = 1.0f;
+
+	VkRenderPassBeginInfo rpInfo = vkinit::renderpass_begin_info(_deferredRenderPass, VulkanEngine::cinstance->_windowExtent, _offscreen_framebuffer);
+
+	std::array<VkClearValue, 4> first_clearValues = { first_clearValue, first_clearValue, first_clearValue, first_depthClear };
+
+	rpInfo.clearValueCount = static_cast<uint32_t>(first_clearValues.size());
+	rpInfo.pClearValues = first_clearValues.data();
+
+	vkCmdBeginRenderPass(_deferredCommandBuffer, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+	vkCmdBindPipeline(_deferredCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, VulkanEngine::cinstance->_deferredPipeline);
+
+	Mesh* lastMesh = nullptr;
+	for (int i = 0; i < count; i++)
+	{
+		RenderObject& object = first[i];
+
+		vkCmdBindDescriptorSets(_deferredCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, VulkanEngine::cinstance->_deferredPipelineLayout, 0, 1, &VulkanEngine::cinstance->_camDescriptorSet, 0, nullptr);
+
+		vkCmdBindDescriptorSets(_deferredCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, VulkanEngine::cinstance->_deferredPipelineLayout, 1, 1, &VulkanEngine::cinstance->_objectDescriptorSet, 0, nullptr);
+
+		if (object.material->textureSet != VK_NULL_HANDLE)
+		{
+			vkCmdBindDescriptorSets(_deferredCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, VulkanEngine::cinstance->_deferredPipelineLayout, 2, 1, &object.material->textureSet, 0, nullptr);
+		}
+
+		if (object.mesh != lastMesh)
+		{
+			VkDeviceSize offset = 0;
+			vkCmdBindVertexBuffers(_deferredCommandBuffer, 0, 1, &object.mesh->_vertexBuffer._buffer, &offset);
+			vkCmdBindIndexBuffer(_deferredCommandBuffer, object.mesh->_indexBuffer._buffer, 0, VK_INDEX_TYPE_UINT32);
+		}
+
+		vkCmdDrawIndexed(_deferredCommandBuffer, static_cast<uint32_t>(object.mesh->_indices.size()), 1, 0, 0, i);
+	}
+
+	vkCmdEndRenderPass(_deferredCommandBuffer);
+
+	VK_CHECK(vkEndCommandBuffer(_deferredCommandBuffer));
+}
+
+sFrameData& Renderer::get_current_frame()
+{
+	return _frames[_frameNumber % FRAME_OVERLAP];
 }
 
 void Renderer::render_forward()
 {
+	VK_CHECK(vkWaitForFences(VulkanEngine::cinstance->_device, 1, &get_current_frame()._renderFence, true, UINT64_MAX));
+	VK_CHECK(vkResetFences(VulkanEngine::cinstance->_device, 1, &get_current_frame()._renderFence));
+
+	//request image from the swapchain
+	uint32_t swapchainImageIndex;
+	VK_CHECK(vkAcquireNextImageKHR(VulkanEngine::cinstance->_device, VulkanEngine::cinstance->_swapchain, 0, get_current_frame()._presentSemaphore, nullptr, &swapchainImageIndex));
+
+	VK_CHECK(vkResetCommandBuffer(get_current_frame()._mainCommandBuffer, 0));
+
+	VkCommandBuffer cmd = get_current_frame()._mainCommandBuffer;
+
+	VkCommandBufferBeginInfo cmdBeginInfo = vkinit::command_buffer_begin_info(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
+
+	VK_CHECK(vkBeginCommandBuffer(cmd, &cmdBeginInfo));
+
+	VkClearValue clearValue;
+	float flash = abs(sin(_frameNumber / 120.0f));
+	clearValue.color = { {0.0f, 0.0f, flash, 1.0f} };
+
+	VkClearValue depthClear;
+	depthClear.depthStencil.depth = 1.0f;
+
+	VkRenderPassBeginInfo rpInfo = vkinit::renderpass_begin_info(_defaultRenderPass, VulkanEngine::cinstance->_windowExtent, _framebuffers[swapchainImageIndex]);
+
+	std::array<VkClearValue, 2> clearValues = { clearValue, depthClear };
+
+	rpInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
+	rpInfo.pClearValues = clearValues.data();
+
+	vkCmdBeginRenderPass(cmd, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+	draw_forward(cmd, VulkanEngine::cinstance->_renderables.data(), VulkanEngine::cinstance->_renderables.size());
+
+	vkCmdEndRenderPass(cmd);
+
+	VK_CHECK(vkEndCommandBuffer(cmd));
+
+	VkSubmitInfo submit = vkinit::submit_info(&cmd);
+
+	VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+
+	submit.pWaitDstStageMask = &waitStage;
+	submit.waitSemaphoreCount = 1;
+	submit.pWaitSemaphores = &get_current_frame()._presentSemaphore;
+	submit.signalSemaphoreCount = 1;
+	submit.pSignalSemaphores = &get_current_frame()._renderSemaphore;
+
+	VK_CHECK(vkQueueSubmit(_graphicsQueue, 1, &submit, get_current_frame()._renderFence));
+
+	VkPresentInfoKHR presentInfo = {};
+	presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+	presentInfo.pNext = nullptr;
+
+	presentInfo.pSwapchains = &VulkanEngine::cinstance->_swapchain;
+	presentInfo.swapchainCount = 1;
+
+	presentInfo.pWaitSemaphores = &get_current_frame()._renderSemaphore;
+	presentInfo.waitSemaphoreCount = 1;
+
+	presentInfo.pImageIndices = &swapchainImageIndex;
+
+	VK_CHECK(vkQueuePresentKHR(_graphicsQueue, &presentInfo));
+
+	_frameNumber++;
 }
 
 void Renderer::render_deferred()
 {
+	VK_CHECK(vkWaitForFences(VulkanEngine::cinstance->_device, 1, &get_current_frame()._renderFence, true, UINT64_MAX));
+	VK_CHECK(vkResetFences(VulkanEngine::cinstance->_device, 1, &get_current_frame()._renderFence));
+
+	//request image from the swapchain
+	uint32_t swapchainImageIndex;
+	//VK_CHECK(vkAcquireNextImageKHR(_device, _swapchain, 0, get_current_frame()._presentSemaphore, nullptr, &swapchainImageIndex));
+	VkResult result = vkAcquireNextImageKHR(VulkanEngine::cinstance->_device, VulkanEngine::cinstance->_swapchain, 0, get_current_frame()._presentSemaphore, nullptr, &swapchainImageIndex);
+
+	VkCommandBuffer cmd = get_current_frame()._mainCommandBuffer;
+
+	VulkanEngine::cinstance->update_descriptors(VulkanEngine::cinstance->_renderables.data(), VulkanEngine::cinstance->_renderables.size());
+
+	draw_deferred(cmd, swapchainImageIndex);
+
+	VkSubmitInfo offscreenSubmit = vkinit::submit_info(&_deferredCommandBuffer);
+
+	VkPipelineStageFlags offscreenWaitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+
+	offscreenSubmit.pWaitDstStageMask = &offscreenWaitStage;
+	offscreenSubmit.waitSemaphoreCount = 1;
+	offscreenSubmit.pWaitSemaphores = &get_current_frame()._presentSemaphore;
+	offscreenSubmit.signalSemaphoreCount = 1;
+	offscreenSubmit.pSignalSemaphores = &_offscreenSemaphore;
+
+	VK_CHECK(vkQueueSubmit(_graphicsQueue, 1, &offscreenSubmit, nullptr));
+
+	VkSubmitInfo renderSubmit = vkinit::submit_info(&get_current_frame()._mainCommandBuffer);
+
+	VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+
+	renderSubmit.pWaitDstStageMask = &waitStage;
+	renderSubmit.waitSemaphoreCount = 1;
+	renderSubmit.pWaitSemaphores = &_offscreenSemaphore;
+	renderSubmit.signalSemaphoreCount = 1;
+	renderSubmit.pSignalSemaphores = &get_current_frame()._renderSemaphore;
+
+	VK_CHECK(vkQueueSubmit(_graphicsQueue, 1, &renderSubmit, get_current_frame()._renderFence));
+
+	VkPresentInfoKHR presentInfo = {};
+	presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+	presentInfo.pNext = nullptr;
+
+	presentInfo.pSwapchains = &VulkanEngine::cinstance->_swapchain;
+	presentInfo.swapchainCount = 1;
+
+	presentInfo.pWaitSemaphores = &get_current_frame()._renderSemaphore;
+	presentInfo.waitSemaphoreCount = 1;
+
+	presentInfo.pImageIndices = &swapchainImageIndex;
+
+	VK_CHECK(vkQueuePresentKHR(_graphicsQueue, &presentInfo));
+
+	_frameNumber++;
+}
+
+void GRAPHICS::Renderer::draw_forward(VkCommandBuffer cmd, RenderObject* first, int count)
+{
+	int frameIndex = _frameNumber % FRAME_OVERLAP;
+
+	Mesh* lastMesh = nullptr;
+	Material* lastMaterial = nullptr;
+	for (int i = 0; i < count; i++)
+	{
+		RenderObject& object = first[i];
+
+		if (object.material != lastMaterial)
+		{
+			vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, object.material->pipeline);
+			lastMaterial = object.material;
+
+			uint32_t uniform_offset = VulkanEngine::cinstance->pad_uniform_buffer_size(sizeof(GPUSceneData) * frameIndex);
+			vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, object.material->pipelineLayout, 0, 1, &get_current_frame().globalDescriptor, 1, &uniform_offset);
+
+			vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, object.material->pipelineLayout, 1, 1, &get_current_frame().objectDescriptor, 0, nullptr);
+
+			if (object.material->textureSet != VK_NULL_HANDLE)
+			{
+				vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, object.material->pipelineLayout, 2, 1, &object.material->textureSet, 0, nullptr);
+			}
+		}
+		
+		if (object.mesh != lastMesh)
+		{
+			VkDeviceSize offset = 0;
+			vkCmdBindVertexBuffers(cmd, 0, 1, &object.mesh->_vertexBuffer._buffer, &offset);
+			vkCmdBindIndexBuffer(cmd, object.mesh->_indexBuffer._buffer, 0, VK_INDEX_TYPE_UINT16);
+		}
+
+		vkCmdDrawIndexed(cmd, static_cast<uint32_t>(object.mesh->_indices.size()), 1, 0, 0, 0);
+	}
+}
+
+void GRAPHICS::Renderer::draw_deferred(VkCommandBuffer cmd, int imageIndex)
+{
+	//SECOND PASS
+
+	VK_CHECK(vkResetCommandBuffer(cmd, 0));
+
+	VkCommandBufferBeginInfo cmdBeginInfo = vkinit::command_buffer_begin_info(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
+
+	VK_CHECK(vkBeginCommandBuffer(cmd, &cmdBeginInfo));
+
+	VkClearValue clearValue;
+	float flash = abs(sin(_frameNumber / 120.0f));
+	clearValue.color = { {0.0f, 0.0f, flash, 1.0f} };
+
+	VkClearValue depthClear;
+	depthClear.depthStencil.depth = 1.0f;
+
+	VkRenderPassBeginInfo light_rpInfo = vkinit::renderpass_begin_info(_defaultRenderPass, VulkanEngine::cinstance->_windowExtent, _framebuffers[imageIndex]);
+
+	std::array<VkClearValue, 2> clearValues = { clearValue, depthClear };
+
+	light_rpInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
+	light_rpInfo.pClearValues = clearValues.data();
+
+	vkCmdBeginRenderPass(cmd, &light_rpInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+	vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, VulkanEngine::cinstance->_lightPipeline);
+
+	int frameIndex = _frameNumber % FRAME_OVERLAP;
+	uint32_t uniform_offset = VulkanEngine::cinstance->pad_uniform_buffer_size(sizeof(GPUSceneData) * frameIndex);
+	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, VulkanEngine::cinstance->_lightPipelineLayout, 0, 1, &get_current_frame().globalDescriptor, 1, &uniform_offset);
+
+	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, VulkanEngine::cinstance->_lightPipelineLayout, 1, 1, &VulkanEngine::cinstance->_deferred_descriptor_set, 0, nullptr);
+
+	//deferred quad
+	VkDeviceSize offset = 0;
+	vkCmdBindVertexBuffers(cmd, 0, 1, &deferred_quad._vertexBuffer._buffer, &offset);
+	vkCmdBindIndexBuffer(cmd, deferred_quad._indexBuffer._buffer, 0, VK_INDEX_TYPE_UINT32);
+
+	vkCmdDrawIndexed(cmd, static_cast<uint32_t>(deferred_quad._indices.size()), 1, 0, 0, 0);
+
+	ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
+
+	vkCmdEndRenderPass(cmd);
+
+	VK_CHECK(vkEndCommandBuffer(cmd));
 }

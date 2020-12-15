@@ -25,6 +25,7 @@
 #include <chrono>
 
 VulkanEngine* VulkanEngine::cinstance = nullptr;
+GRAPHICS::Renderer* renderer = nullptr;
 
 void VulkanEngine::init()
 {
@@ -48,9 +49,11 @@ void VulkanEngine::init()
 
 	init_swapchain();
 
-	init_deferred_attachments();
-
 	init_commands();
+
+	renderer = new GRAPHICS::Renderer();
+
+	init_deferred_attachments();
 
 	init_deferred_renderpass();
 
@@ -183,7 +186,7 @@ void VulkanEngine::draw()
 
 		update_descriptors(_renderables.data(), _renderables.size());
 
-		draw_objects_deferred(cmd, _renderables.data(), _renderables.size(), swapchainImageIndex);
+		draw_objects_deferred(cmd, swapchainImageIndex);
 
 		VkSubmitInfo offscreenSubmit = vkinit::submit_info(&_deferredCommandBuffer);
 
@@ -1708,7 +1711,7 @@ void VulkanEngine::update_descriptors(RenderObject* first, int count)
 	vmaUnmapMemory(_allocator, _objectBuffer._allocation);
 }
 
-void VulkanEngine::draw_objects(VkCommandBuffer cmd, RenderObject* first, int count)
+void VulkanEngine::update_descriptors_forward(RenderObject* first, int count)
 {
 	glm::vec3 camPos = { 0.0f, -50.0f, -10.0f };
 	glm::mat4 view = glm::translate(glm::mat4(1.0f), camPos);
@@ -1728,7 +1731,7 @@ void VulkanEngine::draw_objects(VkCommandBuffer cmd, RenderObject* first, int co
 	float framed = { _frameNumber / 120.0f };
 
 	_sceneParameters.ambientColor = { sin(framed), 0, cos(framed), 1 };
-	
+
 	char* sceneData;
 	vmaMapMemory(_allocator, _sceneParameterBuffer._allocation, (void**)&sceneData);
 
@@ -1739,19 +1742,24 @@ void VulkanEngine::draw_objects(VkCommandBuffer cmd, RenderObject* first, int co
 	memcpy(sceneData, &_sceneParameters, sizeof(GPUSceneData));
 
 	vmaUnmapMemory(_allocator, _sceneParameterBuffer._allocation);
-	
+
 	void* objectData;
 	vmaMapMemory(_allocator, get_current_frame().objectBuffer._allocation, &objectData);
 
 	GPUObjectData* objectSSBO = (GPUObjectData*)objectData;
 
-	for(int i = 0; i < count; i++)
+	for (int i = 0; i < count; i++)
 	{
 		RenderObject& object = first[i];
 		objectSSBO[i].modelMatrix = object.transformMatrix;
 	}
 
 	vmaUnmapMemory(_allocator, get_current_frame().objectBuffer._allocation);
+}
+
+void VulkanEngine::draw_objects(VkCommandBuffer cmd, RenderObject* first, int count)
+{
+	int frameIndex = _frameNumber % FRAME_OVERLAP;
 
 	Mesh* lastMesh = nullptr;
 	Material* lastMaterial = nullptr;
@@ -1800,7 +1808,7 @@ void VulkanEngine::draw_objects(VkCommandBuffer cmd, RenderObject* first, int co
 	}
 }
 
-void VulkanEngine::draw_objects_deferred(VkCommandBuffer cmd, RenderObject* first, int count, int imageIndex)
+void VulkanEngine::draw_objects_deferred(VkCommandBuffer cmd, int imageIndex)
 {
 	//SECOND PASS
 	//VK_CHECK(vkResetCommandBuffer(get_current_frame()._mainCommandBuffer, 0));

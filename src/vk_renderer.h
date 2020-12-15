@@ -3,16 +3,18 @@
 #include "vk_types.h"
 #include"vk_mesh.h"
 
+struct RenderObject;
+
 namespace GRAPHICS
 {
 	constexpr unsigned int FRAME_OVERLAP = 2;
 
 	enum RenderMode {
-		FORWARD_MODE = 0,
-		DEFERRED_MODE
+		RENDER_MODE_FORWARD = 0,
+		RENDER_MODE_DEFERRED
 	};
 
-	struct FrameData {
+	struct sFrameData {
 		VkSemaphore _presentSemaphore, _renderSemaphore;
 		VkFence _renderFence;
 
@@ -34,9 +36,13 @@ namespace GRAPHICS
 
 		Renderer();
 
+		void init_renderer();
+
 		void draw_scene();
 
 	private:
+
+		int _frameNumber{ 0 };
 
 		//Queues
 		VkQueue _graphicsQueue;
@@ -75,13 +81,12 @@ namespace GRAPHICS
 		VkCommandPool _deferredCommandPool;
 
 		VkCommandBuffer _deferredCommandBuffer;
-		FrameData _frames[FRAME_OVERLAP];
+		sFrameData _frames[FRAME_OVERLAP];
 		VkSemaphore _offscreenSemaphore;
 
 		VkSampler _defaultSampler;
 
 		//init renderer structures and attachments
-		void init_renderer();
 
 		void create_depth_buffer();
 
@@ -99,12 +104,21 @@ namespace GRAPHICS
 
 		void record_forward_command_buffers();
 
-		void record_deferred_command_buffers();
+		void record_deferred_command_buffers(RenderObject* first, int count);
 
+		//support functions
+		sFrameData& get_current_frame();
+		
 		//draw functions
 		void render_forward();
 
 		void render_deferred();
+
+		void draw_forward(VkCommandBuffer cmd, RenderObject* first, int count);
+
+		void draw_deferred(VkCommandBuffer cmd, int imageIndex);
+
+		
 	};
 }
 

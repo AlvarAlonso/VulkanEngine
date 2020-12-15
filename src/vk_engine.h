@@ -234,6 +234,10 @@ public:
 	AllocatedBuffer create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage);
 	void load_images();
 
+	void update_descriptors(RenderObject* first, int count);
+	void update_descriptors_forward(RenderObject* first, int count);
+	size_t pad_uniform_buffer_size(size_t originalSize);
+
 private:
 
 	// Init Vulkan Components
@@ -281,15 +285,13 @@ private:
 
 	Mesh* get_mesh(const std::string& name);
 
-	void update_descriptors(RenderObject* first, int count);
-
 	void draw_objects(VkCommandBuffer cmd, RenderObject* first, int count);
 
-	void draw_objects_deferred(VkCommandBuffer cmd, RenderObject* first, int count, int imageIndex);
+	void draw_objects_deferred(VkCommandBuffer cmd, int imageIndex);
 
 	// Other
 
-	size_t pad_uniform_buffer_size(size_t originalSize);
+
 };
 
 class PipelineBuilder {
