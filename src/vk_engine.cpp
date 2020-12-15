@@ -51,21 +51,22 @@ void VulkanEngine::init()
 
 	init_commands();
 
+	init_descriptors();
+
 	renderer = new GRAPHICS::Renderer();
+	renderer->init_renderer();
 
-	init_deferred_attachments();
+	//init_deferred_attachments();
 
-	init_deferred_renderpass();
+	//init_deferred_renderpass();
 
-	init_default_renderpass();
+	//init_default_renderpass();
 
-	init_offscreen_framebuffer();
+	//init_offscreen_framebuffer();
 
-	init_framebuffers();
+	//init_framebuffers();
 
 	init_sync_structures();
-
-	init_descriptors();
 
 	init_pipelines();
 
@@ -349,7 +350,8 @@ void VulkanEngine::run()
 		//imgui commands
 		ImGui::ShowDemoWindow();
 
-		draw();
+		//draw();
+		renderer->draw_scene();
 	}
 }
 
@@ -458,6 +460,7 @@ void VulkanEngine::init_swapchain()
 
 	_swapchainImageFormat = vkbSwapchain.image_format;
 
+	/*
 	VkExtent3D depthImageExtent = {
 		_windowExtent.width,
 		_windowExtent.height,
@@ -481,11 +484,11 @@ void VulkanEngine::init_swapchain()
 	VkSamplerCreateInfo samplerInfo = vkinit::sampler_create_info(VK_FILTER_NEAREST);
 
 	vkCreateSampler(_device, &samplerInfo, nullptr, &_defaultSampler);
-
+	*/
 	_mainDeletionQueue.push_function([=]() {
 		vkDestroySwapchainKHR(_device, _swapchain, nullptr);
-		vkDestroyImageView(_device, _depthImageView, nullptr);
-		vmaDestroyImage(_allocator, _depthImage._image, _depthImage._allocation);
+		//vkDestroyImageView(_device, _depthImageView, nullptr);
+		//vmaDestroyImage(_allocator, _depthImage._image, _depthImage._allocation);
 	});
 }
 
@@ -596,6 +599,7 @@ void VulkanEngine::init_deferred_attachments()
 
 void VulkanEngine::init_commands()
 {
+	/*
 	//create a command pool for commands submitted to the graphics queue.
 	VkCommandPoolCreateInfo commandPoolInfo = vkinit::command_pool_create_info(_graphicsQueueFamily, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
 	
@@ -612,7 +616,7 @@ void VulkanEngine::init_commands()
 			vkDestroyCommandPool(_device, _frames[i]._commandPool, nullptr);
 		});
 	}
-
+	*/
 	VkCommandPoolCreateInfo uploadCommandPoolInfo = vkinit::command_pool_create_info(_graphicsQueueFamily);
 	//create pool for upload context
 	VK_CHECK(vkCreateCommandPool(_device, &uploadCommandPoolInfo, nullptr, &_uploadContext._commandPool));
@@ -621,6 +625,7 @@ void VulkanEngine::init_commands()
 		vkDestroyCommandPool(_device, _uploadContext._commandPool, nullptr);
 		});
 
+	/*
 	VK_CHECK(vkCreateCommandPool(_device, &commandPoolInfo, nullptr, &_deferredCommandPool));
 
 	VkCommandBufferAllocateInfo cmdAllocInfo = vkinit::command_buffer_allocate_info(_deferredCommandPool, 1);
@@ -629,6 +634,7 @@ void VulkanEngine::init_commands()
 	_mainDeletionQueue.push_function([=]() {
 		vkDestroyCommandPool(_device, _deferredCommandPool, nullptr);
 		});
+		*/
 }
 
 void VulkanEngine::init_default_renderpass()
@@ -859,15 +865,15 @@ void VulkanEngine::init_sync_structures()
 	offscreenSemaphoreInfo.pNext = nullptr;
 	offscreenSemaphoreInfo.flags = 0;
 
-	VK_CHECK(vkCreateSemaphore(_device, &offscreenSemaphoreInfo, nullptr, &_offscreenSemaphore));
+	//VK_CHECK(vkCreateSemaphore(_device, &offscreenSemaphoreInfo, nullptr, &_offscreenSemaphore));
 
 	VK_CHECK(vkCreateFence(_device, &uploadFenceCreateInfo, nullptr, &_uploadContext._uploadFence));
 
 	_mainDeletionQueue.push_function([=]() {
-		vkDestroySemaphore(_device, _offscreenSemaphore, nullptr);
+		//vkDestroySemaphore(_device, _offscreenSemaphore, nullptr);
 		vkDestroyFence(_device, _uploadContext._uploadFence, nullptr);
 	});
-
+	/*
 	for(int i = 0; i < FRAME_OVERLAP; i++)
 	{
 		VK_CHECK(vkCreateFence(_device, &fenceCreateInfo, nullptr, &_frames[i]._renderFence));
@@ -884,6 +890,7 @@ void VulkanEngine::init_sync_structures()
 			vkDestroySemaphore(_device, _frames[i]._renderSemaphore, nullptr);
 		});
 	}
+	*/
 }
 
 void VulkanEngine::init_descriptors()
@@ -1234,7 +1241,7 @@ void VulkanEngine::init_pipelines()
 	pipelineBuilder._pipelineLayout = _meshPipelineLayout;
 
 	//build the mesh triangle pipeline
-	_meshPipeline = pipelineBuilder.build_pipeline(_device, _renderPass);
+	_meshPipeline = pipelineBuilder.build_pipeline(_device, renderer->_defaultRenderPass);
 	
 	create_material(_meshPipeline, _meshPipelineLayout, "defaultmesh");
 
@@ -1248,7 +1255,7 @@ void VulkanEngine::init_pipelines()
 	pipelineBuilder._shaderStages.push_back(
 		vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, texturedMeshShader));
 
-	VkPipeline texPipeline = pipelineBuilder.build_pipeline(_device, _renderPass);
+	VkPipeline texPipeline = pipelineBuilder.build_pipeline(_device, renderer->_defaultRenderPass);
 	create_material(texPipeline, _meshPipelineLayout, "texturedmesh");
 
 
@@ -1262,7 +1269,7 @@ void VulkanEngine::init_pipelines()
 	pipelineBuilder._shaderStages.push_back(
 		vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, normalMeshShader));
 
-	_normalsPipeline = pipelineBuilder.build_pipeline(_device, _renderPass);
+	_normalsPipeline = pipelineBuilder.build_pipeline(_device, renderer->_defaultRenderPass);
 
 	//deleting all of the vulkan shaders
 	vkDestroyShaderModule(_device, normalMeshShader, nullptr);
@@ -1394,7 +1401,7 @@ void VulkanEngine::init_deferred_pipelines()
 	//Deferred Layout
 	pipelineBuilder._pipelineLayout = _deferredPipelineLayout;
 
-	_deferredPipeline = pipelineBuilder.build_pipeline(_device, _deferredPass);
+	_deferredPipeline = pipelineBuilder.build_pipeline(_device, renderer->_deferredRenderPass);
 
 	//LIGHT PIPELINE CREATION
 
@@ -1415,7 +1422,7 @@ void VulkanEngine::init_deferred_pipelines()
 	//Light Layout
 	pipelineBuilder._pipelineLayout = _lightPipelineLayout;
 
-	_lightPipeline = pipelineBuilder.build_pipeline(_device, _renderPass);
+	_lightPipeline = pipelineBuilder.build_pipeline(_device, renderer->_defaultRenderPass);
 
 	
 	//DELETIONS

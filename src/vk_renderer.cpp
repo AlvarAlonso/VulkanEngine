@@ -23,7 +23,11 @@ void Renderer::init_renderer()
 	create_depth_buffer();
 	create_deferred_attachments();
 	init_commands();
+	init_framebuffers();
 	init_sync_structures();
+	init_default_render_pass();
+	init_deferred_render_pass();
+	record_deferred_command_buffers(VulkanEngine::cinstance->_renderables.data(), VulkanEngine::cinstance->_renderables.size());
 }
 
 void Renderer::draw_scene()
@@ -38,7 +42,6 @@ void Renderer::draw_scene()
 	{
 		render_deferred();
 	}
-	
 }
 
 void Renderer::create_depth_buffer()

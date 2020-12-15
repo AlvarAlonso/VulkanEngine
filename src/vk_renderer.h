@@ -40,6 +40,10 @@ namespace GRAPHICS
 
 		void draw_scene();
 
+		//Render passes
+		VkRenderPass _defaultRenderPass;
+		VkRenderPass _deferredRenderPass;
+
 	private:
 
 		int _frameNumber{ 0 };
@@ -67,10 +71,6 @@ namespace GRAPHICS
 		VkFormat _albedoFormat;
 
 		Mesh deferred_quad;
-
-		//Render passes
-		VkRenderPass _defaultRenderPass;
-		VkRenderPass _deferredRenderPass;
 
 		//Framebuffers
 		std::vector<VkFramebuffer> _framebuffers;
@@ -116,9 +116,7 @@ namespace GRAPHICS
 
 		void draw_forward(VkCommandBuffer cmd, RenderObject* first, int count);
 
-		void draw_deferred(VkCommandBuffer cmd, int imageIndex);
-
-		
+		void draw_deferred(VkCommandBuffer cmd, int imageIndex);		
 	};
 }
 
