@@ -53,18 +53,10 @@ void VulkanEngine::init()
 
 	init_sync_structures();
 
+	init_descriptor_layouts();
+
 	renderer = new GRAPHICS::Renderer();
 	renderer->init_renderer();
-
-	//init_deferred_attachments();
-
-	//init_deferred_renderpass();
-
-	//init_default_renderpass();
-
-	//init_offscreen_framebuffer();
-
-	//init_framebuffers();
 
 	init_descriptors();
 
@@ -77,8 +69,6 @@ void VulkanEngine::init()
 	load_meshes();
 
 	init_scene();
-
-	//record_deferred_command_buffer(_renderables.data(), _renderables.size());
 
 	init_imgui();
 
@@ -99,135 +89,6 @@ void VulkanEngine::cleanup()
 		vkDestroyInstance(_instance, nullptr);
 		
 		SDL_DestroyWindow(_window);
-	}
-}
-
-void VulkanEngine::draw()
-{
-	ImGui::Render();
-
-	if(_pipelineSelected == 1)
-	{
-		VK_CHECK(vkWaitForFences(_device, 1, &get_current_frame()._renderFence, true, UINT64_MAX));
-		VK_CHECK(vkResetFences(_device, 1, &get_current_frame()._renderFence));
-
-		//request image from the swapchain
-		uint32_t swapchainImageIndex;
-		VK_CHECK(vkAcquireNextImageKHR(_device, _swapchain, 0, get_current_frame()._presentSemaphore, nullptr, &swapchainImageIndex));
-
-		VK_CHECK(vkResetCommandBuffer(get_current_frame()._mainCommandBuffer, 0));
-
-		VkCommandBuffer cmd = get_current_frame()._mainCommandBuffer;
-
-		VkCommandBufferBeginInfo cmdBeginInfo = vkinit::command_buffer_begin_info(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
-
-		VK_CHECK(vkBeginCommandBuffer(cmd, &cmdBeginInfo));
-
-		VkClearValue clearValue;
-		float flash = abs(sin(_frameNumber / 120.0f));
-		clearValue.color = { {0.0f, 0.0f, flash, 1.0f} };
-
-		VkClearValue depthClear;
-		depthClear.depthStencil.depth = 1.0f;
-
-		VkRenderPassBeginInfo rpInfo = vkinit::renderpass_begin_info(_renderPass, _windowExtent, _framebuffers[swapchainImageIndex]);
-
-		std::array<VkClearValue, 2> clearValues = { clearValue, depthClear };
-
-		rpInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
-		rpInfo.pClearValues = clearValues.data();
-
-		vkCmdBeginRenderPass(cmd, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-		draw_objects(cmd, _renderables.data(), _renderables.size());
-
-		vkCmdEndRenderPass(cmd);
-
-		VK_CHECK(vkEndCommandBuffer(cmd));
-
-		VkSubmitInfo submit = vkinit::submit_info(&cmd);
-
-		VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-
-		submit.pWaitDstStageMask = &waitStage;
-		submit.waitSemaphoreCount = 1;
-		submit.pWaitSemaphores = &get_current_frame()._presentSemaphore;
-		submit.signalSemaphoreCount = 1;
-		submit.pSignalSemaphores = &get_current_frame()._renderSemaphore;
-
-		VK_CHECK(vkQueueSubmit(_graphicsQueue, 1, &submit, get_current_frame()._renderFence));
-
-		VkPresentInfoKHR presentInfo = {};
-		presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-		presentInfo.pNext = nullptr;
-
-		presentInfo.pSwapchains = &_swapchain;
-		presentInfo.swapchainCount = 1;
-
-		presentInfo.pWaitSemaphores = &get_current_frame()._renderSemaphore;
-		presentInfo.waitSemaphoreCount = 1;
-
-		presentInfo.pImageIndices = &swapchainImageIndex;
-
-		VK_CHECK(vkQueuePresentKHR(_graphicsQueue, &presentInfo));
-
-		_frameNumber++;
-	}
-	else
-	{
-		VK_CHECK(vkWaitForFences(_device, 1, &get_current_frame()._renderFence, true, UINT64_MAX));
-		VK_CHECK(vkResetFences(_device, 1, &get_current_frame()._renderFence));
-
-		//request image from the swapchain
-		uint32_t swapchainImageIndex;
-		//VK_CHECK(vkAcquireNextImageKHR(_device, _swapchain, 0, get_current_frame()._presentSemaphore, nullptr, &swapchainImageIndex));
-		VkResult result = vkAcquireNextImageKHR(_device, _swapchain, 0, get_current_frame()._presentSemaphore, nullptr, &swapchainImageIndex);
-
-		VkCommandBuffer cmd = get_current_frame()._mainCommandBuffer;
-
-		update_descriptors(_renderables.data(), _renderables.size());
-
-		draw_objects_deferred(cmd, swapchainImageIndex);
-
-		VkSubmitInfo offscreenSubmit = vkinit::submit_info(&_deferredCommandBuffer);
-
-		VkPipelineStageFlags offscreenWaitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-
-		offscreenSubmit.pWaitDstStageMask = &offscreenWaitStage;
-		offscreenSubmit.waitSemaphoreCount = 1;
-		offscreenSubmit.pWaitSemaphores = &get_current_frame()._presentSemaphore;
-		offscreenSubmit.signalSemaphoreCount = 1;
-		offscreenSubmit.pSignalSemaphores = &_offscreenSemaphore;
-
-		VK_CHECK(vkQueueSubmit(_graphicsQueue, 1, &offscreenSubmit, nullptr));
-
-		VkSubmitInfo renderSubmit = vkinit::submit_info(&get_current_frame()._mainCommandBuffer);
-
-		VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-
-		renderSubmit.pWaitDstStageMask = &waitStage;
-		renderSubmit.waitSemaphoreCount = 1;
-		renderSubmit.pWaitSemaphores = &_offscreenSemaphore;
-		renderSubmit.signalSemaphoreCount = 1;
-		renderSubmit.pSignalSemaphores = &get_current_frame()._renderSemaphore;
-
-		VK_CHECK(vkQueueSubmit(_graphicsQueue, 1, &renderSubmit, get_current_frame()._renderFence));
-
-		VkPresentInfoKHR presentInfo = {};
-		presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-		presentInfo.pNext = nullptr;
-
-		presentInfo.pSwapchains = &_swapchain;
-		presentInfo.swapchainCount = 1;
-
-		presentInfo.pWaitSemaphores = &get_current_frame()._renderSemaphore;
-		presentInfo.waitSemaphoreCount = 1;
-
-		presentInfo.pImageIndices = &swapchainImageIndex;
-
-		VK_CHECK(vkQueuePresentKHR(_graphicsQueue, &presentInfo));
-
-		_frameNumber++;
 	}
 }
 
@@ -460,35 +321,8 @@ void VulkanEngine::init_swapchain()
 
 	_swapchainImageFormat = vkbSwapchain.image_format;
 
-	/*
-	VkExtent3D depthImageExtent = {
-		_windowExtent.width,
-		_windowExtent.height,
-		1
-	};
-
-	_depthFormat = VK_FORMAT_D32_SFLOAT;
-
-	VkImageCreateInfo dimg_info = vkinit::image_create_info(_depthFormat, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, depthImageExtent);
-
-	VmaAllocationCreateInfo dimg_allocinfo = {};
-	dimg_allocinfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-	dimg_allocinfo.requiredFlags = VkMemoryPropertyFlagBits(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
-	vmaCreateImage(_allocator, &dimg_info, &dimg_allocinfo, &_depthImage._image, &_depthImage._allocation, nullptr);
-
-	VkImageViewCreateInfo dview_info = vkinit::imageview_create_info(_depthFormat, _depthImage._image, VK_IMAGE_ASPECT_DEPTH_BIT);
-
-	VK_CHECK(vkCreateImageView(_device, &dview_info, nullptr, &_depthImageView));
-
-	VkSamplerCreateInfo samplerInfo = vkinit::sampler_create_info(VK_FILTER_NEAREST);
-
-	vkCreateSampler(_device, &samplerInfo, nullptr, &_defaultSampler);
-	*/
 	_mainDeletionQueue.push_function([=]() {
 		vkDestroySwapchainKHR(_device, _swapchain, nullptr);
-		//vkDestroyImageView(_device, _depthImageView, nullptr);
-		//vmaDestroyImage(_allocator, _depthImage._image, _depthImage._allocation);
 	});
 }
 
@@ -555,68 +389,8 @@ void VulkanEngine::init_imgui()
 		});
 }
 
-void VulkanEngine::init_deferred_attachments()
-{
-	VkExtent3D attachmentExtent{
-		_windowExtent.width,
-		_windowExtent.height,
-		1
-	};
-
-	_positionFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
-	_normalFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
-	_albedoFormat = VK_FORMAT_R8G8B8A8_UNORM;
-
-	VkImageCreateInfo position_igm = vkinit::image_create_info(_positionFormat, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, attachmentExtent);
-	VkImageCreateInfo normal_igm = vkinit::image_create_info(_normalFormat, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, attachmentExtent);
-	VkImageCreateInfo albedo_igm = vkinit::image_create_info(_albedoFormat, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, attachmentExtent);
-
-	VmaAllocationCreateInfo img_alloc_info = {};
-	img_alloc_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-	img_alloc_info.requiredFlags = VkMemoryPropertyFlagBits(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	
-	vmaCreateImage(_allocator, &position_igm, &img_alloc_info, &_positionImage._image, &_positionImage._allocation, nullptr);
-	vmaCreateImage(_allocator, &normal_igm, &img_alloc_info, &_normalImage._image, &_normalImage._allocation, nullptr);
-	vmaCreateImage(_allocator, &albedo_igm, &img_alloc_info, &_albedoImage._image, &_albedoImage._allocation, nullptr);
-
-	VkImageViewCreateInfo position_view_igm = vkinit::imageview_create_info(VK_FORMAT_R16G16B16A16_SFLOAT, _positionImage._image, VK_IMAGE_ASPECT_COLOR_BIT);
-	VkImageViewCreateInfo normal_view_igm = vkinit::imageview_create_info(VK_FORMAT_R16G16B16A16_SFLOAT, _normalImage._image, VK_IMAGE_ASPECT_COLOR_BIT);
-	VkImageViewCreateInfo albedo_view_igm = vkinit::imageview_create_info(VK_FORMAT_R8G8B8A8_UNORM, _albedoImage._image, VK_IMAGE_ASPECT_COLOR_BIT);
-
-	VK_CHECK(vkCreateImageView(_device, &position_view_igm, nullptr, &_positionImageView));
-	VK_CHECK(vkCreateImageView(_device, &normal_view_igm, nullptr, &_normalImageView));
-	VK_CHECK(vkCreateImageView(_device, &albedo_view_igm, nullptr, &_albedoImageView));
-
-	_mainDeletionQueue.push_function([=]() {
-		vkDestroyImageView(_device, _positionImageView, nullptr);
-		vmaDestroyImage(_allocator, _positionImage._image, _positionImage._allocation);
-		vkDestroyImageView(_device, _normalImageView, nullptr);
-		vmaDestroyImage(_allocator, _normalImage._image, _normalImage._allocation);
-		vkDestroyImageView(_device, _albedoImageView, nullptr);
-		vmaDestroyImage(_allocator, _albedoImage._image, _albedoImage._allocation);
-	});
-}
-
 void VulkanEngine::init_commands()
 {
-	/*
-	//create a command pool for commands submitted to the graphics queue.
-	VkCommandPoolCreateInfo commandPoolInfo = vkinit::command_pool_create_info(_graphicsQueueFamily, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
-	
-	for(int i = 0; i < FRAME_OVERLAP; i++)
-	{
-		VK_CHECK(vkCreateCommandPool(_device, &commandPoolInfo, nullptr, &_frames[i]._commandPool));
-
-		//allocat the default command buffer that we will use for rendering
-		VkCommandBufferAllocateInfo cmdAllocInfo = vkinit::command_buffer_allocate_info(_frames[i]._commandPool, 1);
-
-		VK_CHECK(vkAllocateCommandBuffers(_device, &cmdAllocInfo, &_frames[i]._mainCommandBuffer));
-
-		_mainDeletionQueue.push_function([=]() {
-			vkDestroyCommandPool(_device, _frames[i]._commandPool, nullptr);
-		});
-	}
-	*/
 	VkCommandPoolCreateInfo uploadCommandPoolInfo = vkinit::command_pool_create_info(_graphicsQueueFamily);
 	//create pool for upload context
 	VK_CHECK(vkCreateCommandPool(_device, &uploadCommandPoolInfo, nullptr, &_uploadContext._commandPool));
@@ -624,273 +398,24 @@ void VulkanEngine::init_commands()
 	_mainDeletionQueue.push_function([=]() {
 		vkDestroyCommandPool(_device, _uploadContext._commandPool, nullptr);
 		});
-
-	/*
-	VK_CHECK(vkCreateCommandPool(_device, &commandPoolInfo, nullptr, &_deferredCommandPool));
-
-	VkCommandBufferAllocateInfo cmdAllocInfo = vkinit::command_buffer_allocate_info(_deferredCommandPool, 1);
-	VK_CHECK(vkAllocateCommandBuffers(_device, &cmdAllocInfo, &_deferredCommandBuffer));
-
-	_mainDeletionQueue.push_function([=]() {
-		vkDestroyCommandPool(_device, _deferredCommandPool, nullptr);
-		});
-		*/
 }
 
-void VulkanEngine::init_default_renderpass()
+void VulkanEngine::init_descriptor_layouts()
 {
-	VkAttachmentDescription color_attachment = {};
-	color_attachment.format = _swapchainImageFormat;
-	color_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
-	color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-	color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-	color_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-	color_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-	color_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-	color_attachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-
-	VkAttachmentReference color_attachment_ref = {};
-	color_attachment_ref.attachment = 0;
-	color_attachment_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-	VkAttachmentDescription depth_attachment = {};
-	depth_attachment.flags = 0;
-	depth_attachment.format = _depthFormat;
-	depth_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
-	depth_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-	depth_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-	depth_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-	depth_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-	depth_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-	depth_attachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-	VkAttachmentReference depth_attachment_ref = {};
-	depth_attachment_ref.attachment = 1;
-	depth_attachment_ref.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-	VkSubpassDescription subpass = {};
-	subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-	subpass.colorAttachmentCount = 1;
-	subpass.pColorAttachments = &color_attachment_ref;
-	subpass.pDepthStencilAttachment = &depth_attachment_ref;
-
-	VkAttachmentDescription attachments[2] = { color_attachment, depth_attachment };
-
-	VkRenderPassCreateInfo render_pass_info = {};
-	render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-	render_pass_info.attachmentCount = 2;
-	render_pass_info.pAttachments = &attachments[0];
-	render_pass_info.subpassCount = 1;
-	render_pass_info.pSubpasses = &subpass;
-
-	VK_CHECK(vkCreateRenderPass(_device, &render_pass_info, nullptr, &_renderPass));
-
-	_mainDeletionQueue.push_function([=]() {
-		vkDestroyRenderPass(_device, _renderPass, nullptr);
-	});
-}
-
-void VulkanEngine::init_deferred_renderpass()
-{
-	//gBuffers Pass
-
-	VkAttachmentDescription position_attachment = {};
-	position_attachment.format = _positionFormat;
-	position_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
-	position_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-	position_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-	position_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-	position_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-	position_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-	position_attachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-	VkAttachmentDescription normal_attachment = {};
-	normal_attachment.format = _normalFormat;
-	normal_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
-	normal_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-	normal_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-	normal_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-	normal_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-	normal_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-	normal_attachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-	VkAttachmentDescription albedo_attachment = {};
-	albedo_attachment.format = _albedoFormat;
-	albedo_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
-	albedo_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-	albedo_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-	albedo_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-	albedo_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-	albedo_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-	albedo_attachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-	VkAttachmentDescription depth_attachment = {};
-	depth_attachment.format = _depthFormat;
-	depth_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
-	depth_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-	depth_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-	depth_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-	depth_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-	depth_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-	depth_attachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-	
-	std::array<VkAttachmentDescription, 4> attachment_descriptions = { position_attachment, normal_attachment, albedo_attachment, depth_attachment };
-
-	VkAttachmentReference position_ref;
-	position_ref.attachment = 0;
-	position_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-	VkAttachmentReference normal_ref;
-	normal_ref.attachment = 1;
-	normal_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-	VkAttachmentReference albedo_ref;
-	albedo_ref.attachment = 2;
-	albedo_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-	std::array<VkAttachmentReference, 3> color_references = { position_ref, normal_ref, albedo_ref };
-
-	VkAttachmentReference depth_ref;
-	depth_ref.attachment = 3;
-	depth_ref.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-	VkSubpassDescription subpass = {};
-	subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-	subpass.colorAttachmentCount = static_cast<uint32_t>(color_references.size());
-	subpass.pColorAttachments = color_references.data();
-	subpass.pDepthStencilAttachment = &depth_ref;
-
-	std::array<VkSubpassDependency, 2> dependencies;
-
-	dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
-	dependencies[0].dstSubpass = 0;
-	dependencies[0].srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-	dependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-	dependencies[0].srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
-	dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-	dependencies[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
-
-	dependencies[1].srcSubpass = 0;
-	dependencies[1].dstSubpass = VK_SUBPASS_EXTERNAL;
-	dependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-	dependencies[1].dstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-	dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-	dependencies[1].dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
-	dependencies[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
-
-	VkRenderPassCreateInfo deferred_pass = {};
-	deferred_pass.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-	deferred_pass.pNext = nullptr;
-	deferred_pass.attachmentCount = static_cast<uint32_t>(attachment_descriptions.size());
-	deferred_pass.pAttachments = attachment_descriptions.data();
-	deferred_pass.subpassCount = 1;
-	deferred_pass.pSubpasses = &subpass;
-	deferred_pass.dependencyCount = static_cast<uint32_t>(dependencies.size());
-	deferred_pass.pDependencies = dependencies.data();
-
-	VK_CHECK(vkCreateRenderPass(_device, &deferred_pass, nullptr, &_deferredPass));
-}
-
-void VulkanEngine::init_offscreen_framebuffer()
-{
-	std::array<VkImageView, 4> attachments;
-	attachments[0] = _positionImageView;
-	attachments[1] = _normalImageView;
-	attachments[2] = _albedoImageView;
-	attachments[3] = _depthImageView;
-
-	VkFramebufferCreateInfo fb_info = {};
-	fb_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-	fb_info.pNext = nullptr;
-	fb_info.renderPass = _deferredPass;
-	fb_info.attachmentCount = static_cast<uint32_t>(attachments.size());
-	fb_info.pAttachments = attachments.data();
-	fb_info.width = _windowExtent.width;
-	fb_info.height = _windowExtent.height;
-	fb_info.layers = 1;
-
-	VK_CHECK(vkCreateFramebuffer(_device, &fb_info, nullptr, &_offscreen_framebuffer));
-}
-
-void VulkanEngine::init_framebuffers()
-{
-	VkFramebufferCreateInfo fb_info = {};
-	fb_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-	fb_info.pNext = nullptr;
-
-	fb_info.renderPass = _renderPass;
-	fb_info.attachmentCount = 1;
-	fb_info.width = _windowExtent.width;
-	fb_info.height = _windowExtent.height;
-	fb_info.layers = 1;
-
-	const uint32_t swapchain_imagecount = _swapchainImages.size();
-	_framebuffers = std::vector<VkFramebuffer> (swapchain_imagecount);
-
-	for(int i = 0; i < swapchain_imagecount; i++)
-	{
-		std::array<VkImageView, 2> attachments = { _swapchainImageViews[i], _depthImageView };
-		
-		fb_info.attachmentCount = static_cast<uint32_t>(attachments.size());
-		fb_info.pAttachments = attachments.data();
-
-		VK_CHECK(vkCreateFramebuffer(_device, &fb_info, nullptr, &_framebuffers[i]));
-	
-		_mainDeletionQueue.push_function([=]() {
-			vkDestroyFramebuffer(_device, _framebuffers[i], nullptr);
-			vkDestroyImageView(_device, _swapchainImageViews[i], nullptr);
-		});
-	}
 }
 
 void VulkanEngine::init_sync_structures()
 {
-	VkFenceCreateInfo fenceCreateInfo = {};
-	fenceCreateInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-	fenceCreateInfo.pNext = nullptr;
-	fenceCreateInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-
-	VkSemaphoreCreateInfo semaphoreCreateInfo = {};
-	semaphoreCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-	semaphoreCreateInfo.pNext = nullptr;
-	semaphoreCreateInfo.flags = 0;
-
 	VkFenceCreateInfo uploadFenceCreateInfo = {};
 	uploadFenceCreateInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
 	uploadFenceCreateInfo.pNext = nullptr;
 	uploadFenceCreateInfo.flags = 0;
 
-	VkSemaphoreCreateInfo offscreenSemaphoreInfo = {};
-	offscreenSemaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-	offscreenSemaphoreInfo.pNext = nullptr;
-	offscreenSemaphoreInfo.flags = 0;
-
-	//VK_CHECK(vkCreateSemaphore(_device, &offscreenSemaphoreInfo, nullptr, &_offscreenSemaphore));
-
 	VK_CHECK(vkCreateFence(_device, &uploadFenceCreateInfo, nullptr, &_uploadContext._uploadFence));
 
 	_mainDeletionQueue.push_function([=]() {
-		//vkDestroySemaphore(_device, _offscreenSemaphore, nullptr);
 		vkDestroyFence(_device, _uploadContext._uploadFence, nullptr);
 	});
-	/*
-	for(int i = 0; i < FRAME_OVERLAP; i++)
-	{
-		VK_CHECK(vkCreateFence(_device, &fenceCreateInfo, nullptr, &_frames[i]._renderFence));
-		
-		_mainDeletionQueue.push_function([=]() {
-			vkDestroyFence(_device, _frames[i]._renderFence, nullptr);
-			});
-
-		VK_CHECK(vkCreateSemaphore(_device, &semaphoreCreateInfo, nullptr, &_frames[i]._presentSemaphore));
-		VK_CHECK(vkCreateSemaphore(_device, &semaphoreCreateInfo, nullptr, &_frames[i]._renderSemaphore));
-
-		_mainDeletionQueue.push_function([=]() {
-			vkDestroySemaphore(_device, _frames[i]._presentSemaphore, nullptr);
-			vkDestroySemaphore(_device, _frames[i]._renderSemaphore, nullptr);
-		});
-	}
-	*/
 }
 
 void VulkanEngine::init_descriptors()
@@ -1121,17 +646,6 @@ void VulkanEngine::init_pipelines()
 		std::cout << "Red Triangle vertex shader succesfully loaded" << std::endl;
 	}
 
-	//vertex shader for normals
-	VkShaderModule meshNormalVertShader;
-	if(!load_shader_module("../shaders/normal.vert.spv", &meshNormalVertShader))
-	{
-		std::cout << "Error when building the mesh normal vertex shader module" << std::endl;
-	}
-	else
-	{
-		std::cout << "Mesh normal vertex shader succesfully loaded" << std::endl;
-	}
-
 	//shader for default material
 	VkShaderModule colorMeshShader;
 	if(!load_shader_module("../shaders/default_lit.frag.spv", &colorMeshShader))
@@ -1154,17 +668,6 @@ void VulkanEngine::init_pipelines()
 		std::cout << "Textured mesh shader succesfully loaded" << endl;
 	}
 
-	//shader to print mesh normals
-	VkShaderModule normalMeshShader;
-	if(!load_shader_module("../shaders/normal.frag.spv", &normalMeshShader))
-	{
-		std::cout << "Error when building the normal mesh shader" << std::endl;
-	}
-	else
-	{
-		std::cout << "Normal mesh shader succesfully loaded" << endl;
-	}
-
 	// Layouts
 
 	//mesh layout
@@ -1184,19 +687,6 @@ void VulkanEngine::init_pipelines()
 	mesh_pipeline_layout_info.pSetLayouts = setLayouts.data();
 
 	VK_CHECK(vkCreatePipelineLayout(_device, &mesh_pipeline_layout_info, nullptr, &_meshPipelineLayout));
-
-	//normal layout
-	VkPipelineLayoutCreateInfo normal_pipeline_layout_info = mesh_pipeline_layout_info;
-
-	normal_pipeline_layout_info.pushConstantRangeCount = 0;
-	normal_pipeline_layout_info.pPushConstantRanges = nullptr;
-
-	std::array<VkDescriptorSetLayout, 2> normalSetLayout = { _globalSetLayout, _objectSetLayout };
-
-	normal_pipeline_layout_info.setLayoutCount = static_cast<uint32_t>(normalSetLayout.size());
-	normal_pipeline_layout_info.pSetLayouts = normalSetLayout.data();
-
-	VK_CHECK(vkCreatePipelineLayout(_device, &normal_pipeline_layout_info, nullptr, &_normalPipelineLayout));
 
 	//PIPELINES
 	PipelineBuilder pipelineBuilder;
@@ -1259,31 +749,15 @@ void VulkanEngine::init_pipelines()
 	VkPipeline texPipeline = pipelineBuilder.build_pipeline(_device, renderer->_defaultRenderPass);
 	create_material(texPipeline, _meshPipelineLayout, "texturedmesh");
 
-
-	//normal pipeline
-	pipelineBuilder._pipelineLayout = _normalPipelineLayout;
-
-	pipelineBuilder._shaderStages.clear();
-	pipelineBuilder._shaderStages.push_back(
-		vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT, meshNormalVertShader));
-
-	pipelineBuilder._shaderStages.push_back(
-		vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, normalMeshShader));
-
-	_normalsPipeline = pipelineBuilder.build_pipeline(_device, renderer->_defaultRenderPass);
-
 	//deleting all of the vulkan shaders
-	vkDestroyShaderModule(_device, normalMeshShader, nullptr);
 	vkDestroyShaderModule(_device, texturedMeshShader, nullptr);
 	vkDestroyShaderModule(_device, colorMeshShader, nullptr);
-	vkDestroyShaderModule(_device, meshNormalVertShader, nullptr);
 	vkDestroyShaderModule(_device, meshVertShader, nullptr);
 
 	//adding the pipelines to the deletion queue
 	_mainDeletionQueue.push_function([=]() {
 		vkDestroyPipeline(_device, _meshPipeline, nullptr);
 		vkDestroyPipeline(_device, texPipeline, nullptr);
-		vkDestroyPipeline(_device, _normalsPipeline, nullptr);
 
 		vkDestroyPipelineLayout(_device, _trianglePipelineLayout, nullptr);
 		vkDestroyPipelineLayout(_device, _meshPipelineLayout, nullptr);
@@ -1442,60 +916,6 @@ void VulkanEngine::init_deferred_pipelines()
 		});
 }
 
-void VulkanEngine::record_deferred_command_buffer(RenderObject* first, int count)
-{
-	//FIRST PASS
-
-	VkCommandBufferBeginInfo deferredCmdBeginInfo = vkinit::command_buffer_begin_info(VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
-
-	VK_CHECK(vkBeginCommandBuffer(_deferredCommandBuffer, &deferredCmdBeginInfo));
-
-	VkClearValue first_clearValue;
-	first_clearValue.color = { {0.0f, 0.0f, 0.0f, 1.0f} };
-
-	VkClearValue first_depthClear;
-	first_depthClear.depthStencil.depth = 1.0f;
-
-	VkRenderPassBeginInfo rpInfo = vkinit::renderpass_begin_info(_deferredPass, _windowExtent, _offscreen_framebuffer);
-
-	std::array<VkClearValue, 4> first_clearValues = { first_clearValue, first_clearValue, first_clearValue, first_depthClear };
-
-	rpInfo.clearValueCount = static_cast<uint32_t>(first_clearValues.size());
-	rpInfo.pClearValues = first_clearValues.data();
-
-	vkCmdBeginRenderPass(_deferredCommandBuffer, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-	vkCmdBindPipeline(_deferredCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _deferredPipeline);
-
-	Mesh* lastMesh = nullptr;
-	for (int i = 0; i < count; i++)
-	{
-		RenderObject& object = first[i];
-
-		vkCmdBindDescriptorSets(_deferredCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _deferredPipelineLayout, 0, 1, &_camDescriptorSet, 0, nullptr);
-
-		vkCmdBindDescriptorSets(_deferredCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _deferredPipelineLayout, 1, 1, &_objectDescriptorSet, 0, nullptr);
-
-		if (object.material->textureSet != VK_NULL_HANDLE)
-		{
-			vkCmdBindDescriptorSets(_deferredCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _deferredPipelineLayout, 2, 1, &object.material->textureSet, 0, nullptr);
-		}
-
-		if (object.mesh != lastMesh)
-		{
-			VkDeviceSize offset = 0;
-			vkCmdBindVertexBuffers(_deferredCommandBuffer, 0, 1, &object.mesh->_vertexBuffer._buffer, &offset);
-			vkCmdBindIndexBuffer(_deferredCommandBuffer, object.mesh->_indexBuffer._buffer, 0, VK_INDEX_TYPE_UINT32);
-		}
-
-		//vkCmdDraw(_deferredCommandBuffer, object.mesh->_vertices.size(), 1, 0, i);
-		vkCmdDrawIndexed(_deferredCommandBuffer, static_cast<uint32_t>(object.mesh->_indices.size()), 1, 0, 0, i);
-	}
-
-	vkCmdEndRenderPass(_deferredCommandBuffer);
-
-	VK_CHECK(vkEndCommandBuffer(_deferredCommandBuffer));
-}
 
 void VulkanEngine::init_scene()
 {
@@ -1763,106 +1183,6 @@ void VulkanEngine::update_descriptors_forward(RenderObject* first, int count)
 	}
 
 	vmaUnmapMemory(_allocator, get_current_frame().objectBuffer._allocation);
-}
-
-void VulkanEngine::draw_objects(VkCommandBuffer cmd, RenderObject* first, int count)
-{
-	int frameIndex = _frameNumber % FRAME_OVERLAP;
-
-	Mesh* lastMesh = nullptr;
-	Material* lastMaterial = nullptr;
-	for(int i = 0; i < count; i++)
-	{
-		RenderObject& object = first[i];
-
-		if(_pipelineSelected == 0)
-		{
-			if (object.material != lastMaterial)
-			{
-				vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, object.material->pipeline);
-				lastMaterial = object.material;
-
-				uint32_t uniform_offset = pad_uniform_buffer_size(sizeof(GPUSceneData) * frameIndex);
-				vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, object.material->pipelineLayout, 0, 1, &get_current_frame().globalDescriptor, 1, &uniform_offset);
-
-				vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, object.material->pipelineLayout, 1, 1, &get_current_frame().objectDescriptor, 0, nullptr);
-
-				if (object.material->textureSet != VK_NULL_HANDLE)
-				{
-					vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, object.material->pipelineLayout, 2, 1, &object.material->textureSet, 0, nullptr);
-				}
-			}
-		}
-		else
-		{
-			vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _normalsPipeline);
-
-			uint32_t uniform_offset = pad_uniform_buffer_size(sizeof(GPUSceneData) * frameIndex);
-			vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _normalPipelineLayout, 0, 1, &get_current_frame().globalDescriptor, 1, &uniform_offset);
-		
-			vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _normalPipelineLayout, 1, 1, &get_current_frame().objectDescriptor, 0, nullptr);
-		}
-
-		if(object.mesh != lastMesh)
-		{
-			VkDeviceSize offset = 0;
-			vkCmdBindVertexBuffers(cmd, 0, 1, &object.mesh->_vertexBuffer._buffer, &offset);
-			vkCmdBindIndexBuffer(cmd, object.mesh->_indexBuffer._buffer, 0, VK_INDEX_TYPE_UINT16);
-		}
-
-		vkCmdDrawIndexed(cmd, static_cast<uint32_t>(object.mesh->_indices.size()), 1, 0, 0, 0);
-
-		//vkCmdDraw(cmd, object.mesh->_vertices.size(), 1, 0, i);
-	}
-}
-
-void VulkanEngine::draw_objects_deferred(VkCommandBuffer cmd, int imageIndex)
-{
-	//SECOND PASS
-	//VK_CHECK(vkResetCommandBuffer(get_current_frame()._mainCommandBuffer, 0));
-
-	VK_CHECK(vkResetCommandBuffer(cmd, 0));
-
-	VkCommandBufferBeginInfo cmdBeginInfo = vkinit::command_buffer_begin_info(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
-
-	VK_CHECK(vkBeginCommandBuffer(cmd, &cmdBeginInfo));
-
-	VkClearValue clearValue;
-	float flash = abs(sin(_frameNumber / 120.0f));
-	clearValue.color = { {0.0f, 0.0f, flash, 1.0f} };
-
-	VkClearValue depthClear;
-	depthClear.depthStencil.depth = 1.0f;
-
-	VkRenderPassBeginInfo light_rpInfo = vkinit::renderpass_begin_info(_renderPass, _windowExtent, _framebuffers[imageIndex]);
-
-	std::array<VkClearValue, 2> clearValues = { clearValue, depthClear };
-
-	light_rpInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
-	light_rpInfo.pClearValues = clearValues.data();
-
-	vkCmdBeginRenderPass(cmd, &light_rpInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-	vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _lightPipeline);
-
-	int frameIndex = _frameNumber % FRAME_OVERLAP;
-	uint32_t uniform_offset = pad_uniform_buffer_size(sizeof(GPUSceneData) * frameIndex);
-	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _lightPipelineLayout, 0, 1, &get_current_frame().globalDescriptor, 1, &uniform_offset);
-
-	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _lightPipelineLayout, 1, 1, &_deferred_descriptor_set, 0, nullptr);
-
-	//deferred quad
-	VkDeviceSize offset = 0;
-	vkCmdBindVertexBuffers(cmd, 0, 1, &deferred_quad._vertexBuffer._buffer, &offset);
-	vkCmdBindIndexBuffer(cmd, deferred_quad._indexBuffer._buffer, 0, VK_INDEX_TYPE_UINT32);
-
-	vkCmdDrawIndexed(cmd, static_cast<uint32_t>(deferred_quad._indices.size()), 1, 0, 0, 0);
-
-	ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
-
-	vkCmdEndRenderPass(cmd);
-
-	VK_CHECK(vkEndCommandBuffer(cmd));
 }
 
 AllocatedBuffer VulkanEngine::create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage)

@@ -146,26 +146,13 @@ public:
 
 	FrameData _frames[FRAME_OVERLAP];
 
-	//Render Passes
-	VkRenderPass _renderPass;
-	VkRenderPass _deferredPass;
-
-	VkCommandPool _deferredCommandPool;
-	VkCommandBuffer _deferredCommandBuffer;
-
-	//Framebuffers
-	std::vector<VkFramebuffer> _framebuffers;
-	VkFramebuffer _offscreen_framebuffer;
-
 	//Pipelines
 	VkPipeline _meshPipeline;
-	VkPipeline _normalsPipeline;
 	VkPipeline _deferredPipeline;
 	VkPipeline _lightPipeline;
 
 	VkPipelineLayout _trianglePipelineLayout;
 	VkPipelineLayout _meshPipelineLayout;
-	VkPipelineLayout _normalPipelineLayout;
 	VkPipelineLayout _deferredPipelineLayout;
 	VkPipelineLayout _lightPipelineLayout;
 
@@ -176,26 +163,6 @@ public:
 	DeletionQueue _mainDeletionQueue;
 
 	VmaAllocator _allocator;
-
-	//Depth Buffer
-	VkImageView _depthImageView;
-	AllocatedImage _depthImage;
-	VkFormat _depthFormat;
-
-	//Deferred Attachments
-	VkImageView _positionImageView;
-	AllocatedImage _positionImage;
-	VkFormat _positionFormat;
-
-	VkImageView _normalImageView;
-	AllocatedImage _normalImage;
-	VkFormat _normalFormat;
-
-	VkImageView _albedoImageView;
-	AllocatedImage _albedoImage;
-	VkFormat _albedoFormat;
-
-	Mesh deferred_quad;
 
 	// Descriptors
 	VkDescriptorPool _descriptorPool;
@@ -210,10 +177,6 @@ public:
 	VkDescriptorSet _camDescriptorSet;
 	VkDescriptorSet _objectDescriptorSet;
 
-	VkSemaphore _offscreenSemaphore;
-
-	VkSampler _defaultSampler;
-
 	UploadContext _uploadContext;
 
 	//initializes everything in the engine
@@ -221,9 +184,6 @@ public:
 
 	//shuts down the engine
 	void cleanup();
-
-	//draw loop
-	void draw();
 
 	//run main loop
 	void run();
@@ -248,17 +208,9 @@ private:
 
 	void init_imgui();
 
-	void init_deferred_attachments(); //initializes gbuffer attachments except depth
-
 	void init_commands();
 
-	void init_default_renderpass();
-
-	void init_offscreen_framebuffer();
-
-	void init_deferred_renderpass();
-
-	void init_framebuffers();
+	void init_descriptor_layouts();
 
 	void init_sync_structures();
 
@@ -267,8 +219,6 @@ private:
 	void init_pipelines();
 
 	void init_deferred_pipelines();
-
-	void record_deferred_command_buffer(RenderObject* first, int count);
 
 	void init_scene();
 
@@ -284,14 +234,6 @@ private:
 	Material* get_material(const std::string& name);
 
 	Mesh* get_mesh(const std::string& name);
-
-	void draw_objects(VkCommandBuffer cmd, RenderObject* first, int count);
-
-	void draw_objects_deferred(VkCommandBuffer cmd, int imageIndex);
-
-	// Other
-
-
 };
 
 class PipelineBuilder {
