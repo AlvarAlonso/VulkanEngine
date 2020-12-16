@@ -23,15 +23,22 @@ void Renderer::init_renderer()
 	create_depth_buffer();
 	create_deferred_attachments();
 	init_commands();
-	init_framebuffers();
 	init_sync_structures();
 	init_default_render_pass();
 	init_deferred_render_pass();
-	record_deferred_command_buffers(VulkanEngine::cinstance->_renderables.data(), VulkanEngine::cinstance->_renderables.size());
+	init_framebuffers();
+
+	deferred_quad.create_quad();
 }
 
 void Renderer::draw_scene()
 {
+	if(!isDeferredCommandInit)
+	{
+		record_deferred_command_buffers(VulkanEngine::cinstance->_renderables.data(), VulkanEngine::cinstance->_renderables.size());
+		isDeferredCommandInit = true;
+	}
+
 	ImGui::Render();
 	
 	if(_renderMode == RENDER_MODE_FORWARD)
@@ -66,6 +73,8 @@ void Renderer::create_depth_buffer()
 
 	VK_CHECK(vkCreateImageView(VulkanEngine::cinstance->_device, &dview_info, nullptr, &_depthImageView));
 
+
+	//Create Sampler
 	VkSamplerCreateInfo samplerInfo = vkinit::sampler_create_info(VK_FILTER_NEAREST);
 
 	vkCreateSampler(VulkanEngine::cinstance->_device, &samplerInfo, nullptr, &_defaultSampler);
@@ -452,23 +461,23 @@ void Renderer::record_deferred_command_buffers(RenderObject* first, int count)
 	VK_CHECK(vkEndCommandBuffer(_deferredCommandBuffer));
 }
 
-sFrameData& Renderer::get_current_frame()
+int Renderer::get_current_frame_index()
 {
-	return _frames[_frameNumber % FRAME_OVERLAP];
+	return VulkanEngine::cinstance->_frameNumber % FRAME_OVERLAP;
 }
 
 void Renderer::render_forward()
 {
-	VK_CHECK(vkWaitForFences(VulkanEngine::cinstance->_device, 1, &get_current_frame()._renderFence, true, UINT64_MAX));
-	VK_CHECK(vkResetFences(VulkanEngine::cinstance->_device, 1, &get_current_frame()._renderFence));
+	VK_CHECK(vkWaitForFences(VulkanEngine::cinstance->_device, 1, &_frames[get_current_frame_index()]._renderFence, true, UINT64_MAX));
+	VK_CHECK(vkResetFences(VulkanEngine::cinstance->_device, 1, &_frames[get_current_frame_index()]._renderFence));
 
 	//request image from the swapchain
 	uint32_t swapchainImageIndex;
-	VK_CHECK(vkAcquireNextImageKHR(VulkanEngine::cinstance->_device, VulkanEngine::cinstance->_swapchain, 0, get_current_frame()._presentSemaphore, nullptr, &swapchainImageIndex));
+	VK_CHECK(vkAcquireNextImageKHR(VulkanEngine::cinstance->_device, VulkanEngine::cinstance->_swapchain, 0, _frames[get_current_frame_index()]._presentSemaphore, nullptr, &swapchainImageIndex));
 
-	VK_CHECK(vkResetCommandBuffer(get_current_frame()._mainCommandBuffer, 0));
+	VK_CHECK(vkResetCommandBuffer(_frames[get_current_frame_index()]._mainCommandBuffer, 0));
 
-	VkCommandBuffer cmd = get_current_frame()._mainCommandBuffer;
+	VkCommandBuffer cmd = _frames[get_current_frame_index()]._mainCommandBuffer;
 
 	VkCommandBufferBeginInfo cmdBeginInfo = vkinit::command_buffer_begin_info(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
 
@@ -502,11 +511,11 @@ void Renderer::render_forward()
 
 	submit.pWaitDstStageMask = &waitStage;
 	submit.waitSemaphoreCount = 1;
-	submit.pWaitSemaphores = &get_current_frame()._presentSemaphore;
+	submit.pWaitSemaphores = &_frames[get_current_frame_index()]._presentSemaphore;
 	submit.signalSemaphoreCount = 1;
-	submit.pSignalSemaphores = &get_current_frame()._renderSemaphore;
+	submit.pSignalSemaphores = &_frames[get_current_frame_index()]._renderSemaphore;
 
-	VK_CHECK(vkQueueSubmit(_graphicsQueue, 1, &submit, get_current_frame()._renderFence));
+	VK_CHECK(vkQueueSubmit(_graphicsQueue, 1, &submit, _frames[get_current_frame_index()]._renderFence));
 
 	VkPresentInfoKHR presentInfo = {};
 	presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
@@ -515,27 +524,27 @@ void Renderer::render_forward()
 	presentInfo.pSwapchains = &VulkanEngine::cinstance->_swapchain;
 	presentInfo.swapchainCount = 1;
 
-	presentInfo.pWaitSemaphores = &get_current_frame()._renderSemaphore;
+	presentInfo.pWaitSemaphores = &_frames[get_current_frame_index()]._renderSemaphore;
 	presentInfo.waitSemaphoreCount = 1;
 
 	presentInfo.pImageIndices = &swapchainImageIndex;
 
 	VK_CHECK(vkQueuePresentKHR(_graphicsQueue, &presentInfo));
 
-	_frameNumber++;
+	VulkanEngine::cinstance->_frameNumber++;
 }
 
 void Renderer::render_deferred()
 {
-	VK_CHECK(vkWaitForFences(VulkanEngine::cinstance->_device, 1, &get_current_frame()._renderFence, true, UINT64_MAX));
-	VK_CHECK(vkResetFences(VulkanEngine::cinstance->_device, 1, &get_current_frame()._renderFence));
+	VK_CHECK(vkWaitForFences(VulkanEngine::cinstance->_device, 1, &_frames[get_current_frame_index()]._renderFence, true, UINT64_MAX));
+	VK_CHECK(vkResetFences(VulkanEngine::cinstance->_device, 1, &_frames[get_current_frame_index()]._renderFence));
 
 	//request image from the swapchain
 	uint32_t swapchainImageIndex;
 	//VK_CHECK(vkAcquireNextImageKHR(_device, _swapchain, 0, get_current_frame()._presentSemaphore, nullptr, &swapchainImageIndex));
-	VkResult result = vkAcquireNextImageKHR(VulkanEngine::cinstance->_device, VulkanEngine::cinstance->_swapchain, 0, get_current_frame()._presentSemaphore, nullptr, &swapchainImageIndex);
+	VkResult result = vkAcquireNextImageKHR(VulkanEngine::cinstance->_device, VulkanEngine::cinstance->_swapchain, 0, _frames[get_current_frame_index()]._presentSemaphore, nullptr, &swapchainImageIndex);
 
-	VkCommandBuffer cmd = get_current_frame()._mainCommandBuffer;
+	VkCommandBuffer cmd = _frames[get_current_frame_index()]._mainCommandBuffer;
 
 	VulkanEngine::cinstance->update_descriptors(VulkanEngine::cinstance->_renderables.data(), VulkanEngine::cinstance->_renderables.size());
 
@@ -547,13 +556,13 @@ void Renderer::render_deferred()
 
 	offscreenSubmit.pWaitDstStageMask = &offscreenWaitStage;
 	offscreenSubmit.waitSemaphoreCount = 1;
-	offscreenSubmit.pWaitSemaphores = &get_current_frame()._presentSemaphore;
+	offscreenSubmit.pWaitSemaphores = &_frames[get_current_frame_index()]._presentSemaphore;
 	offscreenSubmit.signalSemaphoreCount = 1;
 	offscreenSubmit.pSignalSemaphores = &_offscreenSemaphore;
 
 	VK_CHECK(vkQueueSubmit(_graphicsQueue, 1, &offscreenSubmit, nullptr));
 
-	VkSubmitInfo renderSubmit = vkinit::submit_info(&get_current_frame()._mainCommandBuffer);
+	VkSubmitInfo renderSubmit = vkinit::submit_info(&_frames[get_current_frame_index()]._mainCommandBuffer);
 
 	VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 
@@ -561,9 +570,9 @@ void Renderer::render_deferred()
 	renderSubmit.waitSemaphoreCount = 1;
 	renderSubmit.pWaitSemaphores = &_offscreenSemaphore;
 	renderSubmit.signalSemaphoreCount = 1;
-	renderSubmit.pSignalSemaphores = &get_current_frame()._renderSemaphore;
+	renderSubmit.pSignalSemaphores = &_frames[get_current_frame_index()]._renderSemaphore;
 
-	VK_CHECK(vkQueueSubmit(_graphicsQueue, 1, &renderSubmit, get_current_frame()._renderFence));
+	VK_CHECK(vkQueueSubmit(_graphicsQueue, 1, &renderSubmit, _frames[get_current_frame_index()]._renderFence));
 
 	VkPresentInfoKHR presentInfo = {};
 	presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
@@ -572,14 +581,14 @@ void Renderer::render_deferred()
 	presentInfo.pSwapchains = &VulkanEngine::cinstance->_swapchain;
 	presentInfo.swapchainCount = 1;
 
-	presentInfo.pWaitSemaphores = &get_current_frame()._renderSemaphore;
+	presentInfo.pWaitSemaphores = &_frames[get_current_frame_index()]._renderSemaphore;
 	presentInfo.waitSemaphoreCount = 1;
 
 	presentInfo.pImageIndices = &swapchainImageIndex;
 
 	VK_CHECK(vkQueuePresentKHR(_graphicsQueue, &presentInfo));
 
-	_frameNumber++;
+	VulkanEngine::cinstance->_frameNumber++;
 }
 
 void GRAPHICS::Renderer::draw_forward(VkCommandBuffer cmd, RenderObject* first, int count)
@@ -598,9 +607,9 @@ void GRAPHICS::Renderer::draw_forward(VkCommandBuffer cmd, RenderObject* first, 
 			lastMaterial = object.material;
 
 			uint32_t uniform_offset = VulkanEngine::cinstance->pad_uniform_buffer_size(sizeof(GPUSceneData) * frameIndex);
-			vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, object.material->pipelineLayout, 0, 1, &get_current_frame().globalDescriptor, 1, &uniform_offset);
+			vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, object.material->pipelineLayout, 0, 1, &VulkanEngine::cinstance->_frames[get_current_frame_index()].globalDescriptor, 1, &uniform_offset);
 
-			vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, object.material->pipelineLayout, 1, 1, &get_current_frame().objectDescriptor, 0, nullptr);
+			vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, object.material->pipelineLayout, 1, 1, &VulkanEngine::cinstance->_frames[get_current_frame_index()].objectDescriptor, 0, nullptr);
 
 			if (object.material->textureSet != VK_NULL_HANDLE)
 			{
@@ -649,7 +658,7 @@ void GRAPHICS::Renderer::draw_deferred(VkCommandBuffer cmd, int imageIndex)
 
 	int frameIndex = _frameNumber % FRAME_OVERLAP;
 	uint32_t uniform_offset = VulkanEngine::cinstance->pad_uniform_buffer_size(sizeof(GPUSceneData) * frameIndex);
-	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, VulkanEngine::cinstance->_lightPipelineLayout, 0, 1, &get_current_frame().globalDescriptor, 1, &uniform_offset);
+	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, VulkanEngine::cinstance->_lightPipelineLayout, 0, 1, &VulkanEngine::cinstance->_frames[get_current_frame_index()].globalDescriptor, 1, &uniform_offset);
 
 	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, VulkanEngine::cinstance->_lightPipelineLayout, 1, 1, &VulkanEngine::cinstance->_deferred_descriptor_set, 0, nullptr);
 

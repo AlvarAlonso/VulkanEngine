@@ -44,14 +44,6 @@ namespace GRAPHICS
 		VkRenderPass _defaultRenderPass;
 		VkRenderPass _deferredRenderPass;
 
-	private:
-
-		int _frameNumber{ 0 };
-
-		//Queues
-		VkQueue _graphicsQueue;
-		uint32_t _graphicsQueueFamily;
-
 		//Depth Buffer
 		VkImageView _depthImageView;
 		AllocatedImage _depthImage;
@@ -86,6 +78,16 @@ namespace GRAPHICS
 
 		VkSampler _defaultSampler;
 
+	private:
+
+		int _frameNumber{ 0 };
+
+		bool isDeferredCommandInit = false;
+
+		//Queues
+		VkQueue _graphicsQueue;
+		uint32_t _graphicsQueueFamily;
+
 		//init renderer structures and attachments
 
 		void create_depth_buffer();
@@ -107,7 +109,7 @@ namespace GRAPHICS
 		void record_deferred_command_buffers(RenderObject* first, int count);
 
 		//support functions
-		sFrameData& get_current_frame();
+		int get_current_frame_index();
 		
 		//draw functions
 		void render_forward();

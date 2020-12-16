@@ -51,7 +51,7 @@ void VulkanEngine::init()
 
 	init_commands();
 
-	init_descriptors();
+	init_sync_structures();
 
 	renderer = new GRAPHICS::Renderer();
 	renderer->init_renderer();
@@ -66,7 +66,7 @@ void VulkanEngine::init()
 
 	//init_framebuffers();
 
-	init_sync_structures();
+	init_descriptors();
 
 	init_pipelines();
 
@@ -78,7 +78,7 @@ void VulkanEngine::init()
 
 	init_scene();
 
-	record_deferred_command_buffer(_renderables.data(), _renderables.size());
+	//record_deferred_command_buffer(_renderables.data(), _renderables.size());
 
 	init_imgui();
 
@@ -538,7 +538,7 @@ void VulkanEngine::init_imgui()
 	init_info.MinImageCount = 3;
 	init_info.ImageCount = 3;
 
-	ImGui_ImplVulkan_Init(&init_info, _renderPass);
+	ImGui_ImplVulkan_Init(&init_info, renderer->_defaultRenderPass);
 
 	//execute a gpu command to upload imgui font textures
 	immediate_submit([&](VkCommandBuffer cmd) {
@@ -1065,18 +1065,18 @@ void VulkanEngine::init_descriptors()
 
 
 	VkDescriptorImageInfo position_descriptor_image;
-	position_descriptor_image.sampler = _defaultSampler;
-	position_descriptor_image.imageView = _positionImageView;
+	position_descriptor_image.sampler = renderer->_defaultSampler;
+	position_descriptor_image.imageView = renderer->_positionImageView;
 	position_descriptor_image.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
 	VkDescriptorImageInfo normal_descriptor_image;
-	normal_descriptor_image.sampler = _defaultSampler;
-	normal_descriptor_image.imageView = _normalImageView;
+	normal_descriptor_image.sampler = renderer->_defaultSampler;
+	normal_descriptor_image.imageView = renderer->_normalImageView;
 	normal_descriptor_image.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
 	VkDescriptorImageInfo albedo_descriptor_image;
-	albedo_descriptor_image.sampler = _defaultSampler;
-	albedo_descriptor_image.imageView = _albedoImageView;
+	albedo_descriptor_image.sampler = renderer->_defaultSampler;
+	albedo_descriptor_image.imageView = renderer->_albedoImageView;
 	albedo_descriptor_image.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
 	VkWriteDescriptorSet position_texture = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, _deferred_descriptor_set, &position_descriptor_image, 0);
@@ -1087,6 +1087,7 @@ void VulkanEngine::init_descriptors()
 
 	vkUpdateDescriptorSets(_device, static_cast<uint32_t>(setWrites.size()), setWrites.data(), 0, nullptr);
 
+	//cam buffer
 	_camBuffer = create_buffer(sizeof(GPUCameraData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 
 	VkDescriptorSetAllocateInfo cameraSetAllocInfo = {};
@@ -1552,7 +1553,7 @@ void VulkanEngine::init_scene()
 
 	//write to the descriptor set so that it points to our empire_diffuse texture
 	VkDescriptorImageInfo imageBufferInfo;
-	imageBufferInfo.sampler = _defaultSampler;
+	imageBufferInfo.sampler = renderer->_defaultSampler;
 	imageBufferInfo.imageView = _loadedTextures["empire_diffuse"].imageView;
 	imageBufferInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
@@ -1627,7 +1628,7 @@ void VulkanEngine::load_meshes()
 	_meshes["empire"] = lostEmpire;
 
 	//quad for deferred
-	deferred_quad.create_quad();
+	//deferred_quad.create_quad();
 }
 
 Material* VulkanEngine::create_material(VkPipeline pipeline, VkPipelineLayout layout, const std::string& name)
