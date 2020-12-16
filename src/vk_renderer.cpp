@@ -27,6 +27,7 @@ void Renderer::init_renderer()
 	init_default_render_pass();
 	init_deferred_render_pass();
 	init_framebuffers();
+	init_gbuffers_descriptors();
 
 	deferred_quad.create_quad();
 }
@@ -403,6 +404,68 @@ void Renderer::init_deferred_render_pass()
 		});
 }
 
+void GRAPHICS::Renderer::init_gbuffers_descriptors()
+{
+	VkDescriptorPoolSize pool_size = {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 10};
+
+	VkDescriptorPoolCreateInfo pool_info = {};
+	pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+	pool_info.flags = 0;
+	pool_info.maxSets = 10;
+	pool_info.poolSizeCount = 1;
+	pool_info.pPoolSizes = &pool_size;
+
+	vkCreateDescriptorPool(VulkanEngine::cinstance->_device, &pool_info, nullptr, &_gbuffersPool);
+
+	//gbuffers
+	VkDescriptorSetLayoutBinding position_bind = vkinit::descriptorset_layout_binding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 0);
+	VkDescriptorSetLayoutBinding normal_bind = vkinit::descriptorset_layout_binding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1);
+	VkDescriptorSetLayoutBinding albedo_bind = vkinit::descriptorset_layout_binding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 2);
+
+	std::array<VkDescriptorSetLayoutBinding, 3> deferred_set_layouts = { position_bind, normal_bind, albedo_bind };
+
+	VkDescriptorSetLayoutCreateInfo deferred_layout_info = {};
+	deferred_layout_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	deferred_layout_info.pNext = nullptr;
+	deferred_layout_info.flags = 0;
+	deferred_layout_info.bindingCount = static_cast<uint32_t>(deferred_set_layouts.size());
+	deferred_layout_info.pBindings = deferred_set_layouts.data();
+
+	VK_CHECK(vkCreateDescriptorSetLayout(VulkanEngine::cinstance->_device, &deferred_layout_info, nullptr, &_gbuffersSetLayout));
+
+	VkDescriptorSetAllocateInfo deferred_set_alloc = {};
+	deferred_set_alloc.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	deferred_set_alloc.pNext = nullptr;
+	deferred_set_alloc.descriptorPool = _gbuffersPool;
+	deferred_set_alloc.descriptorSetCount = 1;
+	deferred_set_alloc.pSetLayouts = &_gbuffersSetLayout;
+
+	vkAllocateDescriptorSets(VulkanEngine::cinstance->_device, &deferred_set_alloc, &_gbuffersDescriptorSet);
+
+	VkDescriptorImageInfo position_descriptor_image;
+	position_descriptor_image.sampler = _defaultSampler;
+	position_descriptor_image.imageView = _positionImageView;
+	position_descriptor_image.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+	VkDescriptorImageInfo normal_descriptor_image;
+	normal_descriptor_image.sampler = _defaultSampler;
+	normal_descriptor_image.imageView = _normalImageView;
+	normal_descriptor_image.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+	VkDescriptorImageInfo albedo_descriptor_image;
+	albedo_descriptor_image.sampler = _defaultSampler;
+	albedo_descriptor_image.imageView = _albedoImageView;
+	albedo_descriptor_image.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+	VkWriteDescriptorSet position_texture = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, _gbuffersDescriptorSet, &position_descriptor_image, 0);
+	VkWriteDescriptorSet normal_texture = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, _gbuffersDescriptorSet, &normal_descriptor_image, 1);
+	VkWriteDescriptorSet albedo_texture = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, _gbuffersDescriptorSet, &albedo_descriptor_image, 2);
+
+	std::array<VkWriteDescriptorSet, 3> setWrites = { position_texture, normal_texture, albedo_texture };
+
+	vkUpdateDescriptorSets(VulkanEngine::cinstance->_device, static_cast<uint32_t>(setWrites.size()), setWrites.data(), 0, nullptr);
+}
+
 void GRAPHICS::Renderer::create_pipelines()
 {
 	create_forward_pipelines();
@@ -662,7 +725,7 @@ void GRAPHICS::Renderer::draw_deferred(VkCommandBuffer cmd, int imageIndex)
 	uint32_t uniform_offset = VulkanEngine::cinstance->pad_uniform_buffer_size(sizeof(GPUSceneData) * frameIndex);
 	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, VulkanEngine::cinstance->_lightPipelineLayout, 0, 1, &VulkanEngine::cinstance->_frames[get_current_frame_index()].globalDescriptor, 1, &uniform_offset);
 
-	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, VulkanEngine::cinstance->_lightPipelineLayout, 1, 1, &VulkanEngine::cinstance->_deferred_descriptor_set, 0, nullptr);
+	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, VulkanEngine::cinstance->_lightPipelineLayout, 1, 1, &_gbuffersDescriptorSet, 0, nullptr);
 
 	//deferred quad
 	VkDeviceSize offset = 0;
@@ -867,7 +930,7 @@ void GRAPHICS::Renderer::create_deferred_pipelines()
 
 	VK_CHECK(vkCreatePipelineLayout(VulkanEngine::cinstance->_device, &layoutInfo, nullptr, &VulkanEngine::cinstance->_deferredPipelineLayout));
 
-	std::array<VkDescriptorSetLayout, 2> lightSetLayouts = { VulkanEngine::cinstance->_globalSetLayout, VulkanEngine::cinstance->_gbuffersSetLayout };
+	std::array<VkDescriptorSetLayout, 2> lightSetLayouts = { VulkanEngine::cinstance->_globalSetLayout, _gbuffersSetLayout };
 
 	layoutInfo.setLayoutCount = static_cast<uint32_t>(lightSetLayouts.size());
 	layoutInfo.pSetLayouts = lightSetLayouts.data();

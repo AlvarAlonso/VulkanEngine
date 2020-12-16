@@ -64,6 +64,10 @@ namespace GRAPHICS
 		AllocatedImage _albedoImage;
 		VkFormat _albedoFormat;
 
+		VkDescriptorPool _gbuffersPool;
+		VkDescriptorSetLayout _gbuffersSetLayout;
+		VkDescriptorSet _gbuffersDescriptorSet;
+
 		Mesh deferred_quad;
 
 		//Framebuffers
@@ -110,6 +114,8 @@ namespace GRAPHICS
 		void init_default_render_pass();
 
 		void init_deferred_render_pass();
+
+		void init_gbuffers_descriptors();
 
 		void record_deferred_command_buffers(RenderObject* first, int count);
 

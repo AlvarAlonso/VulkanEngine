@@ -167,10 +167,8 @@ public:
 	VkDescriptorSetLayout _objectSetLayout;
 	VkDescriptorSetLayout _singleTextureSetLayout;
 
-	VkDescriptorSetLayout _gbuffersSetLayout;
 	VkDescriptorSetLayout _camSetLayout;
 
-	VkDescriptorSet _deferred_descriptor_set;
 	VkDescriptorSet _camDescriptorSet;
 	VkDescriptorSet _objectDescriptorSet;
 

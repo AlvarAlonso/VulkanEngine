@@ -55,13 +55,12 @@ void VulkanEngine::init()
 
 	init_descriptor_set_layouts();
 
-	renderer = new GRAPHICS::Renderer();
-	renderer->init_renderer();
-
 	init_descriptor_set_pool();
 
 	init_descriptors();
 
+	renderer = new GRAPHICS::Renderer();
+	renderer->init_renderer();
 	renderer->create_pipelines();
 
 	load_images();
@@ -422,7 +421,6 @@ void VulkanEngine::init_descriptor_set_pool()
 		{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 10},
 		{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 10},
 		{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 10},
-		{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 10},
 		{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 10}
 	};
 
@@ -485,22 +483,6 @@ void VulkanEngine::init_descriptor_set_layouts()
 	set3Info.pBindings = &textureBind;
 
 	vkCreateDescriptorSetLayout(_device, &set3Info, nullptr, &_singleTextureSetLayout);
-
-	//gbuffers
-	VkDescriptorSetLayoutBinding position_bind = vkinit::descriptorset_layout_binding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 0);
-	VkDescriptorSetLayoutBinding normal_bind = vkinit::descriptorset_layout_binding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1);
-	VkDescriptorSetLayoutBinding albedo_bind = vkinit::descriptorset_layout_binding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 2);
-
-	std::array<VkDescriptorSetLayoutBinding, 3> deferred_set_layouts = { position_bind, normal_bind, albedo_bind };
-
-	VkDescriptorSetLayoutCreateInfo deferred_layout_info = {};
-	deferred_layout_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-	deferred_layout_info.pNext = nullptr;
-	deferred_layout_info.flags = 0;
-	deferred_layout_info.bindingCount = static_cast<uint32_t>(deferred_set_layouts.size());
-	deferred_layout_info.pBindings = deferred_set_layouts.data();
-
-	VK_CHECK(vkCreateDescriptorSetLayout(_device, &deferred_layout_info, nullptr, &_gbuffersSetLayout));
 
 	//DESCRIPTOR SET BUFFER CREATION
 	const size_t sceneParamBufferSize = FRAME_OVERLAP * pad_uniform_buffer_size(sizeof(GPUSceneData));
@@ -587,38 +569,6 @@ void VulkanEngine::init_descriptors()
 	VkWriteDescriptorSet objectWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _objectDescriptorSet, &objectBufferInfo, 0);
 
 	vkUpdateDescriptorSets(_device, 1, &objectWrite, 0, nullptr);
-
-	VkDescriptorSetAllocateInfo deferred_set_alloc = {};
-	deferred_set_alloc.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-	deferred_set_alloc.pNext = nullptr;
-	deferred_set_alloc.descriptorPool = _descriptorPool;
-	deferred_set_alloc.descriptorSetCount = 1;
-	deferred_set_alloc.pSetLayouts = &_gbuffersSetLayout;
-
-	vkAllocateDescriptorSets(_device, &deferred_set_alloc, &_deferred_descriptor_set);
-
-	VkDescriptorImageInfo position_descriptor_image;
-	position_descriptor_image.sampler = renderer->_defaultSampler;
-	position_descriptor_image.imageView = renderer->_positionImageView;
-	position_descriptor_image.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-	VkDescriptorImageInfo normal_descriptor_image;
-	normal_descriptor_image.sampler = renderer->_defaultSampler;
-	normal_descriptor_image.imageView = renderer->_normalImageView;
-	normal_descriptor_image.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-	VkDescriptorImageInfo albedo_descriptor_image;
-	albedo_descriptor_image.sampler = renderer->_defaultSampler;
-	albedo_descriptor_image.imageView = renderer->_albedoImageView;
-	albedo_descriptor_image.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-	VkWriteDescriptorSet position_texture = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, _deferred_descriptor_set, &position_descriptor_image, 0);
-	VkWriteDescriptorSet normal_texture = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, _deferred_descriptor_set, &normal_descriptor_image, 1);
-	VkWriteDescriptorSet albedo_texture = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, _deferred_descriptor_set, &albedo_descriptor_image, 2);
-
-	std::array<VkWriteDescriptorSet, 3> setWrites = { position_texture, normal_texture, albedo_texture };
-
-	vkUpdateDescriptorSets(_device, static_cast<uint32_t>(setWrites.size()), setWrites.data(), 0, nullptr);
 
 	VkDescriptorSetAllocateInfo cameraSetAllocInfo = {};
 	cameraSetAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -717,26 +667,6 @@ bool VulkanEngine::load_shader_module(const char* filePath, VkShaderModule* outS
 
 void VulkanEngine::load_meshes()
 {
-	/*
-	Mesh triangleMesh;
-	triangleMesh._vertices.resize(3);
-
-	triangleMesh._vertices[0].position = { 1.0f, 1.0f, 0.0f };
-	triangleMesh._vertices[1].position = { -1.0f, 1.0f, 0.0f };
-	triangleMesh._vertices[2].position = { 0.0f, -1.0f, 0.0f };
-
-	triangleMesh._vertices[0].normal = { 0.0f, 1.0f, 0.0f };
-	triangleMesh._vertices[1].normal = { 0.0f, 1.0f, 0.0f };
-	triangleMesh._vertices[2].normal = { 0.0f, 1.0f, 0.0f };
-	
-	triangleMesh._vertices[0].color = { 0.0f, 1.0f, 0.0f };
-	triangleMesh._vertices[1].color = { 0.0f, 1.0f, 0.0f };
-	triangleMesh._vertices[2].color = { 0.0f, 1.0f, 0.0f };
-	
-	triangleMesh._indices.resize(3);
-	
-	triangleMesh._indices = { 0, 1, 2 };
-	*/
 	Mesh monkeyMesh("../assets/monkey_smooth.obj");
 
 	Mesh lostEmpire("../assets/lost_empire.obj");
