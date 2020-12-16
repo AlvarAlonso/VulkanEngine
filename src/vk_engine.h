@@ -147,10 +147,6 @@ public:
 	FrameData _frames[FRAME_OVERLAP];
 
 	//Pipelines
-	VkPipeline _meshPipeline;
-	VkPipeline _deferredPipeline;
-	VkPipeline _lightPipeline;
-
 	VkPipelineLayout _trianglePipelineLayout;
 	VkPipelineLayout _meshPipelineLayout;
 	VkPipelineLayout _deferredPipelineLayout;
@@ -197,6 +193,11 @@ public:
 	void update_descriptors(RenderObject* first, int count);
 	void update_descriptors_forward(RenderObject* first, int count);
 	size_t pad_uniform_buffer_size(size_t originalSize);
+	bool load_shader_module(const char* filePath, VkShaderModule* outShaderModule);
+	Material* create_material(VkPipeline pipeline, VkPipelineLayout layout, const std::string& name);
+	Material* get_material(const std::string& name);
+
+	Mesh* get_mesh(const std::string& name);
 
 private:
 
@@ -222,32 +223,9 @@ private:
 
 	void init_scene();
 
-	bool load_shader_module(const char* filePath, VkShaderModule* outShaderModule);
-
 	void load_meshes();
 
 	// Assets
 
 	void upload_mesh(Mesh& mesh);
-
-	Material* create_material(VkPipeline pipeline, VkPipelineLayout layout, const std::string& name);
-	Material* get_material(const std::string& name);
-
-	Mesh* get_mesh(const std::string& name);
-};
-
-class PipelineBuilder {
-public:
-	std::vector<VkPipelineShaderStageCreateInfo> _shaderStages;
-	VkPipelineVertexInputStateCreateInfo _vertexInputInfo;
-	VkPipelineInputAssemblyStateCreateInfo _inputAssembly;
-	VkViewport _viewport;
-	VkRect2D _scissor;
-	VkPipelineDepthStencilStateCreateInfo _depthStencil;
-	VkPipelineRasterizationStateCreateInfo _rasterizer;
-	std::vector<VkPipelineColorBlendAttachmentState> _colorBlendAttachment;
-	VkPipelineMultisampleStateCreateInfo _multisampling;
-	VkPipelineLayout _pipelineLayout;
-
-	VkPipeline build_pipeline(VkDevice device, VkRenderPass pass);
 };

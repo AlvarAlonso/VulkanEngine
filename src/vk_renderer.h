@@ -40,6 +40,8 @@ namespace GRAPHICS
 
 		void draw_scene();
 
+		void create_pipelines();
+
 		//Render passes
 		VkRenderPass _defaultRenderPass;
 		VkRenderPass _deferredRenderPass;
@@ -78,6 +80,11 @@ namespace GRAPHICS
 
 		VkSampler _defaultSampler;
 
+		//Pipelines
+		VkPipeline _forwardPipeline;
+		VkPipeline _deferredPipeline;
+		VkPipeline _lightPipeline;
+
 	private:
 
 		int _frameNumber{ 0 };
@@ -104,8 +111,6 @@ namespace GRAPHICS
 
 		void init_deferred_render_pass();
 
-		void record_forward_command_buffers();
-
 		void record_deferred_command_buffers(RenderObject* first, int count);
 
 		//support functions
@@ -119,6 +124,26 @@ namespace GRAPHICS
 		void draw_forward(VkCommandBuffer cmd, RenderObject* first, int count);
 
 		void draw_deferred(VkCommandBuffer cmd, int imageIndex);		
+
+
+		void create_forward_pipelines();
+
+		void create_deferred_pipelines();
 	};
 }
 
+class PipelineBuilder {
+public:
+	std::vector<VkPipelineShaderStageCreateInfo> _shaderStages;
+	VkPipelineVertexInputStateCreateInfo _vertexInputInfo;
+	VkPipelineInputAssemblyStateCreateInfo _inputAssembly;
+	VkViewport _viewport;
+	VkRect2D _scissor;
+	VkPipelineDepthStencilStateCreateInfo _depthStencil;
+	VkPipelineRasterizationStateCreateInfo _rasterizer;
+	std::vector<VkPipelineColorBlendAttachmentState> _colorBlendAttachment;
+	VkPipelineMultisampleStateCreateInfo _multisampling;
+	VkPipelineLayout _pipelineLayout;
+
+	VkPipeline build_pipeline(VkDevice device, VkRenderPass pass);
+};

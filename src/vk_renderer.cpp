@@ -403,8 +403,10 @@ void Renderer::init_deferred_render_pass()
 		});
 }
 
-void Renderer::record_forward_command_buffers()
+void GRAPHICS::Renderer::create_pipelines()
 {
+	create_forward_pipelines();
+	create_deferred_pipelines();
 }
 
 void Renderer::record_deferred_command_buffers(RenderObject* first, int count)
@@ -430,7 +432,7 @@ void Renderer::record_deferred_command_buffers(RenderObject* first, int count)
 
 	vkCmdBeginRenderPass(_deferredCommandBuffer, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-	vkCmdBindPipeline(_deferredCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, VulkanEngine::cinstance->_deferredPipeline);
+	vkCmdBindPipeline(_deferredCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _deferredPipeline);
 
 	Mesh* lastMesh = nullptr;
 	for (int i = 0; i < count; i++)
@@ -654,7 +656,7 @@ void GRAPHICS::Renderer::draw_deferred(VkCommandBuffer cmd, int imageIndex)
 
 	vkCmdBeginRenderPass(cmd, &light_rpInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-	vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, VulkanEngine::cinstance->_lightPipeline);
+	vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _lightPipeline);
 
 	int frameIndex = _frameNumber % FRAME_OVERLAP;
 	uint32_t uniform_offset = VulkanEngine::cinstance->pad_uniform_buffer_size(sizeof(GPUSceneData) * frameIndex);
@@ -674,4 +676,341 @@ void GRAPHICS::Renderer::draw_deferred(VkCommandBuffer cmd, int imageIndex)
 	vkCmdEndRenderPass(cmd);
 
 	VK_CHECK(vkEndCommandBuffer(cmd));
+}
+
+void GRAPHICS::Renderer::create_forward_pipelines()
+{
+	//FORWARD PIPELINES
+
+//default vertex shader for a mesh
+	VkShaderModule meshVertShader;
+	if (!VulkanEngine::cinstance->load_shader_module("../shaders/tri_mesh.vert.spv", &meshVertShader))
+	{
+		std::cout << "Error when building the triangle vertex shader module" << std::endl;
+	}
+	else {
+		std::cout << "Red Triangle vertex shader succesfully loaded" << std::endl;
+	}
+
+	//shader for default material
+	VkShaderModule colorMeshShader;
+	if (!VulkanEngine::cinstance->load_shader_module("../shaders/default_lit.frag.spv", &colorMeshShader))
+	{
+		std::cout << "Error when building the triangle fragment shader module" << std::endl;
+	}
+	else
+	{
+		std::cout << "Triangle fragment shader succesfully loaded" << std::endl;
+	}
+
+	//shader for textured material
+	VkShaderModule texturedMeshShader;
+	if (!VulkanEngine::cinstance->load_shader_module("../shaders/textured_lit.frag.spv", &texturedMeshShader))
+	{
+		std::cout << "Error when building the textured mesh shader" << std::endl;
+	}
+	else
+	{
+		std::cout << "Textured mesh shader succesfully loaded" << endl;
+	}
+
+	// Layouts
+
+	//mesh layout
+	VkPipelineLayoutCreateInfo mesh_pipeline_layout_info = vkinit::pipeline_layout_create_info();
+
+	VkPushConstantRange push_constant;
+	push_constant.offset = 0;
+	push_constant.size = sizeof(MeshPushConstants);
+	push_constant.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+	mesh_pipeline_layout_info.pPushConstantRanges = &push_constant;
+	mesh_pipeline_layout_info.pushConstantRangeCount = 1;
+
+	std::array<VkDescriptorSetLayout, 3> setLayouts = { VulkanEngine::cinstance->_globalSetLayout, VulkanEngine::cinstance->_objectSetLayout, VulkanEngine::cinstance->_singleTextureSetLayout };
+
+	mesh_pipeline_layout_info.setLayoutCount = static_cast<uint32_t>(setLayouts.size());
+	mesh_pipeline_layout_info.pSetLayouts = setLayouts.data();
+
+	VK_CHECK(vkCreatePipelineLayout(VulkanEngine::cinstance->_device, &mesh_pipeline_layout_info, nullptr, &VulkanEngine::cinstance->_meshPipelineLayout));
+
+	//PIPELINES
+	PipelineBuilder pipelineBuilder;
+
+	//color mesh pipeline
+
+	pipelineBuilder._vertexInputInfo = vkinit::vertex_input_state_create_info();
+	//connect the pipeline builder vertex input info to the one we get from Vertex
+	VertexInputDescription vertexDescription = Vertex::get_vertex_description();
+	pipelineBuilder._vertexInputInfo.pVertexAttributeDescriptions = vertexDescription.attributes.data();
+	pipelineBuilder._vertexInputInfo.vertexAttributeDescriptionCount = vertexDescription.attributes.size();
+
+	pipelineBuilder._vertexInputInfo.pVertexBindingDescriptions = vertexDescription.bindings.data();
+	pipelineBuilder._vertexInputInfo.vertexBindingDescriptionCount = vertexDescription.bindings.size();
+
+
+	pipelineBuilder._inputAssembly = vkinit::input_assembly_create_info(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+
+	pipelineBuilder._viewport.x = 0.0f;
+	pipelineBuilder._viewport.y = 0.0f;
+	pipelineBuilder._viewport.width = (float)VulkanEngine::cinstance->_windowExtent.width;
+	pipelineBuilder._viewport.height = (float)VulkanEngine::cinstance->_windowExtent.height;
+	pipelineBuilder._viewport.minDepth = 0.0f;
+	pipelineBuilder._viewport.maxDepth = 1.0f;
+
+	pipelineBuilder._scissor.offset = { 0, 0 };
+	pipelineBuilder._scissor.extent = VulkanEngine::cinstance->_windowExtent;
+
+	pipelineBuilder._depthStencil = vkinit::depth_stencil_create_info(true, true, VK_COMPARE_OP_LESS_OR_EQUAL);
+
+	pipelineBuilder._rasterizer = vkinit::rasterization_state_create_info(VK_POLYGON_MODE_FILL);
+	pipelineBuilder._multisampling = vkinit::multisampling_state_create_info();
+	pipelineBuilder._colorBlendAttachment.push_back(vkinit::color_blend_attachment_state());
+
+	//add shaders
+	pipelineBuilder._shaderStages.push_back(
+		vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT, meshVertShader));
+
+	//make sure that triangleFragShader is holding the compiled colored_triangle.frag
+	pipelineBuilder._shaderStages.push_back(
+		vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, colorMeshShader));
+
+	pipelineBuilder._pipelineLayout = VulkanEngine::cinstance->_meshPipelineLayout;
+
+	//build the mesh triangle pipeline
+	_forwardPipeline = pipelineBuilder.build_pipeline(VulkanEngine::cinstance->_device, _defaultRenderPass);
+
+	VulkanEngine::cinstance->create_material(_forwardPipeline, VulkanEngine::cinstance->_meshPipelineLayout, "defaultmesh");
+
+
+	//texture pipeline
+
+	pipelineBuilder._shaderStages.clear();
+	pipelineBuilder._shaderStages.push_back(
+		vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT, meshVertShader));
+
+	pipelineBuilder._shaderStages.push_back(
+		vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, texturedMeshShader));
+
+	VkPipeline texPipeline = pipelineBuilder.build_pipeline(VulkanEngine::cinstance->_device, _defaultRenderPass);
+	VulkanEngine::cinstance->create_material(texPipeline, VulkanEngine::cinstance->_meshPipelineLayout, "texturedmesh");
+
+	//deleting all of the vulkan shaders
+	vkDestroyShaderModule(VulkanEngine::cinstance->_device, texturedMeshShader, nullptr);
+	vkDestroyShaderModule(VulkanEngine::cinstance->_device, colorMeshShader, nullptr);
+	vkDestroyShaderModule(VulkanEngine::cinstance->_device, meshVertShader, nullptr);
+
+	//adding the pipelines to the deletion queue
+	VulkanEngine::cinstance->_mainDeletionQueue.push_function([=]() {
+		vkDestroyPipeline(VulkanEngine::cinstance->_device, _forwardPipeline, nullptr);
+		vkDestroyPipeline(VulkanEngine::cinstance->_device, texPipeline, nullptr);
+
+		vkDestroyPipelineLayout(VulkanEngine::cinstance->_device, VulkanEngine::cinstance->_meshPipelineLayout, nullptr);
+		});
+}
+
+void GRAPHICS::Renderer::create_deferred_pipelines()
+{
+	//DEFERRED PIPELINES
+
+	//SHADERS LOADING
+
+	VkShaderModule deferredVertex;
+	if (!VulkanEngine::cinstance->load_shader_module("../shaders/deferred.vert.spv", &deferredVertex))
+	{
+		std::cout << "Error when building the deferred vertex shader" << std::endl;
+	}
+	else
+	{
+		std::cout << "Deferred vertex shader succesfully loaded" << endl;
+	}
+
+	VkShaderModule deferredFrag;
+	if (!VulkanEngine::cinstance->load_shader_module("../shaders/deferred.frag.spv", &deferredFrag))
+	{
+		std::cout << "Error when building the deferred frag shader" << std::endl;
+	}
+	else
+	{
+		std::cout << "Frag vertex shader succesfully loaded" << endl;
+	}
+
+	VkShaderModule lightVertex;
+	if (!VulkanEngine::cinstance->load_shader_module("../shaders/light.vert.spv", &lightVertex))
+	{
+		std::cout << "Error when building the light vertex shader" << std::endl;
+	}
+	else
+	{
+		std::cout << "Light vertex shader succesfully loaded" << endl;
+	}
+
+	VkShaderModule lightFrag;
+	if (!VulkanEngine::cinstance->load_shader_module("../shaders/light.frag.spv", &lightFrag))
+	{
+		std::cout << "Error when building the light frag shader" << std::endl;
+	}
+	else
+	{
+		std::cout << "Light frag shader succesfully loaded" << endl;
+	}
+
+	//LAYOUTS
+	VkPipelineLayoutCreateInfo layoutInfo = vkinit::pipeline_layout_create_info();
+
+	std::array<VkDescriptorSetLayout, 3> deferredSetLayouts = { VulkanEngine::cinstance->_camSetLayout, VulkanEngine::cinstance->_objectSetLayout, VulkanEngine::cinstance->_singleTextureSetLayout };
+
+	layoutInfo.pushConstantRangeCount = 0;
+	layoutInfo.pPushConstantRanges = nullptr;
+	layoutInfo.setLayoutCount = static_cast<uint32_t>(deferredSetLayouts.size());
+	layoutInfo.pSetLayouts = deferredSetLayouts.data();
+
+	VK_CHECK(vkCreatePipelineLayout(VulkanEngine::cinstance->_device, &layoutInfo, nullptr, &VulkanEngine::cinstance->_deferredPipelineLayout));
+
+	std::array<VkDescriptorSetLayout, 2> lightSetLayouts = { VulkanEngine::cinstance->_globalSetLayout, VulkanEngine::cinstance->_gbuffersSetLayout };
+
+	layoutInfo.setLayoutCount = static_cast<uint32_t>(lightSetLayouts.size());
+	layoutInfo.pSetLayouts = lightSetLayouts.data();
+
+	VK_CHECK(vkCreatePipelineLayout(VulkanEngine::cinstance->_device, &layoutInfo, nullptr, &VulkanEngine::cinstance->_lightPipelineLayout));
+
+	//DEFERRED PIPELINE CREATION
+	PipelineBuilder pipelineBuilder;
+
+	//Deferred Vertex Info
+	pipelineBuilder._vertexInputInfo = vkinit::vertex_input_state_create_info();
+
+	VertexInputDescription vertexDescription = Vertex::get_vertex_description();
+	pipelineBuilder._vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertexDescription.attributes.size());
+	pipelineBuilder._vertexInputInfo.pVertexAttributeDescriptions = vertexDescription.attributes.data();
+	pipelineBuilder._vertexInputInfo.vertexBindingDescriptionCount = static_cast<uint32_t>(vertexDescription.bindings.size());
+	pipelineBuilder._vertexInputInfo.pVertexBindingDescriptions = vertexDescription.bindings.data();
+
+	//Deferred Assembly Info
+	pipelineBuilder._inputAssembly = vkinit::input_assembly_create_info(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+
+	//Viewport and Scissor
+	pipelineBuilder._viewport.x = 0.0f;
+	pipelineBuilder._viewport.y = 0.0f;
+	pipelineBuilder._viewport.width = (float)VulkanEngine::cinstance->_windowExtent.width;
+	pipelineBuilder._viewport.height = (float)VulkanEngine::cinstance->_windowExtent.height;
+	pipelineBuilder._viewport.minDepth = 0.0f;
+	pipelineBuilder._viewport.maxDepth = 1.0f;
+
+	pipelineBuilder._scissor.offset = { 0, 0 };
+	pipelineBuilder._scissor.extent = VulkanEngine::cinstance->_windowExtent;
+
+	//Deferred Depth Stencil
+	pipelineBuilder._depthStencil = vkinit::depth_stencil_create_info(true, true, VK_COMPARE_OP_LESS_OR_EQUAL);
+
+	//Deferred Rasterizer
+	pipelineBuilder._rasterizer = vkinit::rasterization_state_create_info(VK_POLYGON_MODE_FILL);
+
+	//Deferred Multisampling
+	pipelineBuilder._multisampling = vkinit::multisampling_state_create_info();
+
+	//Deferred Color Blend Attachment
+	pipelineBuilder._colorBlendAttachment.push_back(vkinit::color_blend_attachment_state());
+	pipelineBuilder._colorBlendAttachment.push_back(vkinit::color_blend_attachment_state());
+	pipelineBuilder._colorBlendAttachment.push_back(vkinit::color_blend_attachment_state());
+
+	//Deferred Shaders
+	pipelineBuilder._shaderStages.push_back(
+		vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT, deferredVertex));
+	pipelineBuilder._shaderStages.push_back(
+		vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, deferredFrag));
+
+	//Deferred Layout
+	pipelineBuilder._pipelineLayout = VulkanEngine::cinstance->_deferredPipelineLayout;
+
+	_deferredPipeline = pipelineBuilder.build_pipeline(VulkanEngine::cinstance->_device, _deferredRenderPass);
+
+	//LIGHT PIPELINE CREATION
+
+	//Light Depth Stencil
+	pipelineBuilder._depthStencil = vkinit::depth_stencil_create_info(false, false, VK_COMPARE_OP_ALWAYS);
+
+	//Deferred Color Blend Attachment
+	pipelineBuilder._colorBlendAttachment.clear();
+	pipelineBuilder._colorBlendAttachment.push_back(vkinit::color_blend_attachment_state());
+
+	//Light Shaders
+	pipelineBuilder._shaderStages.clear();
+	pipelineBuilder._shaderStages.push_back(
+		vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT, lightVertex));
+	pipelineBuilder._shaderStages.push_back(
+		vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, lightFrag));
+
+	//Light Layout
+	pipelineBuilder._pipelineLayout = VulkanEngine::cinstance->_lightPipelineLayout;
+
+	_lightPipeline = pipelineBuilder.build_pipeline(VulkanEngine::cinstance->_device, _defaultRenderPass);
+
+
+	//DELETIONS
+
+	vkDestroyShaderModule(VulkanEngine::cinstance->_device, lightFrag, nullptr);
+	vkDestroyShaderModule(VulkanEngine::cinstance->_device, lightVertex, nullptr);
+	vkDestroyShaderModule(VulkanEngine::cinstance->_device, deferredFrag, nullptr);
+	vkDestroyShaderModule(VulkanEngine::cinstance->_device, deferredVertex, nullptr);
+
+	VulkanEngine::cinstance->_mainDeletionQueue.push_function([=]() {
+		vkDestroyPipeline(VulkanEngine::cinstance->_device, _deferredPipeline, nullptr);
+		vkDestroyPipeline(VulkanEngine::cinstance->_device, _lightPipeline, nullptr);
+
+		vkDestroyPipelineLayout(VulkanEngine::cinstance->_device, VulkanEngine::cinstance->_deferredPipelineLayout, nullptr);
+		vkDestroyPipelineLayout(VulkanEngine::cinstance->_device, VulkanEngine::cinstance->_lightPipelineLayout, nullptr);
+		});
+}
+
+VkPipeline PipelineBuilder::build_pipeline(VkDevice device, VkRenderPass pass)
+{
+	VkPipelineViewportStateCreateInfo viewportState = {};
+	viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+	viewportState.pNext = nullptr;
+
+	viewportState.viewportCount = 1;
+	viewportState.pViewports = &_viewport;
+	viewportState.scissorCount = 1;
+	viewportState.pScissors = &_scissor;
+
+	VkPipelineColorBlendStateCreateInfo colorBlending = {};
+	colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+	colorBlending.pNext = nullptr;
+
+	colorBlending.logicOpEnable = VK_FALSE;
+	colorBlending.logicOp = VK_LOGIC_OP_COPY;
+	colorBlending.attachmentCount = static_cast<uint32_t>(_colorBlendAttachment.size());
+	colorBlending.pAttachments = _colorBlendAttachment.data();
+
+
+	VkGraphicsPipelineCreateInfo pipelineInfo = {};
+	pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+	pipelineInfo.pNext = nullptr;
+
+	pipelineInfo.stageCount = static_cast<uint32_t>(_shaderStages.size());
+	pipelineInfo.pStages = _shaderStages.data();
+	pipelineInfo.pVertexInputState = &_vertexInputInfo;
+	pipelineInfo.pInputAssemblyState = &_inputAssembly;
+	pipelineInfo.pViewportState = &viewportState;
+	pipelineInfo.pDepthStencilState = &_depthStencil;
+	pipelineInfo.pRasterizationState = &_rasterizer;
+	pipelineInfo.pMultisampleState = &_multisampling;
+	pipelineInfo.pColorBlendState = &colorBlending;
+	pipelineInfo.layout = _pipelineLayout;
+	pipelineInfo.renderPass = pass;
+	pipelineInfo.subpass = 0;
+	pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
+
+	VkPipeline newPipeline;
+	if (vkCreateGraphicsPipelines(
+		device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &newPipeline) != VK_SUCCESS)
+	{
+		std::cout << "failed to create pipeline\n";
+		return VK_NULL_HANDLE;
+	}
+	else
+	{
+		return newPipeline;
+	}
 }
