@@ -732,7 +732,7 @@ void GRAPHICS::Renderer::create_forward_pipelines()
 	mesh_pipeline_layout_info.setLayoutCount = static_cast<uint32_t>(setLayouts.size());
 	mesh_pipeline_layout_info.pSetLayouts = setLayouts.data();
 
-	VK_CHECK(vkCreatePipelineLayout(VulkanEngine::cinstance->_device, &mesh_pipeline_layout_info, nullptr, &VulkanEngine::cinstance->_meshPipelineLayout));
+	VK_CHECK(vkCreatePipelineLayout(VulkanEngine::cinstance->_device, &mesh_pipeline_layout_info, nullptr, &VulkanEngine::cinstance->_forwardPipelineLayout));
 
 	//PIPELINES
 	PipelineBuilder pipelineBuilder;
@@ -775,12 +775,12 @@ void GRAPHICS::Renderer::create_forward_pipelines()
 	pipelineBuilder._shaderStages.push_back(
 		vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, colorMeshShader));
 
-	pipelineBuilder._pipelineLayout = VulkanEngine::cinstance->_meshPipelineLayout;
+	pipelineBuilder._pipelineLayout = VulkanEngine::cinstance->_forwardPipelineLayout;
 
 	//build the mesh triangle pipeline
 	_forwardPipeline = pipelineBuilder.build_pipeline(VulkanEngine::cinstance->_device, _defaultRenderPass);
 
-	VulkanEngine::cinstance->create_material(_forwardPipeline, VulkanEngine::cinstance->_meshPipelineLayout, "defaultmesh");
+	VulkanEngine::cinstance->create_material(_forwardPipeline, VulkanEngine::cinstance->_forwardPipelineLayout, "defaultmesh");
 
 
 	//texture pipeline
@@ -793,7 +793,7 @@ void GRAPHICS::Renderer::create_forward_pipelines()
 		vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, texturedMeshShader));
 
 	VkPipeline texPipeline = pipelineBuilder.build_pipeline(VulkanEngine::cinstance->_device, _defaultRenderPass);
-	VulkanEngine::cinstance->create_material(texPipeline, VulkanEngine::cinstance->_meshPipelineLayout, "texturedmesh");
+	VulkanEngine::cinstance->create_material(texPipeline, VulkanEngine::cinstance->_forwardPipelineLayout, "texturedmesh");
 
 	//deleting all of the vulkan shaders
 	vkDestroyShaderModule(VulkanEngine::cinstance->_device, texturedMeshShader, nullptr);
@@ -805,7 +805,7 @@ void GRAPHICS::Renderer::create_forward_pipelines()
 		vkDestroyPipeline(VulkanEngine::cinstance->_device, _forwardPipeline, nullptr);
 		vkDestroyPipeline(VulkanEngine::cinstance->_device, texPipeline, nullptr);
 
-		vkDestroyPipelineLayout(VulkanEngine::cinstance->_device, VulkanEngine::cinstance->_meshPipelineLayout, nullptr);
+		vkDestroyPipelineLayout(VulkanEngine::cinstance->_device, VulkanEngine::cinstance->_forwardPipelineLayout, nullptr);
 		});
 }
 

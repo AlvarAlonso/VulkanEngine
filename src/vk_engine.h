@@ -14,6 +14,8 @@ const glm::vec3 camera_default_position = { 0.0f, 50.0f, -10.0f };
 
 constexpr unsigned int FRAME_OVERLAP = 2;
 
+const int MAX_OBJECTS = 10000;
+
 struct Texture {
 	AllocatedImage image;
 	VkImageView imageView;
@@ -147,8 +149,7 @@ public:
 	FrameData _frames[FRAME_OVERLAP];
 
 	//Pipelines
-	VkPipelineLayout _trianglePipelineLayout;
-	VkPipelineLayout _meshPipelineLayout;
+	VkPipelineLayout _forwardPipelineLayout;
 	VkPipelineLayout _deferredPipelineLayout;
 	VkPipelineLayout _lightPipelineLayout;
 
@@ -211,15 +212,13 @@ private:
 
 	void init_commands();
 
-	void init_descriptor_layouts();
-
 	void init_sync_structures();
 
+	void init_descriptor_set_pool();
+
+	void init_descriptor_set_layouts();
+
 	void init_descriptors();
-
-	void init_pipelines();
-
-	void init_deferred_pipelines();
 
 	void init_scene();
 

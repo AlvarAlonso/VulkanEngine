@@ -53,14 +53,12 @@ void VulkanEngine::init()
 
 	init_sync_structures();
 
-	init_descriptor_layouts();
+	init_descriptor_set_layouts();
 
 	renderer = new GRAPHICS::Renderer();
 	renderer->init_renderer();
 
-	//init_pipelines();
-
-	//init_deferred_pipelines();
+	init_descriptor_set_pool();
 
 	init_descriptors();
 
@@ -402,10 +400,6 @@ void VulkanEngine::init_commands()
 		});
 }
 
-void VulkanEngine::init_descriptor_layouts()
-{
-}
-
 void VulkanEngine::init_sync_structures()
 {
 	VkFenceCreateInfo uploadFenceCreateInfo = {};
@@ -420,7 +414,7 @@ void VulkanEngine::init_sync_structures()
 	});
 }
 
-void VulkanEngine::init_descriptors()
+void VulkanEngine::init_descriptor_set_pool()
 {
 	std::vector<VkDescriptorPoolSize> sizes = {
 		{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 10},
@@ -440,11 +434,10 @@ void VulkanEngine::init_descriptors()
 	pool_info.pPoolSizes = sizes.data();
 
 	vkCreateDescriptorPool(_device, &pool_info, nullptr, &_descriptorPool);
+}
 
-	const size_t sceneParamBufferSize = FRAME_OVERLAP * pad_uniform_buffer_size(sizeof(GPUSceneData));
-
-	_sceneParameterBuffer = create_buffer(sceneParamBufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
-
+void VulkanEngine::init_descriptor_set_layouts()
+{
 	VkDescriptorSetLayoutBinding cameraBind = vkinit::descriptorset_layout_binding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, 0);
 
 	VkDescriptorSetLayoutBinding sceneBind = vkinit::descriptorset_layout_binding(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 1);
@@ -464,7 +457,7 @@ void VulkanEngine::init_descriptors()
 	VkDescriptorSetLayoutCreateInfo camSetInfo = {};
 	camSetInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
 	camSetInfo.pNext = nullptr;
-	
+
 	camSetInfo.bindingCount = 1;
 	camSetInfo.flags = 0;
 	camSetInfo.pBindings = &cameraBind;
@@ -493,12 +486,44 @@ void VulkanEngine::init_descriptors()
 
 	vkCreateDescriptorSetLayout(_device, &set3Info, nullptr, &_singleTextureSetLayout);
 
-	const int MAX_OBJECTS = 10000;
+	//gbuffers
+	VkDescriptorSetLayoutBinding position_bind = vkinit::descriptorset_layout_binding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 0);
+	VkDescriptorSetLayoutBinding normal_bind = vkinit::descriptorset_layout_binding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1);
+	VkDescriptorSetLayoutBinding albedo_bind = vkinit::descriptorset_layout_binding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 2);
+
+	std::array<VkDescriptorSetLayoutBinding, 3> deferred_set_layouts = { position_bind, normal_bind, albedo_bind };
+
+	VkDescriptorSetLayoutCreateInfo deferred_layout_info = {};
+	deferred_layout_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	deferred_layout_info.pNext = nullptr;
+	deferred_layout_info.flags = 0;
+	deferred_layout_info.bindingCount = static_cast<uint32_t>(deferred_set_layouts.size());
+	deferred_layout_info.pBindings = deferred_set_layouts.data();
+
+	VK_CHECK(vkCreateDescriptorSetLayout(_device, &deferred_layout_info, nullptr, &_gbuffersSetLayout));
+
+	//DESCRIPTOR SET BUFFER CREATION
+	const size_t sceneParamBufferSize = FRAME_OVERLAP * pad_uniform_buffer_size(sizeof(GPUSceneData));
+
+	_sceneParameterBuffer = create_buffer(sceneParamBufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+
 	for(int i = 0; i < FRAME_OVERLAP; i++)
 	{
 		_frames[i].objectBuffer = create_buffer(sizeof(GPUObjectData) * MAX_OBJECTS, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 		_frames[i].cameraBuffer = create_buffer(sizeof(GPUCameraData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
-	
+
+		//cam buffer
+		_camBuffer = create_buffer(sizeof(GPUCameraData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+	}
+
+	//deferred
+	_objectBuffer = create_buffer(sizeof(GPUObjectData) * MAX_OBJECTS, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+}
+
+void VulkanEngine::init_descriptors()
+{
+	for(int i = 0; i < FRAME_OVERLAP; i++)
+	{
 		VkDescriptorSetAllocateInfo allocInfo = {};
 		allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
 		allocInfo.pNext = nullptr;
@@ -516,7 +541,6 @@ void VulkanEngine::init_descriptors()
 		objectSetAlloc.pSetLayouts = &_objectSetLayout;
 
 		vkAllocateDescriptorSets(_device, &objectSetAlloc, &_frames[i].objectDescriptor);
-	
 	
 		VkDescriptorBufferInfo cameraInfo = {};
 		cameraInfo.buffer = _frames[i].cameraBuffer._buffer;
@@ -545,7 +569,6 @@ void VulkanEngine::init_descriptors()
 	}
 
 	//DEFERRED DESCRIPTORS
-	_objectBuffer = create_buffer(sizeof(GPUObjectData) * MAX_OBJECTS, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 
 	VkDescriptorSetAllocateInfo objectSetAlloc = {};
 	objectSetAlloc.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -565,22 +588,6 @@ void VulkanEngine::init_descriptors()
 
 	vkUpdateDescriptorSets(_device, 1, &objectWrite, 0, nullptr);
 
-	//gbuffers
-	VkDescriptorSetLayoutBinding position_bind = vkinit::descriptorset_layout_binding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 0);
-	VkDescriptorSetLayoutBinding normal_bind = vkinit::descriptorset_layout_binding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1);
-	VkDescriptorSetLayoutBinding albedo_bind = vkinit::descriptorset_layout_binding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 2);
-
-	std::array<VkDescriptorSetLayoutBinding, 3> deferred_set_layouts = { position_bind, normal_bind, albedo_bind };
-
-	VkDescriptorSetLayoutCreateInfo deferred_layout_info = {};
-	deferred_layout_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-	deferred_layout_info.pNext = nullptr;
-	deferred_layout_info.flags = 0;
-	deferred_layout_info.bindingCount = static_cast<uint32_t>(deferred_set_layouts.size());
-	deferred_layout_info.pBindings = deferred_set_layouts.data();
-
-	VK_CHECK(vkCreateDescriptorSetLayout(_device, &deferred_layout_info, nullptr, &_gbuffersSetLayout));
-
 	VkDescriptorSetAllocateInfo deferred_set_alloc = {};
 	deferred_set_alloc.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
 	deferred_set_alloc.pNext = nullptr;
@@ -589,7 +596,6 @@ void VulkanEngine::init_descriptors()
 	deferred_set_alloc.pSetLayouts = &_gbuffersSetLayout;
 
 	vkAllocateDescriptorSets(_device, &deferred_set_alloc, &_deferred_descriptor_set);
-
 
 	VkDescriptorImageInfo position_descriptor_image;
 	position_descriptor_image.sampler = renderer->_defaultSampler;
@@ -614,9 +620,6 @@ void VulkanEngine::init_descriptors()
 
 	vkUpdateDescriptorSets(_device, static_cast<uint32_t>(setWrites.size()), setWrites.data(), 0, nullptr);
 
-	//cam buffer
-	_camBuffer = create_buffer(sizeof(GPUCameraData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
-
 	VkDescriptorSetAllocateInfo cameraSetAllocInfo = {};
 	cameraSetAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
 	cameraSetAllocInfo.pNext = nullptr;
@@ -635,316 +638,9 @@ void VulkanEngine::init_descriptors()
 
 	vkUpdateDescriptorSets(_device, 1, &camWrite, 0, nullptr);
 }
-/*
-void VulkanEngine::init_pipelines()
-{
-	//default vertex shader for a mesh
-	VkShaderModule meshVertShader;
-	if (!load_shader_module("../shaders/tri_mesh.vert.spv", &meshVertShader))
-	{
-		std::cout << "Error when building the triangle vertex shader module" << std::endl;
-	}
-	else {
-		std::cout << "Red Triangle vertex shader succesfully loaded" << std::endl;
-	}
-
-	//shader for default material
-	VkShaderModule colorMeshShader;
-	if(!load_shader_module("../shaders/default_lit.frag.spv", &colorMeshShader))
-	{
-		std::cout << "Error when building the triangle fragment shader module" << std::endl;
-	}
-	else 
-	{
-		std::cout << "Triangle fragment shader succesfully loaded" << std::endl;
-	}
-
-	//shader for textured material
-	VkShaderModule texturedMeshShader;
-	if (!load_shader_module("../shaders/textured_lit.frag.spv", &texturedMeshShader))
-	{
-		std::cout << "Error when building the textured mesh shader" << std::endl;
-	}
-	else
-	{
-		std::cout << "Textured mesh shader succesfully loaded" << endl;
-	}
-
-	// Layouts
-
-	//mesh layout
-	VkPipelineLayoutCreateInfo mesh_pipeline_layout_info = vkinit::pipeline_layout_create_info();
-
-	VkPushConstantRange push_constant;
-	push_constant.offset = 0;
-	push_constant.size = sizeof(MeshPushConstants);
-	push_constant.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
-	mesh_pipeline_layout_info.pPushConstantRanges = &push_constant;
-	mesh_pipeline_layout_info.pushConstantRangeCount = 1;
-
-	std::array<VkDescriptorSetLayout, 3> setLayouts = { _globalSetLayout, _objectSetLayout, _singleTextureSetLayout };
-
-	mesh_pipeline_layout_info.setLayoutCount = static_cast<uint32_t>(setLayouts.size());
-	mesh_pipeline_layout_info.pSetLayouts = setLayouts.data();
-
-	VK_CHECK(vkCreatePipelineLayout(_device, &mesh_pipeline_layout_info, nullptr, &_meshPipelineLayout));
-
-	//PIPELINES
-	PipelineBuilder pipelineBuilder;
-	
-	//color mesh pipeline
-
-	pipelineBuilder._vertexInputInfo = vkinit::vertex_input_state_create_info();
-	//connect the pipeline builder vertex input info to the one we get from Vertex
-	VertexInputDescription vertexDescription = Vertex::get_vertex_description();
-	pipelineBuilder._vertexInputInfo.pVertexAttributeDescriptions = vertexDescription.attributes.data();
-	pipelineBuilder._vertexInputInfo.vertexAttributeDescriptionCount = vertexDescription.attributes.size();
-
-	pipelineBuilder._vertexInputInfo.pVertexBindingDescriptions = vertexDescription.bindings.data();
-	pipelineBuilder._vertexInputInfo.vertexBindingDescriptionCount = vertexDescription.bindings.size();
-
-
-	pipelineBuilder._inputAssembly = vkinit::input_assembly_create_info(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-
-	pipelineBuilder._viewport.x = 0.0f;
-	pipelineBuilder._viewport.y = 0.0f;
-	pipelineBuilder._viewport.width = (float)_windowExtent.width;
-	pipelineBuilder._viewport.height = (float)_windowExtent.height;
-	pipelineBuilder._viewport.minDepth = 0.0f;
-	pipelineBuilder._viewport.maxDepth = 1.0f;
-
-	pipelineBuilder._scissor.offset = { 0, 0 };
-	pipelineBuilder._scissor.extent = _windowExtent;
-
-	pipelineBuilder._depthStencil = vkinit::depth_stencil_create_info(true, true, VK_COMPARE_OP_LESS_OR_EQUAL);
-
-	pipelineBuilder._rasterizer = vkinit::rasterization_state_create_info(VK_POLYGON_MODE_FILL);
-	pipelineBuilder._multisampling = vkinit::multisampling_state_create_info();
-	pipelineBuilder._colorBlendAttachment.push_back(vkinit::color_blend_attachment_state());
-
-	//add shaders
-	pipelineBuilder._shaderStages.push_back(
-		vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT, meshVertShader));
-
-	//make sure that triangleFragShader is holding the compiled colored_triangle.frag
-	pipelineBuilder._shaderStages.push_back(
-		vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, colorMeshShader));
-
-	pipelineBuilder._pipelineLayout = _meshPipelineLayout;
-
-	//build the mesh triangle pipeline
-	_meshPipeline = pipelineBuilder.build_pipeline(_device, renderer->_defaultRenderPass);
-	
-	create_material(_meshPipeline, _meshPipelineLayout, "defaultmesh");
-
-
-	//texture pipeline
-
-	pipelineBuilder._shaderStages.clear();
-	pipelineBuilder._shaderStages.push_back(
-		vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT, meshVertShader));
-
-	pipelineBuilder._shaderStages.push_back(
-		vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, texturedMeshShader));
-
-	VkPipeline texPipeline = pipelineBuilder.build_pipeline(_device, renderer->_defaultRenderPass);
-	create_material(texPipeline, _meshPipelineLayout, "texturedmesh");
-
-	//deleting all of the vulkan shaders
-	vkDestroyShaderModule(_device, texturedMeshShader, nullptr);
-	vkDestroyShaderModule(_device, colorMeshShader, nullptr);
-	vkDestroyShaderModule(_device, meshVertShader, nullptr);
-
-	//adding the pipelines to the deletion queue
-	_mainDeletionQueue.push_function([=]() {
-		vkDestroyPipeline(_device, _meshPipeline, nullptr);
-		vkDestroyPipeline(_device, texPipeline, nullptr);
-
-		vkDestroyPipelineLayout(_device, _trianglePipelineLayout, nullptr);
-		vkDestroyPipelineLayout(_device, _meshPipelineLayout, nullptr);
-	});
-}
-
-void VulkanEngine::init_deferred_pipelines()
-{
-	//SHADERS LOADING
-
-	VkShaderModule deferredVertex;
-	if(!load_shader_module("../shaders/deferred.vert.spv", &deferredVertex))
-	{
-		std::cout << "Error when building the deferred vertex shader" << std::endl;
-	}
-	else
-	{
-		std::cout << "Deferred vertex shader succesfully loaded" << endl;
-	}
-
-	VkShaderModule deferredFrag;
-	if (!load_shader_module("../shaders/deferred.frag.spv", &deferredFrag))
-	{
-		std::cout << "Error when building the deferred frag shader" << std::endl;
-	}
-	else
-	{
-		std::cout << "Frag vertex shader succesfully loaded" << endl;
-	}
-
-	VkShaderModule lightVertex;
-	if (!load_shader_module("../shaders/light.vert.spv", &lightVertex))
-	{
-		std::cout << "Error when building the light vertex shader" << std::endl;
-	}
-	else
-	{
-		std::cout << "Light vertex shader succesfully loaded" << endl;
-	}
-
-	VkShaderModule lightFrag;
-	if (!load_shader_module("../shaders/light.frag.spv", &lightFrag))
-	{
-		std::cout << "Error when building the light frag shader" << std::endl;
-	}
-	else
-	{
-		std::cout << "Light frag shader succesfully loaded" << endl;
-	}
-
-	//LAYOUTS
-	VkPipelineLayoutCreateInfo layoutInfo = vkinit::pipeline_layout_create_info();
-
-	std::array<VkDescriptorSetLayout, 3> deferredSetLayouts = {_camSetLayout, _objectSetLayout, _singleTextureSetLayout};
-
-	layoutInfo.pushConstantRangeCount = 0;
-	layoutInfo.pPushConstantRanges = nullptr;
-	layoutInfo.setLayoutCount = static_cast<uint32_t>(deferredSetLayouts.size());
-	layoutInfo.pSetLayouts = deferredSetLayouts.data();
-	
-	VK_CHECK(vkCreatePipelineLayout(_device, &layoutInfo, nullptr, &_deferredPipelineLayout));
-
-	std::array<VkDescriptorSetLayout, 2> lightSetLayouts = { _globalSetLayout, _gbuffersSetLayout };
-
-	layoutInfo.setLayoutCount = static_cast<uint32_t>(lightSetLayouts.size());
-	layoutInfo.pSetLayouts = lightSetLayouts.data();
-
-	VK_CHECK(vkCreatePipelineLayout(_device, &layoutInfo, nullptr, &_lightPipelineLayout));
-
-	//DEFERRED PIPELINE CREATION
-	PipelineBuilder pipelineBuilder;
-
-	//Deferred Vertex Info
-	pipelineBuilder._vertexInputInfo = vkinit::vertex_input_state_create_info();
-
-	VertexInputDescription vertexDescription = Vertex::get_vertex_description();
-	pipelineBuilder._vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertexDescription.attributes.size());
-	pipelineBuilder._vertexInputInfo.pVertexAttributeDescriptions = vertexDescription.attributes.data();
-	pipelineBuilder._vertexInputInfo.vertexBindingDescriptionCount = static_cast<uint32_t>(vertexDescription.bindings.size());
-	pipelineBuilder._vertexInputInfo.pVertexBindingDescriptions = vertexDescription.bindings.data();
-
-	//Deferred Assembly Info
-	pipelineBuilder._inputAssembly = vkinit::input_assembly_create_info(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-
-	//Viewport and Scissor
-	pipelineBuilder._viewport.x = 0.0f;
-	pipelineBuilder._viewport.y = 0.0f;
-	pipelineBuilder._viewport.width = (float)_windowExtent.width;
-	pipelineBuilder._viewport.height = (float)_windowExtent.height;
-	pipelineBuilder._viewport.minDepth = 0.0f;
-	pipelineBuilder._viewport.maxDepth = 1.0f;
-	
-	pipelineBuilder._scissor.offset = { 0, 0 };
-	pipelineBuilder._scissor.extent = _windowExtent;
-
-	//Deferred Depth Stencil
-	pipelineBuilder._depthStencil = vkinit::depth_stencil_create_info(true, true, VK_COMPARE_OP_LESS_OR_EQUAL);
-
-	//Deferred Rasterizer
-	pipelineBuilder._rasterizer = vkinit::rasterization_state_create_info(VK_POLYGON_MODE_FILL);
-
-	//Deferred Multisampling
-	pipelineBuilder._multisampling = vkinit::multisampling_state_create_info();
-
-	//Deferred Color Blend Attachment
-	pipelineBuilder._colorBlendAttachment.push_back(vkinit::color_blend_attachment_state());
-	pipelineBuilder._colorBlendAttachment.push_back(vkinit::color_blend_attachment_state());
-	pipelineBuilder._colorBlendAttachment.push_back(vkinit::color_blend_attachment_state());
-
-	//Deferred Shaders
-	pipelineBuilder._shaderStages.push_back(
-		vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT, deferredVertex));
-	pipelineBuilder._shaderStages.push_back(
-		vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, deferredFrag));
-
-	//Deferred Layout
-	pipelineBuilder._pipelineLayout = _deferredPipelineLayout;
-
-	_deferredPipeline = pipelineBuilder.build_pipeline(_device, renderer->_deferredRenderPass);
-
-	//LIGHT PIPELINE CREATION
-
-	//Light Depth Stencil
-	pipelineBuilder._depthStencil = vkinit::depth_stencil_create_info(false, false, VK_COMPARE_OP_ALWAYS);
-
-	//Deferred Color Blend Attachment
-	pipelineBuilder._colorBlendAttachment.clear();
-	pipelineBuilder._colorBlendAttachment.push_back(vkinit::color_blend_attachment_state());
-
-	//Light Shaders
-	pipelineBuilder._shaderStages.clear();
-	pipelineBuilder._shaderStages.push_back(
-		vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT, lightVertex));
-	pipelineBuilder._shaderStages.push_back(
-		vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, lightFrag));
-
-	//Light Layout
-	pipelineBuilder._pipelineLayout = _lightPipelineLayout;
-
-	_lightPipeline = pipelineBuilder.build_pipeline(_device, renderer->_defaultRenderPass);
-
-	
-	//DELETIONS
-	
-	vkDestroyShaderModule(_device, lightFrag, nullptr);
-	vkDestroyShaderModule(_device, lightVertex, nullptr);
-	vkDestroyShaderModule(_device, deferredFrag, nullptr);
-	vkDestroyShaderModule(_device, deferredVertex, nullptr);
-
-	_mainDeletionQueue.push_function([=]() {
-		vkDestroyPipeline(_device, _deferredPipeline, nullptr);
-		vkDestroyPipeline(_device, _lightPipeline, nullptr);
-
-		vkDestroyPipelineLayout(_device, _deferredPipelineLayout, nullptr);
-		vkDestroyPipelineLayout(_device, _lightPipelineLayout, nullptr);
-		});
-}
-*/
 
 void VulkanEngine::init_scene()
 {
-	/*
-	RenderObject monkey;
-	monkey.mesh = get_mesh("monkey");
-	monkey.material = get_material("defaultmesh");
-	monkey.transformMatrix = glm::mat4(1.0f);
-
-	_renderables.push_back(monkey);
-
-	for(int x = -20; x < 20; x++)
-	{
-		for(int y = -20; y <= 20; y++)
-		{
-			RenderObject tri;
-			tri.mesh = get_mesh("triangle");
-			tri.material = get_material("defaultmesh");
-			glm::mat4 translation = glm::translate(glm::mat4{ 1.0 }, glm::vec3(x, 0, y));
-			glm::mat4 scale = glm::scale(glm::mat4{ 1.0 }, glm::vec3(0.2, 0.2, 0.2));
-			tri.transformMatrix = translation * scale;
-
-			_renderables.push_back(tri);
-		}
-	}
-	*/
-
 	camera = new Camera(camera_default_position);
 
 	RenderObject map;
