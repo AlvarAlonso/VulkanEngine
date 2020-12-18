@@ -506,19 +506,19 @@ void Renderer::record_deferred_command_buffers(RenderObject* first, int count)
 
 		vkCmdBindDescriptorSets(_deferredCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, VulkanEngine::cinstance->_deferredPipelineLayout, 1, 1, &VulkanEngine::cinstance->_objectDescriptorSet, 0, nullptr);
 
-		if (object.material->textureSet != VK_NULL_HANDLE)
+		if (object._material->textureSet != VK_NULL_HANDLE)
 		{
-			vkCmdBindDescriptorSets(_deferredCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, VulkanEngine::cinstance->_deferredPipelineLayout, 2, 1, &object.material->textureSet, 0, nullptr);
+			vkCmdBindDescriptorSets(_deferredCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, VulkanEngine::cinstance->_deferredPipelineLayout, 2, 1, &object._material->textureSet, 0, nullptr);
 		}
 
-		if (object.mesh != lastMesh)
+		if (object._mesh != lastMesh)
 		{
 			VkDeviceSize offset = 0;
-			vkCmdBindVertexBuffers(_deferredCommandBuffer, 0, 1, &object.mesh->_vertexBuffer._buffer, &offset);
-			vkCmdBindIndexBuffer(_deferredCommandBuffer, object.mesh->_indexBuffer._buffer, 0, VK_INDEX_TYPE_UINT32);
+			vkCmdBindVertexBuffers(_deferredCommandBuffer, 0, 1, &object._mesh->_vertexBuffer._buffer, &offset);
+			vkCmdBindIndexBuffer(_deferredCommandBuffer, object._mesh->_indexBuffer._buffer, 0, VK_INDEX_TYPE_UINT32);
 		}
 
-		vkCmdDrawIndexed(_deferredCommandBuffer, static_cast<uint32_t>(object.mesh->_indices.size()), 1, 0, 0, i);
+		vkCmdDrawIndexed(_deferredCommandBuffer, static_cast<uint32_t>(object._mesh->_indices.size()), 1, 0, 0, i);
 	}
 
 	vkCmdEndRenderPass(_deferredCommandBuffer);
@@ -666,30 +666,30 @@ void GRAPHICS::Renderer::draw_forward(VkCommandBuffer cmd, RenderObject* first, 
 	{
 		RenderObject& object = first[i];
 
-		if (object.material != lastMaterial)
+		if (object._material != lastMaterial)
 		{
-			vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, object.material->pipeline);
-			lastMaterial = object.material;
+			vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, object._material->pipeline);
+			lastMaterial = object._material;
 
 			uint32_t uniform_offset = VulkanEngine::cinstance->pad_uniform_buffer_size(sizeof(GPUSceneData) * frameIndex);
-			vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, object.material->pipelineLayout, 0, 1, &VulkanEngine::cinstance->_frames[get_current_frame_index()].globalDescriptor, 1, &uniform_offset);
+			vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, object._material->pipelineLayout, 0, 1, &VulkanEngine::cinstance->_frames[get_current_frame_index()].globalDescriptor, 1, &uniform_offset);
 
-			vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, object.material->pipelineLayout, 1, 1, &VulkanEngine::cinstance->_frames[get_current_frame_index()].objectDescriptor, 0, nullptr);
+			vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, object._material->pipelineLayout, 1, 1, &VulkanEngine::cinstance->_frames[get_current_frame_index()].objectDescriptor, 0, nullptr);
 
-			if (object.material->textureSet != VK_NULL_HANDLE)
+			if (object._material->textureSet != VK_NULL_HANDLE)
 			{
-				vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, object.material->pipelineLayout, 2, 1, &object.material->textureSet, 0, nullptr);
+				vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, object._material->pipelineLayout, 2, 1, &object._material->textureSet, 0, nullptr);
 			}
 		}
 		
-		if (object.mesh != lastMesh)
+		if (object._mesh != lastMesh)
 		{
 			VkDeviceSize offset = 0;
-			vkCmdBindVertexBuffers(cmd, 0, 1, &object.mesh->_vertexBuffer._buffer, &offset);
-			vkCmdBindIndexBuffer(cmd, object.mesh->_indexBuffer._buffer, 0, VK_INDEX_TYPE_UINT16);
+			vkCmdBindVertexBuffers(cmd, 0, 1, &object._mesh->_vertexBuffer._buffer, &offset);
+			vkCmdBindIndexBuffer(cmd, object._mesh->_indexBuffer._buffer, 0, VK_INDEX_TYPE_UINT16);
 		}
 
-		vkCmdDrawIndexed(cmd, static_cast<uint32_t>(object.mesh->_indices.size()), 1, 0, 0, 0);
+		vkCmdDrawIndexed(cmd, static_cast<uint32_t>(object._mesh->_indices.size()), 1, 0, 0, 0);
 	}
 }
 

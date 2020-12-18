@@ -78,7 +78,7 @@ void VulkanEngine::cleanup()
 {	
 	if (_isInitialized) {
 
-		vkWaitForFences(_device, 1, &get_current_frame()._renderFence, true, UINT64_MAX);
+		vkWaitForFences(_device, 1, &renderer->_frames[renderer->get_current_frame_index()]._renderFence, true, UINT64_MAX);
 
 		_mainDeletionQueue.flush();
 		
@@ -594,16 +594,16 @@ void VulkanEngine::init_scene()
 	camera = new Camera(camera_default_position);
 
 	RenderObject map;
-	map.mesh = get_mesh("empire");
-	map.material = get_material("texturedmesh");
-	map.transformMatrix = glm::translate(glm::vec3{ 5, -10, 0 });
+	map._mesh = get_mesh("empire");
+	map._material = get_material("texturedmesh");
+	map._model = glm::translate(glm::vec3{ 5, -10, 0 });
 
 	_renderables.push_back(map);
 
 	RenderObject monkey;
-	monkey.mesh = get_mesh("monkey");
-	monkey.material = get_material("defaultmesh");
-	monkey.transformMatrix = glm::mat4(1.0f);
+	monkey._mesh = get_mesh("monkey");
+	monkey._material = get_material("defaultmesh");
+	monkey._model = glm::mat4(1.0f);
 
 	_renderables.push_back(monkey);
 
@@ -761,7 +761,7 @@ void VulkanEngine::update_descriptors(RenderObject* first, int count)
 	for (int i = 0; i < count; i++)
 	{
 		RenderObject& object = first[i];
-		objectSSBO[i].modelMatrix = object.transformMatrix;
+		objectSSBO[i].modelMatrix = object._model;
 	}
 
 	vmaUnmapMemory(_allocator, _objectBuffer._allocation);
@@ -807,7 +807,7 @@ void VulkanEngine::update_descriptors_forward(RenderObject* first, int count)
 	for (int i = 0; i < count; i++)
 	{
 		RenderObject& object = first[i];
-		objectSSBO[i].modelMatrix = object.transformMatrix;
+		objectSSBO[i].modelMatrix = object._model;
 	}
 
 	vmaUnmapMemory(_allocator, get_current_frame().objectBuffer._allocation);

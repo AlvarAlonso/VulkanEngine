@@ -42,6 +42,9 @@ namespace GRAPHICS
 
 		void create_pipelines();
 
+		//support functions
+		int get_current_frame_index();
+
 		//Render passes
 		VkRenderPass _defaultRenderPass;
 		VkRenderPass _deferredRenderPass;
@@ -118,9 +121,6 @@ namespace GRAPHICS
 		void init_gbuffers_descriptors();
 
 		void record_deferred_command_buffers(RenderObject* first, int count);
-
-		//support functions
-		int get_current_frame_index();
 		
 		//draw functions
 		void render_forward();

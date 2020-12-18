@@ -2,12 +2,13 @@
 
 Entity::Entity()
 {
-	_model = glm::vec3(0.0f, 0.0f, 0.0f);
+	_model = glm::mat4(1);
 }
 
 RenderObject::RenderObject() : Entity()
 {
 	_mesh = nullptr;
+	_material = nullptr;
 }
 
 Light::Light() : Entity()

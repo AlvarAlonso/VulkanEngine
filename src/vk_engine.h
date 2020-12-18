@@ -6,6 +6,7 @@
 #include "vk_renderer.h"
 #include "vk_mesh.h"
 #include "Camera.h"
+#include "vk_entity.h"
 
 #include <glm/glm.hpp>
 #include <unordered_map>
@@ -41,12 +42,6 @@ struct GPUCameraData {
 };
 
 struct FrameData {
-	VkSemaphore _presentSemaphore, _renderSemaphore;
-	VkFence _renderFence;
-
-	VkCommandPool _commandPool;
-	VkCommandBuffer _mainCommandBuffer;
-
 	AllocatedBuffer cameraBuffer;
 	VkDescriptorSet globalDescriptor;
 
@@ -58,19 +53,14 @@ struct GPUObjectData {
 	glm::mat4 modelMatrix;
 };
 
-struct Material {
-	VkDescriptorSet textureSet;
-	VkPipeline pipeline;
-	VkPipelineLayout pipelineLayout;
-};
-
+/*
 struct RenderObject {
 	Mesh* mesh;
 
 	Material* material;
 
 	glm::mat4 transformMatrix;
-};
+};*/
 
 struct MeshPushConstants {
 	glm::vec4 data;

@@ -160,6 +160,7 @@
     <ClCompile Include="..\src\imgui_widgets.cpp" />
     <ClCompile Include="..\src\main.cpp" />
     <ClCompile Include="..\src\vk_engine.cpp" />
+    <ClCompile Include="..\src\vk_entity.cpp" />
     <ClCompile Include="..\src\vk_initializers.cpp" />
     <ClCompile Include="..\src\vk_mesh.cpp" />
     <ClCompile Include="..\src\vk_renderer.cpp" />
@@ -169,6 +170,7 @@
   <ItemGroup>
     <ClInclude Include="..\src\Camera.h" />
     <ClInclude Include="..\src\vk_engine.h" />
+    <ClInclude Include="..\src\vk_entity.h" />
     <ClInclude Include="..\src\vk_initializers.h" />
     <ClInclude Include="..\src\vk_mesh.h" />
     <ClInclude Include="..\src\vk_renderer.h" />
