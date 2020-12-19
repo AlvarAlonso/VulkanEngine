@@ -24,6 +24,29 @@
 
 #include <chrono>
 
+std::vector<const char*> required_device_extensions = {
+		VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+		VK_KHR_DEDICATED_ALLOCATION_EXTENSION_NAME,
+		VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME,
+		VK_EXT_SCALAR_BLOCK_LAYOUT_EXTENSION_NAME,
+
+		// VkRay
+		VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
+		VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
+		VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME,
+		//
+		//// Required by VK_KHR_acceleration_structure
+		VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
+		VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
+		VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,
+
+		// Required by VK_KHR_raytracing_pipeline
+		VK_KHR_SPIRV_1_4_EXTENSION_NAME,
+
+		// Required by VK_KHR_spirv_1_4
+		VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME
+};
+
 VulkanEngine* VulkanEngine::cinstance = nullptr;
 GRAPHICS::Renderer* renderer = nullptr;
 
@@ -255,6 +278,7 @@ void VulkanEngine::init_vulkan()
 		.request_validation_layers(true)
 		.require_api_version(1, 1, 0)
 		.use_default_debug_messenger()
+		.enable_extension("VK_KHR_get_physical_device_properties2")
 		.build();
 
 	vkb::Instance vkb_inst = inst_ret.value();
@@ -274,6 +298,7 @@ void VulkanEngine::init_vulkan()
 	vkb::PhysicalDevice physicalDevice = selector
 		.set_minimum_version(1, 1)
 		.set_surface(_surface)
+		.add_required_extensions(required_device_extensions)
 		.select()
 		.value();
 
