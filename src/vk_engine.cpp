@@ -330,6 +330,8 @@ void VulkanEngine::init_vulkan()
 
 void VulkanEngine::init_raytracing()
 {
+	vkGetBufferDeviceAddressKHR = reinterpret_cast<PFN_vkGetBufferDeviceAddressKHR>(vkGetDeviceProcAddr(VulkanEngine::cinstance->_device, "vkGetBufferDeviceAddressKHR"));
+
 	_rayTracingPipelineProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR;
 	VkPhysicalDeviceProperties2 deviceProperties2{};
 	deviceProperties2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
@@ -914,4 +916,27 @@ size_t VulkanEngine::pad_uniform_buffer_size(size_t originalSize)
 	}
 
 	return alignedSize;
+}
+
+uint32_t VulkanEngine::find_memory_type_index(uint32_t allowedTypes, VkMemoryPropertyFlags properties)
+{
+	VkPhysicalDeviceMemoryProperties memoryProperties;
+	vkGetPhysicalDeviceMemoryProperties(_physicalDevice, &memoryProperties);
+
+	for (uint32_t i = 0; i < memoryProperties.memoryTypeCount; i++)
+	{
+		if ((allowedTypes & (1 << i))
+			&& (memoryProperties.memoryTypes[i].propertyFlags & properties) == properties)
+		{
+			return i;
+		}
+	}
+}
+
+uint64_t VulkanEngine::get_buffer_device_address(VkBuffer buffer)
+{
+	VkBufferDeviceAddressInfoKHR bufferDeviceAI{};
+	bufferDeviceAI.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+	bufferDeviceAI.buffer = buffer;
+	return vkGetBufferDeviceAddressKHR(_device, &bufferDeviceAI);
 }

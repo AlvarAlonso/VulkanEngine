@@ -28,6 +28,21 @@ namespace GRAPHICS
 		VkDescriptorSet objectDescriptor;
 	};
 
+	struct RayTracingScratchBuffer
+	{
+		uint64_t _deviceAddress = 0;
+		VkBuffer _buffer = VK_NULL_HANDLE;
+		VkDeviceMemory _memory = VK_NULL_HANDLE;
+	};
+
+	struct AccelerationStructure 
+	{
+		VkAccelerationStructureKHR _handle;
+		uint64_t _deviceAddress = 0;
+		VkDeviceMemory _memory;
+		VkBuffer _buffer;
+	};
+
 	class Renderer
 	{
 	public:
@@ -95,7 +110,6 @@ namespace GRAPHICS
 		//RAY TRACING PIPELINE
 		
 		//raytracing function pointers
-		PFN_vkGetBufferDeviceAddressKHR vkGetBufferDeviceAddressKHR;
 		PFN_vkCreateAccelerationStructureKHR vkCreateAccelerationStructureKHR;
 		PFN_vkDestroyAccelerationStructureKHR vkDestroyAccelerationStructureKHR;
 		PFN_vkGetAccelerationStructureBuildSizesKHR vkGetAccelerationStructureBuildSizesKHR;
@@ -105,6 +119,23 @@ namespace GRAPHICS
 		PFN_vkCmdTraceRaysKHR vkCmdTraceRaysKHR;
 		PFN_vkGetRayTracingShaderGroupHandlesKHR vkGetRayTracingShaderGroupHandlesKHR;
 		PFN_vkCreateRayTracingPipelinesKHR vkCreateRayTracingPipelinesKHR;
+
+		AccelerationStructure _bottomLevelAS{};
+		AccelerationStructure _topLevelAS{};
+
+		AllocatedBuffer _vertexBuffer;
+		AllocatedBuffer _indexBuffer;
+		uint32_t _indexCount;
+		AllocatedBuffer _transformBuffer;
+		std::vector<VkRayTracingShaderGroupCreateInfoKHR> _shaderGroups{};
+		AllocatedBuffer _raygenShaderBindingTable;
+		AllocatedBuffer _missShaderBindingTable;
+		AllocatedBuffer _hitShaderBindingTable;
+
+		//storage image
+		VkImage _storageImage;
+		VkDeviceMemory _storageImageMemory;
+		VkImageView _storageImageView;
 
 	private:
 
@@ -138,6 +169,9 @@ namespace GRAPHICS
 
 		void allocate_raytracing_command_buffers();
 
+		RayTracingScratchBuffer create_scratch_buffer(VkDeviceSize size);
+
+		void create_acceleration_structure_buffer(AccelerationStructure& accelerationStructure, VkAccelerationStructureBuildSizesInfoKHR buildSizeInfo);
 
 		//init raster structures
 
@@ -158,7 +192,7 @@ namespace GRAPHICS
 		void init_gbuffers_descriptors();
 
 		void record_deferred_command_buffers(RenderObject* first, int count);
-		
+
 		//draw functions
 		void render_forward();
 

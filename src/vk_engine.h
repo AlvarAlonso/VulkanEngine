@@ -166,6 +166,8 @@ public:
 
 	//RAY TRACING
 
+	PFN_vkGetBufferDeviceAddressKHR vkGetBufferDeviceAddressKHR;
+
 	//pnext features
 	VkPhysicalDeviceBufferDeviceAddressFeatures         _enabledBufferDeviceAddressFeatures{};
 	VkPhysicalDeviceRayTracingPipelineFeaturesKHR       _enabledRayTracingPipelineFeatures{};
@@ -205,6 +207,9 @@ public:
 	Material* get_material(const std::string& name);
 
 	Mesh* get_mesh(const std::string& name);
+
+	uint32_t find_memory_type_index(uint32_t allowedTypes, VkMemoryPropertyFlags properties);
+	uint64_t get_buffer_device_address(VkBuffer buffer);
 
 private:
 

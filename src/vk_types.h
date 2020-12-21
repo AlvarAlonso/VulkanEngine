@@ -23,8 +23,8 @@ using namespace std;
 	} while (0)
 
 struct AllocatedBuffer {
-	VkBuffer _buffer;
-	VmaAllocation _allocation;
+	VkBuffer _buffer = VK_NULL_HANDLE;
+	VmaAllocation _allocation = VMA_NULL;
 };
 
 struct AllocatedImage {
