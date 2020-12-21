@@ -164,6 +164,24 @@ public:
 
 	UploadContext _uploadContext;
 
+	//RAY TRACING
+
+	//pnext features
+	VkPhysicalDeviceBufferDeviceAddressFeatures         _enabledBufferDeviceAddressFeatures{};
+	VkPhysicalDeviceRayTracingPipelineFeaturesKHR       _enabledRayTracingPipelineFeatures{};
+	VkPhysicalDeviceAccelerationStructureFeaturesKHR    _enabledAccelerationStructureFeatures{};
+
+	//Properties and features
+	VkPhysicalDeviceRayTracingPipelinePropertiesKHR  _rayTracingPipelineProperties{};
+	VkPhysicalDeviceAccelerationStructureFeaturesKHR _accelerationStructureFeatures{};
+
+	VkPhysicalDeviceBufferDeviceAddressFeatures _enabledBufferDeviceAddresFeatures{};
+	VkPhysicalDeviceRayTracingPipelineFeaturesKHR _enabledRayTracingPipelineFeatures{};
+	VkPhysicalDeviceAccelerationStructureFeaturesKHR _enabledAccelerationStructureFeatures{};
+
+
+	void* deviceCreatepNextChain = nullptr;
+
 	//initializes everything in the engine
 	void init();
 
@@ -194,6 +212,8 @@ private:
 
 	void init_vulkan();
 
+	void init_raytracing();
+
 	void init_swapchain(); //initializes depth image
 
 	void init_imgui();
@@ -215,4 +235,6 @@ private:
 	// Assets
 
 	void upload_mesh(Mesh& mesh);
+
+	void get_enabled_features();
 };

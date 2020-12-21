@@ -52,6 +52,55 @@ void Renderer::draw_scene()
 	}
 }
 
+void GRAPHICS::Renderer::init_raytracing()
+{
+	// Get the ray tracing and accelertion structure related function pointers required by this sample
+	vkGetBufferDeviceAddressKHR = reinterpret_cast<PFN_vkGetBufferDeviceAddressKHR>(vkGetDeviceProcAddr(VulkanEngine::cinstance->_device, "vkGetBufferDeviceAddressKHR"));
+	vkCmdBuildAccelerationStructuresKHR = reinterpret_cast<PFN_vkCmdBuildAccelerationStructuresKHR>(vkGetDeviceProcAddr(VulkanEngine::cinstance->_device, "vkCmdBuildAccelerationStructuresKHR"));
+	vkBuildAccelerationStructuresKHR = reinterpret_cast<PFN_vkBuildAccelerationStructuresKHR>(vkGetDeviceProcAddr(VulkanEngine::cinstance->_device, "vkBuildAccelerationStructuresKHR"));
+	vkCreateAccelerationStructureKHR = reinterpret_cast<PFN_vkCreateAccelerationStructureKHR>(vkGetDeviceProcAddr(VulkanEngine::cinstance->_device, "vkCreateAccelerationStructureKHR"));
+	vkDestroyAccelerationStructureKHR = reinterpret_cast<PFN_vkDestroyAccelerationStructureKHR>(vkGetDeviceProcAddr(VulkanEngine::cinstance->_device, "vkDestroyAccelerationStructureKHR"));
+	vkGetAccelerationStructureBuildSizesKHR = reinterpret_cast<PFN_vkGetAccelerationStructureBuildSizesKHR>(vkGetDeviceProcAddr(VulkanEngine::cinstance->_device, "vkGetAccelerationStructureBuildSizesKHR"));
+	vkGetAccelerationStructureDeviceAddressKHR = reinterpret_cast<PFN_vkGetAccelerationStructureDeviceAddressKHR>(vkGetDeviceProcAddr(VulkanEngine::cinstance->_device, "vkGetAccelerationStructureDeviceAddressKHR"));
+	vkCmdTraceRaysKHR = reinterpret_cast<PFN_vkCmdTraceRaysKHR>(vkGetDeviceProcAddr(VulkanEngine::cinstance->_device, "vkCmdTraceRaysKHR"));
+	vkGetRayTracingShaderGroupHandlesKHR = reinterpret_cast<PFN_vkGetRayTracingShaderGroupHandlesKHR>(vkGetDeviceProcAddr(VulkanEngine::cinstance->_device, "vkGetRayTracingShaderGroupHandlesKHR"));
+	vkCreateRayTracingPipelinesKHR = reinterpret_cast<PFN_vkCreateRayTracingPipelinesKHR>(vkGetDeviceProcAddr(VulkanEngine::cinstance->_device, "vkCreateRayTracingPipelinesKHR"));
+
+	
+}
+
+void GRAPHICS::Renderer::create_bottom_level_acceleration_structure()
+{
+}
+
+void GRAPHICS::Renderer::create_top_level_acceleration_structure()
+{
+}
+
+void GRAPHICS::Renderer::create_storage_image()
+{
+}
+
+void GRAPHICS::Renderer::create_uniform_buffer()
+{
+}
+
+void GRAPHICS::Renderer::create_raytracing_pipeline()
+{
+}
+
+void GRAPHICS::Renderer::create_shader_binding_table()
+{
+}
+
+void GRAPHICS::Renderer::create_raytracing_descriptor_sets()
+{
+}
+
+void GRAPHICS::Renderer::allocate_raytracing_command_buffers()
+{
+}
+
 void Renderer::create_depth_buffer()
 {
 	VkExtent3D depthImageExtent = {

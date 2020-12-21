@@ -92,6 +92,20 @@ namespace GRAPHICS
 		VkPipeline _deferredPipeline;
 		VkPipeline _lightPipeline;
 
+		//RAY TRACING PIPELINE
+		
+		//raytracing function pointers
+		PFN_vkGetBufferDeviceAddressKHR vkGetBufferDeviceAddressKHR;
+		PFN_vkCreateAccelerationStructureKHR vkCreateAccelerationStructureKHR;
+		PFN_vkDestroyAccelerationStructureKHR vkDestroyAccelerationStructureKHR;
+		PFN_vkGetAccelerationStructureBuildSizesKHR vkGetAccelerationStructureBuildSizesKHR;
+		PFN_vkGetAccelerationStructureDeviceAddressKHR vkGetAccelerationStructureDeviceAddressKHR;
+		PFN_vkCmdBuildAccelerationStructuresKHR vkCmdBuildAccelerationStructuresKHR;
+		PFN_vkBuildAccelerationStructuresKHR vkBuildAccelerationStructuresKHR;
+		PFN_vkCmdTraceRaysKHR vkCmdTraceRaysKHR;
+		PFN_vkGetRayTracingShaderGroupHandlesKHR vkGetRayTracingShaderGroupHandlesKHR;
+		PFN_vkCreateRayTracingPipelinesKHR vkCreateRayTracingPipelinesKHR;
+
 	private:
 
 		int _frameNumber{ 0 };
@@ -102,7 +116,30 @@ namespace GRAPHICS
 		VkQueue _graphicsQueue;
 		uint32_t _graphicsQueueFamily;
 
-		//init renderer structures and attachments
+		//INIT RENDER STRUCTURES AND PIPELINES
+
+		//Init ray tracing structures
+
+		void init_raytracing();
+
+		void create_bottom_level_acceleration_structure();
+
+		void create_top_level_acceleration_structure();
+
+		void create_storage_image();
+
+		void create_uniform_buffer();
+
+		void create_raytracing_pipeline();
+
+		void create_shader_binding_table();
+
+		void create_raytracing_descriptor_sets();
+
+		void allocate_raytracing_command_buffers();
+
+
+		//init raster structures
 
 		void create_depth_buffer();
 

@@ -302,10 +302,12 @@ void VulkanEngine::init_vulkan()
 		.select()
 		.value();
 
+	get_enabled_features();
+
 	//create the final Vulkan device
 	vkb::DeviceBuilder deviceBuilder{ physicalDevice };
 
-	vkb::Device vkbDevice = deviceBuilder.build().value();
+	vkb::Device vkbDevice = deviceBuilder.add_pNext(deviceCreatepNextChain).build().value();
 
 	// Get the VkDevice handle used in the rest of a Vulkan application
 	_device = vkbDevice.device;
@@ -324,6 +326,22 @@ void VulkanEngine::init_vulkan()
 	vkGetPhysicalDeviceProperties(_physicalDevice, &_gpuProperties);
 
 	std::cout << "The GPU has a minimum buffer alignment of" << _gpuProperties.limits.minUniformBufferOffsetAlignment << std::endl;
+}
+
+void VulkanEngine::init_raytracing()
+{
+	_rayTracingPipelineProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR;
+	VkPhysicalDeviceProperties2 deviceProperties2{};
+	deviceProperties2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+	deviceProperties2.pNext = &_rayTracingPipelineProperties;
+	vkGetPhysicalDeviceProperties2(_physicalDevice, &deviceProperties2);
+
+	// Requesting ray tracing features
+	_accelerationStructureFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
+	VkPhysicalDeviceFeatures2 deviceFeatures2{};
+	deviceFeatures2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+	deviceFeatures2.pNext = &_accelerationStructureFeatures;
+	vkGetPhysicalDeviceFeatures2(_physicalDevice, &deviceFeatures2);
 }
 
 void VulkanEngine::init_swapchain()
@@ -696,12 +714,26 @@ void VulkanEngine::load_meshes()
 
 	Mesh lostEmpire("../assets/lost_empire.obj");
 
-	//_meshes["triangle"] = triangleMesh;
 	_meshes["monkey"] = monkeyMesh;
 	_meshes["empire"] = lostEmpire;
+}
 
-	//quad for deferred
-	//deferred_quad.create_quad();
+void VulkanEngine::get_enabled_features()
+{
+	_enabledBufferDeviceAddressFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES;
+	_enabledBufferDeviceAddressFeatures.bufferDeviceAddress = VK_TRUE;
+	_enabledBufferDeviceAddressFeatures.pNext = nullptr;
+
+	_enabledRayTracingPipelineFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR;
+	_enabledRayTracingPipelineFeatures.rayTracingPipeline = VK_TRUE;
+	_enabledRayTracingPipelineFeatures.rayTracingPipelineTraceRaysIndirect = VK_TRUE;
+	_enabledRayTracingPipelineFeatures.pNext = &_enabledBufferDeviceAddressFeatures;
+
+	_enabledAccelerationStructureFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
+	_enabledAccelerationStructureFeatures.accelerationStructure = VK_TRUE;
+	_enabledAccelerationStructureFeatures.pNext = &_enabledRayTracingPipelineFeatures;
+
+	deviceCreatepNextChain = &_enabledAccelerationStructureFeatures;
 }
 
 Material* VulkanEngine::create_material(VkPipeline pipeline, VkPipelineLayout layout, const std::string& name)
