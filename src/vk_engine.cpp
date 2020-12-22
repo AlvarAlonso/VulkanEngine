@@ -530,7 +530,7 @@ void VulkanEngine::init_descriptor_set_layouts()
 	vkCreateDescriptorSetLayout(_device, &set3Info, nullptr, &_singleTextureSetLayout);
 
 	//DESCRIPTOR SET BUFFER CREATION
-	const size_t sceneParamBufferSize = FRAME_OVERLAP * pad_uniform_buffer_size(sizeof(GPUSceneData));
+	const size_t sceneParamBufferSize = FRAME_OVERLAP * get_aligned_size(sizeof(GPUSceneData), _gpuProperties.limits.minUniformBufferOffsetAlignment);
 
 	_sceneParameterBuffer = create_buffer(sceneParamBufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 
@@ -806,7 +806,7 @@ void VulkanEngine::update_descriptors(RenderObject* first, int count)
 
 	int frameIndex = _frameNumber % FRAME_OVERLAP;
 
-	sceneData += pad_uniform_buffer_size(sizeof(GPUSceneData)) * frameIndex;
+	sceneData += get_aligned_size(sizeof(GPUSceneData), _gpuProperties.limits.minUniformBufferOffsetAlignment) * frameIndex;
 
 	memcpy(sceneData, &_sceneParameters, sizeof(GPUSceneData));
 
@@ -852,7 +852,7 @@ void VulkanEngine::update_descriptors_forward(RenderObject* first, int count)
 
 	int frameIndex = _frameNumber % FRAME_OVERLAP;
 
-	sceneData += pad_uniform_buffer_size(sizeof(GPUSceneData)) * frameIndex;
+	sceneData += get_aligned_size(sizeof(GPUSceneData), _gpuProperties.limits.minUniformBufferOffsetAlignment) * frameIndex;
 
 	memcpy(sceneData, &_sceneParameters, sizeof(GPUSceneData));
 
@@ -906,13 +906,13 @@ void VulkanEngine::load_images()
 	_loadedTextures["empire_diffuse"] = lostEmpire;
 }
 
-size_t VulkanEngine::pad_uniform_buffer_size(size_t originalSize)
+size_t VulkanEngine::get_aligned_size(size_t originalSize, uint32_t alignment)
 {
-	size_t minUboAlignment = _gpuProperties.limits.minUniformBufferOffsetAlignment;
+	//size_t minUboAlignment = _gpuProperties.limits.minUniformBufferOffsetAlignment;
 	size_t alignedSize = originalSize;
-	if(minUboAlignment > 0)
+	if(alignment > 0)
 	{
-		alignedSize = (alignedSize + minUboAlignment - 1) & ~(minUboAlignment - 1);
+		alignedSize = (alignedSize + alignment - 1) & ~(alignment - 1);
 	}
 
 	return alignedSize;

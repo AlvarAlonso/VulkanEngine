@@ -8,7 +8,15 @@
 #include "Camera.h"
 #include "vk_entity.h"
 
+//#define GLM_FORCE_RADIANS
+//#define GLM_FORCE_DEPTH_ZERO_TO_ONE
+#define GLM_ENABLE_EXPERIMENTAL
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_inverse.hpp>
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/matrix_inverse.hpp>
+#include <glm/gtc/type_ptr.hpp>
 #include <unordered_map>
 
 const glm::vec3 camera_default_position = { 0.0f, 50.0f, -10.0f };
@@ -201,7 +209,7 @@ public:
 
 	void update_descriptors(RenderObject* first, int count);
 	void update_descriptors_forward(RenderObject* first, int count);
-	size_t pad_uniform_buffer_size(size_t originalSize);
+	size_t get_aligned_size(size_t originalSize, uint32_t alignment);
 	bool load_shader_module(const char* filePath, VkShaderModule* outShaderModule);
 	Material* create_material(VkPipeline pipeline, VkPipelineLayout layout, const std::string& name);
 	Material* get_material(const std::string& name);

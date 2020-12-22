@@ -14,6 +14,11 @@ namespace GRAPHICS
 		RENDER_MODE_DEFERRED
 	};
 
+	struct UniformData {
+		glm::mat4 viewInverse;
+		glm::mat4 projInverse;
+	} uniformData;
+
 	struct sFrameData {
 		VkSemaphore _presentSemaphore, _renderSemaphore;
 		VkFence _renderFence;
@@ -131,6 +136,13 @@ namespace GRAPHICS
 		AllocatedBuffer _raygenShaderBindingTable;
 		AllocatedBuffer _missShaderBindingTable;
 		AllocatedBuffer _hitShaderBindingTable;
+
+		VkPipeline _rayTracingPipeline;
+		VkPipelineLayout _rayTracingPipelineLayout;
+		VkDescriptorPool _rayTracingDescriptorPool;
+		VkDescriptorSet _rayTracingDescriptorSet;
+		VkDescriptorSetLayout _rayTracingSetLayout;
+		AllocatedBuffer _ubo;
 
 		//storage image
 		VkImage _storageImage;
