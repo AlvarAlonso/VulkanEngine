@@ -19,9 +19,9 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <unordered_map>
 
-const glm::vec3 camera_default_position = { 0.0f, 50.0f, -10.0f };
+const glm::vec3 camera_default_position = { 0.0f, 0.0f, -2.5f };
 
-constexpr unsigned int FRAME_OVERLAP = 2;
+//constexpr unsigned int FRAME_OVERLAP = 2;
 
 const int MAX_OBJECTS = 10000;
 
@@ -185,11 +185,6 @@ public:
 	VkPhysicalDeviceRayTracingPipelinePropertiesKHR  _rayTracingPipelineProperties{};
 	VkPhysicalDeviceAccelerationStructureFeaturesKHR _accelerationStructureFeatures{};
 
-	VkPhysicalDeviceBufferDeviceAddressFeatures _enabledBufferDeviceAddresFeatures{};
-	VkPhysicalDeviceRayTracingPipelineFeaturesKHR _enabledRayTracingPipelineFeatures{};
-	VkPhysicalDeviceAccelerationStructureFeaturesKHR _enabledAccelerationStructureFeatures{};
-
-
 	void* deviceCreatepNextChain = nullptr;
 
 	//initializes everything in the engine
@@ -204,7 +199,7 @@ public:
 	FrameData& get_current_frame();
 	
 	void immediate_submit(std::function<void(VkCommandBuffer cmd)>&& function);
-	AllocatedBuffer create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage);
+	AllocatedBuffer create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage, VmaAllocationCreateFlags flags = 0);
 	void load_images();
 
 	void update_descriptors(RenderObject* first, int count);

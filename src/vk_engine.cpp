@@ -48,7 +48,7 @@ std::vector<const char*> required_device_extensions = {
 };
 
 VulkanEngine* VulkanEngine::cinstance = nullptr;
-GRAPHICS::Renderer* renderer = nullptr;
+Renderer* renderer = nullptr;
 
 void VulkanEngine::init()
 {
@@ -70,6 +70,8 @@ void VulkanEngine::init()
 	
 	init_vulkan();
 
+	init_raytracing();
+
 	init_swapchain();
 
 	init_commands();
@@ -82,7 +84,9 @@ void VulkanEngine::init()
 
 	init_descriptors();
 
-	renderer = new GRAPHICS::Renderer();
+	camera = new Camera(camera_default_position);
+
+	renderer = new Renderer();
 	renderer->init_renderer();
 	renderer->create_pipelines();
 
@@ -148,7 +152,7 @@ void VulkanEngine::run()
 				if (e.key.keysym.sym == SDLK_SPACE)
 				{
 					_pipelineSelected += 1;
-					if (_pipelineSelected > 1)
+					if (_pipelineSelected > 2)
 					{
 						_pipelineSelected = 0;
 					}
@@ -157,9 +161,13 @@ void VulkanEngine::run()
 					{
 						std::cout << "Using Forward Rendering" << std::endl;
 					}
-					else
+					else if(_pipelineSelected == 1)
 					{
 						std::cout << "Using Deferred Rendering" << std::endl;
+					}
+					else
+					{
+						std::cout << "Using Raytracing Rendering" << std::endl;
 					}
 				}
 
@@ -276,7 +284,7 @@ void VulkanEngine::init_vulkan()
 	//make the Vulkan instance, with basic debug features
 	auto inst_ret = builder.set_app_name("Vulkan Engine")
 		.request_validation_layers(true)
-		.require_api_version(1, 1, 0)
+		.require_api_version(1, 2, 0)
 		.use_default_debug_messenger()
 		.enable_extension("VK_KHR_get_physical_device_properties2")
 		.build();
@@ -321,6 +329,7 @@ void VulkanEngine::init_vulkan()
 	allocatorInfo.physicalDevice = _physicalDevice;
 	allocatorInfo.device = _device;
 	allocatorInfo.instance = _instance;
+	allocatorInfo.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
 	vmaCreateAllocator(&allocatorInfo, &_allocator);
 
 	vkGetPhysicalDeviceProperties(_physicalDevice, &_gpuProperties);
@@ -355,6 +364,7 @@ void VulkanEngine::init_swapchain()
 		//use vsync present mode
 		.set_desired_present_mode(VK_PRESENT_MODE_FIFO_KHR)
 		.set_desired_extent(_windowExtent.width, _windowExtent.height)
+		.add_image_usage_flags(VK_IMAGE_USAGE_TRANSFER_DST_BIT)
 		.build()
 		.value();
 
@@ -477,6 +487,10 @@ void VulkanEngine::init_descriptor_set_pool()
 	pool_info.pPoolSizes = sizes.data();
 
 	vkCreateDescriptorPool(_device, &pool_info, nullptr, &_descriptorPool);
+
+	_mainDeletionQueue.push_function([=]() {
+		vkDestroyDescriptorPool(_device, _descriptorPool, nullptr);
+		});
 }
 
 void VulkanEngine::init_descriptor_set_layouts()
@@ -636,8 +650,6 @@ void VulkanEngine::init_descriptors()
 
 void VulkanEngine::init_scene()
 {
-	camera = new Camera(camera_default_position);
-
 	RenderObject map;
 	map._mesh = get_mesh("empire");
 	map._material = get_material("texturedmesh");
@@ -872,7 +884,7 @@ void VulkanEngine::update_descriptors_forward(RenderObject* first, int count)
 	vmaUnmapMemory(_allocator, get_current_frame().objectBuffer._allocation);
 }
 
-AllocatedBuffer VulkanEngine::create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage)
+AllocatedBuffer VulkanEngine::create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage, VmaAllocationCreateFlags flags)
 {
 	VkBufferCreateInfo bufferInfo = {};
 	bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -883,6 +895,7 @@ AllocatedBuffer VulkanEngine::create_buffer(size_t allocSize, VkBufferUsageFlags
 
 	VmaAllocationCreateInfo vmaallocInfo = {};
 	vmaallocInfo.usage = memoryUsage;
+	vmaallocInfo.flags = flags;
 
 	AllocatedBuffer newBuffer;
 

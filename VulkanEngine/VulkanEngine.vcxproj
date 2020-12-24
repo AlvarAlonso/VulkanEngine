@@ -178,18 +178,16 @@
     <ClInclude Include="..\src\vk_types.h" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="..\shaders\closestHit.rchit" />
     <None Include="..\shaders\default_lit.frag" />
-    <None Include="..\shaders\colored_triangle.vert" />
     <None Include="..\shaders\compile.bat" />
     <None Include="..\shaders\deferred.frag" />
     <None Include="..\shaders\deferred.vert" />
     <None Include="..\shaders\light.frag" />
     <None Include="..\shaders\light.vert" />
-    <None Include="..\shaders\normal.frag" />
-    <None Include="..\shaders\normal.vert" />
+    <None Include="..\shaders\miss.rmiss" />
+    <None Include="..\shaders\raygen.rgen" />
     <None Include="..\shaders\textured_lit.frag" />
-    <None Include="..\shaders\triangle.frag" />
-    <None Include="..\shaders\triangle.vert" />
     <None Include="..\shaders\tri_mesh.vert" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

@@ -9,13 +9,11 @@
 
 #include <array>
 
-using namespace GRAPHICS;
-
 Renderer::Renderer()
 {
 	_graphicsQueue = VulkanEngine::cinstance->_graphicsQueue;
 	_graphicsQueueFamily = VulkanEngine::cinstance->_graphicsQueueFamily;
-	_renderMode = RENDER_MODE_DEFERRED;
+	_renderMode = RENDER_MODE_RAYTRACING;
 }
 
 void Renderer::init_renderer()
@@ -28,6 +26,7 @@ void Renderer::init_renderer()
 	init_deferred_render_pass();
 	init_framebuffers();
 	init_gbuffers_descriptors();
+	init_raytracing();
 
 	deferred_quad.create_quad();
 }
@@ -50,9 +49,13 @@ void Renderer::draw_scene()
 	{
 		render_deferred();
 	}
+	else if(_renderMode == RENDER_MODE_RAYTRACING)
+	{
+		render_raytracing();
+	}
 }
 
-void GRAPHICS::Renderer::init_raytracing()
+void Renderer::init_raytracing()
 {
 	// Get the ray tracing and accelertion structure related function pointers required by this sample
 	vkCmdBuildAccelerationStructuresKHR = reinterpret_cast<PFN_vkCmdBuildAccelerationStructuresKHR>(vkGetDeviceProcAddr(VulkanEngine::cinstance->_device, "vkCmdBuildAccelerationStructuresKHR"));
@@ -65,24 +68,22 @@ void GRAPHICS::Renderer::init_raytracing()
 	vkGetRayTracingShaderGroupHandlesKHR = reinterpret_cast<PFN_vkGetRayTracingShaderGroupHandlesKHR>(vkGetDeviceProcAddr(VulkanEngine::cinstance->_device, "vkGetRayTracingShaderGroupHandlesKHR"));
 	vkCreateRayTracingPipelinesKHR = reinterpret_cast<PFN_vkCreateRayTracingPipelinesKHR>(vkGetDeviceProcAddr(VulkanEngine::cinstance->_device, "vkCreateRayTracingPipelinesKHR"));
 
-	void create_bottom_level_acceleration_structure();
+	create_bottom_level_acceleration_structure();
 
-	void create_top_level_acceleration_structure();
+	create_top_level_acceleration_structure();
 
-	void create_storage_image();
+	create_storage_image();
 
-	void create_uniform_buffer();
+	create_uniform_buffer();
 
-	void create_raytracing_pipeline();
+	create_raytracing_pipeline();
 
-	void create_shader_binding_table();
+	create_shader_binding_table();
 
-	void create_raytracing_descriptor_sets();
-
-	void allocate_raytracing_command_buffers();
+	create_raytracing_descriptor_sets();
 }
 
-void GRAPHICS::Renderer::create_bottom_level_acceleration_structure()
+void Renderer::create_bottom_level_acceleration_structure()
 {
 	// Setup vertices for a single triangle
 	struct Vertex {
@@ -107,19 +108,20 @@ void GRAPHICS::Renderer::create_bottom_level_acceleration_structure()
 
 	// Create buffers
 // For the sake of simplicity we won't stage the vertex data to the GPU memory
-// Vertex buffer
+
+	VkBufferUsageFlags bufferUsageFlags = VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
+	VmaMemoryUsage memoryUsageFlags = VMA_MEMORY_USAGE_CPU_TO_GPU;
+
+	// Vertex buffer
 	_vertexBuffer = VulkanEngine::cinstance->create_buffer(vertices.size() * sizeof(Vertex),
-		VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
-		VMA_MEMORY_USAGE_CPU_TO_GPU);
+		bufferUsageFlags, memoryUsageFlags);
 	// Index buffer
 	_indexBuffer = VulkanEngine::cinstance->create_buffer(indices.size() * sizeof(uint32_t),
-		VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
-		VMA_MEMORY_USAGE_CPU_TO_GPU);
+		bufferUsageFlags, memoryUsageFlags);
 
 	// Transform buffer
 	_transformBuffer = VulkanEngine::cinstance->create_buffer(sizeof(VkTransformMatrixKHR),
-		VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
-		VMA_MEMORY_USAGE_CPU_TO_GPU);
+		bufferUsageFlags, memoryUsageFlags);
 
 	VkDeviceOrHostAddressConstKHR vertexBufferDeviceAddress{};
 	VkDeviceOrHostAddressConstKHR indexBufferDeviceAddress{};
@@ -221,7 +223,7 @@ void GRAPHICS::Renderer::create_bottom_level_acceleration_structure()
 	_bottomLevelAS._deviceAddress = vkGetAccelerationStructureDeviceAddressKHR(VulkanEngine::cinstance->_device, &accelerationDeviceAddressInfo);
 }
 
-void GRAPHICS::Renderer::create_top_level_acceleration_structure()
+void Renderer::create_top_level_acceleration_structure()
 {
 	VkTransformMatrixKHR transformMatrix = {
 	1.0f, 0.0f, 0.0f, 0.0f,
@@ -241,7 +243,7 @@ void GRAPHICS::Renderer::create_top_level_acceleration_structure()
 	instancesBuffer = VulkanEngine::cinstance->create_buffer(
 		sizeof(VkAccelerationStructureInstanceKHR),
 		VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
-		VMA_MEMORY_USAGE_CPU_TO_GPU);
+		VMA_MEMORY_USAGE_CPU_TO_GPU, VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT);
 
 	void* data;
 	vmaMapMemory(VulkanEngine::cinstance->_allocator, instancesBuffer._allocation, &data);
@@ -288,6 +290,7 @@ void GRAPHICS::Renderer::create_top_level_acceleration_structure()
 	accelerationStructureCreateInfo.buffer = _topLevelAS._buffer;
 	accelerationStructureCreateInfo.size = accelerationStructureBuildSizesInfo.accelerationStructureSize;
 	accelerationStructureCreateInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
+
 	vkCreateAccelerationStructureKHR(VulkanEngine::cinstance->_device, &accelerationStructureCreateInfo, nullptr, &_topLevelAS._handle);
 
 	// Create a small scratch buffer used during build of the top level acceleration structure
@@ -337,9 +340,13 @@ void GRAPHICS::Renderer::create_top_level_acceleration_structure()
 	accelerationDeviceAddressInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR;
 	accelerationDeviceAddressInfo.accelerationStructure = _topLevelAS._handle;
 	_topLevelAS._deviceAddress = vkGetAccelerationStructureDeviceAddressKHR(VulkanEngine::cinstance->_device, &accelerationDeviceAddressInfo);
+
+	VulkanEngine::cinstance->_mainDeletionQueue.push_function([=]() {
+		vkDestroyAccelerationStructureKHR(VulkanEngine::cinstance->_device, _topLevelAS._handle, nullptr);
+		});
 }
 
-void GRAPHICS::Renderer::create_storage_image()
+void Renderer::create_storage_image()
 {
 	VkExtent3D extent = 
 	{
@@ -396,19 +403,19 @@ void GRAPHICS::Renderer::create_storage_image()
 		});
 }
 
-void GRAPHICS::Renderer::create_uniform_buffer()
+void Renderer::create_uniform_buffer()
 {
-	_ubo = VulkanEngine::cinstance->create_buffer(sizeof(UniformData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+	_ubo = VulkanEngine::cinstance->create_buffer(sizeof(uniformData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
 		VMA_MEMORY_USAGE_CPU_TO_GPU);
 
 	void* data;
 	vmaMapMemory(VulkanEngine::cinstance->_allocator, _ubo._allocation, &data);
 	uniformData.projInverse = glm::inverse(VulkanEngine::cinstance->camera->getProjection());
-	uniformData.viewInverse = glm::inverse(VulkanEngine::cinstance->camera->getView()); //ERROR
+	uniformData.viewInverse = glm::inverse(VulkanEngine::cinstance->camera->getView());
 	memcpy(data, &uniformData, sizeof(uniformData));
 }
 
-void GRAPHICS::Renderer::create_raytracing_pipeline()
+void Renderer::create_raytracing_pipeline()
 {
 	VkDescriptorSetLayoutBinding accelerationStructureLayoutBinding{};
 	accelerationStructureLayoutBinding.binding = 0;
@@ -537,7 +544,7 @@ void GRAPHICS::Renderer::create_raytracing_pipeline()
 	VK_CHECK(vkCreateRayTracingPipelinesKHR(VulkanEngine::cinstance->_device, VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &raytracing_pipeline_info, nullptr, &_rayTracingPipeline));
 }
 
-void GRAPHICS::Renderer::create_shader_binding_table()
+void Renderer::create_shader_binding_table()
 {
 	const uint32_t handleSize = VulkanEngine::cinstance->_rayTracingPipelineProperties.shaderGroupHandleSize;
 	const uint32_t handleSizeAligned = VulkanEngine::cinstance->get_aligned_size(VulkanEngine::cinstance->_rayTracingPipelineProperties.shaderGroupHandleSize, VulkanEngine::cinstance->_rayTracingPipelineProperties.shaderGroupHandleAlignment);
@@ -563,17 +570,20 @@ void GRAPHICS::Renderer::create_shader_binding_table()
 	void* raygen_data;
 	vmaMapMemory(VulkanEngine::cinstance->_allocator, _raygenShaderBindingTable._allocation, &raygen_data);
 	memcpy(raygen_data, shaderHandleStorage.data(), handleSize);
+	vmaUnmapMemory(VulkanEngine::cinstance->_allocator, _raygenShaderBindingTable._allocation);
 
 	void* miss_data;
-	vmaMapMemory(VulkanEngine::cinstance->_allocator, _raygenShaderBindingTable._allocation, &miss_data);
+	vmaMapMemory(VulkanEngine::cinstance->_allocator, _missShaderBindingTable._allocation, &miss_data);
 	memcpy(miss_data, shaderHandleStorage.data() + handleSizeAligned, handleSize);
+	vmaUnmapMemory(VulkanEngine::cinstance->_allocator, _missShaderBindingTable._allocation);
 
 	void* hit_data;
-	vmaMapMemory(VulkanEngine::cinstance->_allocator, _raygenShaderBindingTable._allocation, &hit_data);
+	vmaMapMemory(VulkanEngine::cinstance->_allocator, _hitShaderBindingTable._allocation, &hit_data);
 	memcpy(hit_data, shaderHandleStorage.data() + handleSizeAligned * 2, handleSize);
+	vmaUnmapMemory(VulkanEngine::cinstance->_allocator, _hitShaderBindingTable._allocation);
 }
 
-void GRAPHICS::Renderer::create_raytracing_descriptor_sets()
+void Renderer::create_raytracing_descriptor_sets()
 {
 	std::vector<VkDescriptorPoolSize> poolSizes = {
 		{VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1},
@@ -590,6 +600,10 @@ void GRAPHICS::Renderer::create_raytracing_descriptor_sets()
 	dp_info.pPoolSizes = poolSizes.data();
 
 	VK_CHECK(vkCreateDescriptorPool(VulkanEngine::cinstance->_device, &dp_info, nullptr, &_rayTracingDescriptorPool));
+
+	VulkanEngine::cinstance->_mainDeletionQueue.push_function([=]() {
+		vkDestroyDescriptorPool(VulkanEngine::cinstance->_device, _rayTracingDescriptorPool, nullptr);
+		});
 
 	VkDescriptorSetAllocateInfo alloc_info = {};
 	alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -635,195 +649,193 @@ void GRAPHICS::Renderer::create_raytracing_descriptor_sets()
 	vkUpdateDescriptorSets(VulkanEngine::cinstance->_device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, VK_NULL_HANDLE);
 }
 
-void GRAPHICS::Renderer::allocate_raytracing_command_buffers()
+void Renderer::record_raytracing_command_buffer(VkCommandBuffer cmd, uint32_t swapchainImageIndex)
 {
 	VkCommandBufferBeginInfo cmdBufInfo = vkinit::command_buffer_begin_info();
 
 	VkImageSubresourceRange subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
 
-	for (int32_t i = 0; i < FRAME_OVERLAP; ++i)
+	VK_CHECK(vkBeginCommandBuffer(cmd, &cmdBufInfo));
+	
+	/*
+		Setup the buffer regions pointing to the shaders in our shader binding table
+	*/
+
+	const uint32_t handleSizeAligned = VulkanEngine::cinstance->get_aligned_size(VulkanEngine::cinstance->_rayTracingPipelineProperties.shaderGroupHandleSize, VulkanEngine::cinstance->_rayTracingPipelineProperties.shaderGroupHandleAlignment);
+
+	VkBufferDeviceAddressInfoKHR raygenDeviceAddressInfo{};
+	raygenDeviceAddressInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+	raygenDeviceAddressInfo.buffer = _raygenShaderBindingTable._buffer;
+
+	VkStridedDeviceAddressRegionKHR raygenShaderSbtEntry{};
+	raygenShaderSbtEntry.deviceAddress = vkGetBufferDeviceAddress(VulkanEngine::cinstance->_device, &raygenDeviceAddressInfo);
+	raygenShaderSbtEntry.stride = handleSizeAligned;
+	raygenShaderSbtEntry.size = handleSizeAligned;
+
+	VkBufferDeviceAddressInfoKHR missDeviceAddressInfo{};
+	missDeviceAddressInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+	missDeviceAddressInfo.buffer = _missShaderBindingTable._buffer;
+
+	VkStridedDeviceAddressRegionKHR missShaderSbtEntry{};
+	missShaderSbtEntry.deviceAddress = vkGetBufferDeviceAddress(VulkanEngine::cinstance->_device, &missDeviceAddressInfo);
+	missShaderSbtEntry.stride = handleSizeAligned;
+	missShaderSbtEntry.size = handleSizeAligned;
+
+	VkBufferDeviceAddressInfoKHR hitDeviceAddressInfo{};
+	hitDeviceAddressInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+	hitDeviceAddressInfo.buffer = _hitShaderBindingTable._buffer;
+
+	VkStridedDeviceAddressRegionKHR hitShaderSbtEntry{};
+	hitShaderSbtEntry.deviceAddress = vkGetBufferDeviceAddress(VulkanEngine::cinstance->_device, &hitDeviceAddressInfo);
+	hitShaderSbtEntry.stride = handleSizeAligned;
+	hitShaderSbtEntry.size = handleSizeAligned;
+
+	VkStridedDeviceAddressRegionKHR callableShaderSbtEntry{};
+
+	/*
+		Dispatch the ray tracing commands
+	*/
+	
+	vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, _rayTracingPipeline);
+	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, _rayTracingPipelineLayout, 0, 1, &_rayTracingDescriptorSet, 0, 0);
+	
+	vkCmdTraceRaysKHR(
+		cmd,
+		&raygenShaderSbtEntry,
+		&missShaderSbtEntry,
+		&hitShaderSbtEntry,
+		&callableShaderSbtEntry,
+		VulkanEngine::cinstance->_windowExtent.width,
+		VulkanEngine::cinstance->_windowExtent.height,
+		1);
+	
+	/*
+		Copy ray tracing output to swap chain image
+	*/
+	
+	// Prepare current swap chain image as transfer destination
 	{
-		VK_CHECK(vkBeginCommandBuffer(_frames[i]._mainCommandBuffer, &cmdBufInfo));
+		VkImageMemoryBarrier barrier = {};
+		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+		barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.image = VulkanEngine::cinstance->_swapchainImages[swapchainImageIndex];
+		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		barrier.subresourceRange.baseMipLevel = 0;
+		barrier.subresourceRange.levelCount = 1;
+		barrier.subresourceRange.baseArrayLayer = 0;
+		barrier.subresourceRange.layerCount = 1;
 
-		/*
-			Setup the buffer regions pointing to the shaders in our shader binding table
-		*/
+		barrier.srcAccessMask = 0;
+		barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
 
-		const uint32_t handleSizeAligned = VulkanEngine::cinstance->get_aligned_size(VulkanEngine::cinstance->_rayTracingPipelineProperties.shaderGroupHandleSize, VulkanEngine::cinstance->_rayTracingPipelineProperties.shaderGroupHandleAlignment);
-
-		VkBufferDeviceAddressInfoKHR raygenDeviceAddressInfo{};
-		raygenDeviceAddressInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
-		raygenDeviceAddressInfo.buffer = _raygenShaderBindingTable._buffer;
-
-		VkStridedDeviceAddressRegionKHR raygenShaderSbtEntry{};
-		raygenShaderSbtEntry.deviceAddress = vkGetBufferDeviceAddress(VulkanEngine::cinstance->_device, &raygenDeviceAddressInfo);
-		raygenShaderSbtEntry.stride = handleSizeAligned;
-		raygenShaderSbtEntry.size = handleSizeAligned;
-
-		VkBufferDeviceAddressInfoKHR missDeviceAddressInfo{};
-		missDeviceAddressInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
-		missDeviceAddressInfo.buffer = _missShaderBindingTable._buffer;
-
-		VkStridedDeviceAddressRegionKHR missShaderSbtEntry{};
-		missShaderSbtEntry.deviceAddress = vkGetBufferDeviceAddress(VulkanEngine::cinstance->_device, &missDeviceAddressInfo);
-		missShaderSbtEntry.stride = handleSizeAligned;
-		missShaderSbtEntry.size = handleSizeAligned;
-
-		VkBufferDeviceAddressInfoKHR hitDeviceAddressInfo{};
-		hitDeviceAddressInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
-		hitDeviceAddressInfo.buffer = _hitShaderBindingTable._buffer;
-
-		VkStridedDeviceAddressRegionKHR hitShaderSbtEntry{};
-		hitShaderSbtEntry.deviceAddress = vkGetBufferDeviceAddress(VulkanEngine::cinstance->_device, &hitDeviceAddressInfo);
-		hitShaderSbtEntry.stride = handleSizeAligned;
-		hitShaderSbtEntry.size = handleSizeAligned;
-
-		VkStridedDeviceAddressRegionKHR callableShaderSbtEntry{};
-
-		/*
-			Dispatch the ray tracing commands
-		*/
-		vkCmdBindPipeline(_frames[i]._mainCommandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, _rayTracingPipeline);
-		vkCmdBindDescriptorSets(_frames[i]._mainCommandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, _rayTracingPipelineLayout, 0, 1, &_rayTracingDescriptorSet, 0, 0);
-
-		vkCmdTraceRaysKHR(
-			_frames[i]._mainCommandBuffer,
-			&raygenShaderSbtEntry,
-			&missShaderSbtEntry,
-			&hitShaderSbtEntry,
-			&callableShaderSbtEntry,
-			VulkanEngine::cinstance->_windowExtent.width,
-			VulkanEngine::cinstance->_windowExtent.height,
-			1);
-
-		/*
-			Copy ray tracing output to swap chain image
-		*/
-
-		// Prepare current swap chain image as transfer destination
-		{
-			VkImageMemoryBarrier barrier = {};
-			barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-			barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-			barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-			barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-			barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-			barrier.image = VulkanEngine::cinstance->_swapchainImages[i];
-			barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-			barrier.subresourceRange.baseMipLevel = 0;
-			barrier.subresourceRange.levelCount = 1;
-			barrier.subresourceRange.baseArrayLayer = 0;
-			barrier.subresourceRange.layerCount = 1;
-
-			barrier.srcAccessMask = 0;
-			barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-
-			vkCmdPipelineBarrier(
-				_frames[i]._mainCommandBuffer,
-				VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-				0,
-				0, nullptr,
-				0, nullptr,
-				1, &barrier
-			);
-		}
-
-		// Prepare ray tracing output image as transfer source
-		{
-			VkImageMemoryBarrier barrier = {};
-			barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-			barrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
-			barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-			barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-			barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-			barrier.image = VulkanEngine::cinstance->_swapchainImages[i];
-			barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-			barrier.subresourceRange.baseMipLevel = 0;
-			barrier.subresourceRange.levelCount = 1;
-			barrier.subresourceRange.baseArrayLayer = 0;
-			barrier.subresourceRange.layerCount = 1;
-
-			barrier.srcAccessMask = 0;
-			barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-
-			vkCmdPipelineBarrier(
-				_frames[i]._mainCommandBuffer,
-				VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-				0,
-				0, nullptr,
-				0, nullptr,
-				1, &barrier
-			);
-		}
-
-		VkImageCopy copyRegion{};
-		copyRegion.srcSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
-		copyRegion.srcOffset = { 0, 0, 0 };
-		copyRegion.dstSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
-		copyRegion.dstOffset = { 0, 0, 0 };
-		copyRegion.extent = { VulkanEngine::cinstance->_windowExtent.width, VulkanEngine::cinstance->_windowExtent.height, 1 };
-		vkCmdCopyImage(_frames[i]._mainCommandBuffer, _storageImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VulkanEngine::cinstance->_swapchainImages[i], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
-
-		// Transition swap chain image back for presentation
-		{
-			VkImageMemoryBarrier barrier = {};
-			barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-			barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-			barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-			barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-			barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-			barrier.image = VulkanEngine::cinstance->_swapchainImages[i];
-			barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-			barrier.subresourceRange.baseMipLevel = 0;
-			barrier.subresourceRange.levelCount = 1;
-			barrier.subresourceRange.baseArrayLayer = 0;
-			barrier.subresourceRange.layerCount = 1;
-
-			barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-			barrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
-
-			vkCmdPipelineBarrier(
-				_frames[i]._mainCommandBuffer,
-				VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-				0,
-				0, nullptr,
-				0, nullptr,
-				1, &barrier
-			);
-		}
-
-		// Transition ray tracing output image back to general layout
-		{
-			VkImageMemoryBarrier barrier = {};
-			barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-			barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-			barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
-			barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-			barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-			barrier.image = VulkanEngine::cinstance->_swapchainImages[i];
-			barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-			barrier.subresourceRange.baseMipLevel = 0;
-			barrier.subresourceRange.levelCount = 1;
-			barrier.subresourceRange.baseArrayLayer = 0;
-			barrier.subresourceRange.layerCount = 1;
-
-			barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-
-			vkCmdPipelineBarrier(
-				_frames[i]._mainCommandBuffer,
-				VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-				0,
-				0, nullptr,
-				0, nullptr,
-				1, &barrier
-			);
-		}
-
-		VK_CHECK(vkEndCommandBuffer(_frames[i]._mainCommandBuffer));
+		vkCmdPipelineBarrier(
+			cmd,
+			VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+			0,
+			0, nullptr,
+			0, nullptr,
+			1, &barrier
+		);
 	}
+
+	// Prepare ray tracing output image as transfer source
+	{
+		VkImageMemoryBarrier barrier = {};
+		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+		barrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+		barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.image = _storageImage;
+		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		barrier.subresourceRange.baseMipLevel = 0;
+		barrier.subresourceRange.levelCount = 1;
+		barrier.subresourceRange.baseArrayLayer = 0;
+		barrier.subresourceRange.layerCount = 1;
+
+		barrier.srcAccessMask = 0;
+		barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+
+		vkCmdPipelineBarrier(
+			cmd,
+			VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+			0,
+			0, nullptr,
+			0, nullptr,
+			1, &barrier
+		);
+	}
+
+	VkImageCopy copyRegion{};
+	copyRegion.srcSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
+	copyRegion.srcOffset = { 0, 0, 0 };
+	copyRegion.dstSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
+	copyRegion.dstOffset = { 0, 0, 0 };
+	copyRegion.extent = { VulkanEngine::cinstance->_windowExtent.width, VulkanEngine::cinstance->_windowExtent.height, 1 };
+	vkCmdCopyImage(cmd, _storageImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VulkanEngine::cinstance->_swapchainImages[swapchainImageIndex], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
+		
+	// Transition swap chain image back for presentation
+	{
+		VkImageMemoryBarrier barrier = {};
+		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+		barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+		barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.image = VulkanEngine::cinstance->_swapchainImages[swapchainImageIndex];
+		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		barrier.subresourceRange.baseMipLevel = 0;
+		barrier.subresourceRange.levelCount = 1;
+		barrier.subresourceRange.baseArrayLayer = 0;
+		barrier.subresourceRange.layerCount = 1;
+
+		barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+		barrier.dstAccessMask = 0;
+
+		vkCmdPipelineBarrier(
+			cmd,
+			VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+			0,
+			0, nullptr,
+			0, nullptr,
+			1, &barrier
+		);
+	}
+	
+	// Transition ray tracing output image back to general layout
+	{
+		VkImageMemoryBarrier barrier = {};
+		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+		barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+		barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.image = _storageImage;
+		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		barrier.subresourceRange.baseMipLevel = 0;
+		barrier.subresourceRange.levelCount = 1;
+		barrier.subresourceRange.baseArrayLayer = 0;
+		barrier.subresourceRange.layerCount = 1;
+
+		barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+
+		vkCmdPipelineBarrier(
+			cmd,
+			VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+			0,
+			0, nullptr,
+			0, nullptr,
+			1, &barrier
+		);
+	}
+	
+	VK_CHECK(vkEndCommandBuffer(cmd));
 }
 
-RayTracingScratchBuffer GRAPHICS::Renderer::create_scratch_buffer(VkDeviceSize size)
+RayTracingScratchBuffer Renderer::create_scratch_buffer(VkDeviceSize size)
 {
 	RayTracingScratchBuffer scratchBuffer{};
 
@@ -848,10 +860,7 @@ RayTracingScratchBuffer GRAPHICS::Renderer::create_scratch_buffer(VkDeviceSize s
 	VK_CHECK(vkAllocateMemory(VulkanEngine::cinstance->_device, &memoryAllocateInfo, nullptr, &scratchBuffer._memory));
 	VK_CHECK(vkBindBufferMemory(VulkanEngine::cinstance->_device, scratchBuffer._buffer, scratchBuffer._memory, 0));
 
-	VkBufferDeviceAddressInfoKHR bufferDeviceAddressInfo{};
-	bufferDeviceAddressInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
-	bufferDeviceAddressInfo.buffer = scratchBuffer._buffer;
-	scratchBuffer._deviceAddress = vkGetBufferDeviceAddressKHR(VulkanEngine::cinstance->_device, &bufferDeviceAddressInfo);
+	scratchBuffer._deviceAddress = VulkanEngine::cinstance->get_buffer_device_address(scratchBuffer._buffer);
 
 	VulkanEngine::cinstance->_mainDeletionQueue.push_function([=]() {
 		vkFreeMemory(VulkanEngine::cinstance->_device, scratchBuffer._memory, nullptr);
@@ -861,7 +870,7 @@ RayTracingScratchBuffer GRAPHICS::Renderer::create_scratch_buffer(VkDeviceSize s
 	return scratchBuffer;
 }
 
-void GRAPHICS::Renderer::create_acceleration_structure_buffer(AccelerationStructure& accelerationStructure, VkAccelerationStructureBuildSizesInfoKHR buildSizeInfo)
+void Renderer::create_acceleration_structure_buffer(AccelerationStructure& accelerationStructure, VkAccelerationStructureBuildSizesInfoKHR buildSizeInfo)
 {
 	VkBufferCreateInfo bufferCreateInfo{};
 	bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -885,6 +894,11 @@ void GRAPHICS::Renderer::create_acceleration_structure_buffer(AccelerationStruct
 
 	VK_CHECK(vkAllocateMemory(VulkanEngine::cinstance->_device, &memoryAllocateInfo, nullptr, &accelerationStructure._memory));
 	VK_CHECK(vkBindBufferMemory(VulkanEngine::cinstance->_device, accelerationStructure._buffer, accelerationStructure._memory, 0));
+
+	VulkanEngine::cinstance->_mainDeletionQueue.push_function([=]() {
+		vkFreeMemory(VulkanEngine::cinstance->_device, accelerationStructure._memory, nullptr);
+		vkDestroyBuffer(VulkanEngine::cinstance->_device, accelerationStructure._buffer, nullptr);
+		});
 }
 
 void Renderer::create_depth_buffer()
@@ -1239,7 +1253,7 @@ void Renderer::init_deferred_render_pass()
 		});
 }
 
-void GRAPHICS::Renderer::init_gbuffers_descriptors()
+void Renderer::init_gbuffers_descriptors()
 {
 	VkDescriptorPoolSize pool_size = {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 10};
 
@@ -1301,7 +1315,7 @@ void GRAPHICS::Renderer::init_gbuffers_descriptors()
 	vkUpdateDescriptorSets(VulkanEngine::cinstance->_device, static_cast<uint32_t>(setWrites.size()), setWrites.data(), 0, nullptr);
 }
 
-void GRAPHICS::Renderer::create_pipelines()
+void Renderer::create_pipelines()
 {
 	create_forward_pipelines();
 	create_deferred_pipelines();
@@ -1491,7 +1505,51 @@ void Renderer::render_deferred()
 	VulkanEngine::cinstance->_frameNumber++;
 }
 
-void GRAPHICS::Renderer::draw_forward(VkCommandBuffer cmd, RenderObject* first, int count)
+void Renderer::render_raytracing()
+{
+	VK_CHECK(vkWaitForFences(VulkanEngine::cinstance->cinstance->_device, 1, &_frames[get_current_frame_index()]._renderFence, true, UINT64_MAX));
+	VK_CHECK(vkResetFences(VulkanEngine::cinstance->_device, 1, &_frames[get_current_frame_index()]._renderFence));
+
+	//request image from the swapchain
+	uint32_t swapchainImageIndex;
+	VK_CHECK(vkAcquireNextImageKHR(VulkanEngine::cinstance->_device, VulkanEngine::cinstance->_swapchain, 0, _frames[get_current_frame_index()]._presentSemaphore, nullptr, &swapchainImageIndex));
+
+	VkCommandBuffer cmd = _frames[get_current_frame_index()]._mainCommandBuffer;
+
+	VK_CHECK(vkResetCommandBuffer(cmd, 0));
+
+	record_raytracing_command_buffer(cmd, swapchainImageIndex);
+
+	VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
+
+	VkSubmitInfo submit_info = vkinit::submit_info(&cmd);
+	submit_info.pWaitDstStageMask = waitStages;
+	submit_info.waitSemaphoreCount = 1;
+	submit_info.pWaitSemaphores = &_frames[get_current_frame_index()]._presentSemaphore;
+	submit_info.signalSemaphoreCount = 1;
+	submit_info.pSignalSemaphores = &_frames[get_current_frame_index()]._renderSemaphore;
+
+	VK_CHECK(vkQueueSubmit(_graphicsQueue, 1, &submit_info, _frames[get_current_frame_index()]._renderFence));
+
+	VkPresentInfoKHR presentInfo = {};
+	presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+	presentInfo.pNext = nullptr;
+
+	presentInfo.pSwapchains = &VulkanEngine::cinstance->_swapchain;
+	presentInfo.swapchainCount = 1;
+
+	presentInfo.pWaitSemaphores = &_frames[get_current_frame_index()]._renderSemaphore;
+	presentInfo.waitSemaphoreCount = 1;
+
+	presentInfo.pImageIndices = &swapchainImageIndex;
+
+	VK_CHECK(vkQueuePresentKHR(_graphicsQueue, &presentInfo));
+
+
+	VulkanEngine::cinstance->_frameNumber++;
+}
+
+void Renderer::draw_forward(VkCommandBuffer cmd, RenderObject* first, int count)
 {
 	int frameIndex = _frameNumber % FRAME_OVERLAP;
 
@@ -1528,7 +1586,7 @@ void GRAPHICS::Renderer::draw_forward(VkCommandBuffer cmd, RenderObject* first, 
 	}
 }
 
-void GRAPHICS::Renderer::draw_deferred(VkCommandBuffer cmd, int imageIndex)
+void Renderer::draw_deferred(VkCommandBuffer cmd, int imageIndex)
 {
 	//SECOND PASS
 
@@ -1576,7 +1634,7 @@ void GRAPHICS::Renderer::draw_deferred(VkCommandBuffer cmd, int imageIndex)
 	VK_CHECK(vkEndCommandBuffer(cmd));
 }
 
-void GRAPHICS::Renderer::create_forward_pipelines()
+void Renderer::create_forward_pipelines()
 {
 	//FORWARD PIPELINES
 
@@ -1669,13 +1727,12 @@ void GRAPHICS::Renderer::create_forward_pipelines()
 	pipelineBuilder._shaderStages.push_back(
 		vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT, meshVertShader));
 
-	//make sure that triangleFragShader is holding the compiled colored_triangle.frag
 	pipelineBuilder._shaderStages.push_back(
 		vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, colorMeshShader));
 
 	pipelineBuilder._pipelineLayout = VulkanEngine::cinstance->_forwardPipelineLayout;
 
-	//build the mesh triangle pipeline
+	//build the mesh pipeline
 	_forwardPipeline = pipelineBuilder.build_pipeline(VulkanEngine::cinstance->_device, _defaultRenderPass);
 
 	VulkanEngine::cinstance->create_material(_forwardPipeline, VulkanEngine::cinstance->_forwardPipelineLayout, "defaultmesh");
@@ -1707,7 +1764,7 @@ void GRAPHICS::Renderer::create_forward_pipelines()
 		});
 }
 
-void GRAPHICS::Renderer::create_deferred_pipelines()
+void Renderer::create_deferred_pipelines()
 {
 	//DEFERRED PIPELINES
 

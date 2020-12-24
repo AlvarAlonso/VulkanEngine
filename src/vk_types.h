@@ -24,7 +24,7 @@ using namespace std;
 
 struct AllocatedBuffer {
 	VkBuffer _buffer = VK_NULL_HANDLE;
-	VmaAllocation _allocation = VMA_NULL;
+	VmaAllocation _allocation;
 };
 
 struct AllocatedImage {

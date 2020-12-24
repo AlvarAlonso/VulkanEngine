@@ -27,7 +27,7 @@ VkCommandBufferBeginInfo vkinit::command_buffer_begin_info(VkCommandBufferUsageF
 	VkCommandBufferBeginInfo info = {};
 	info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 	info.pNext = nullptr;
-
+	
 	info.pInheritanceInfo = nullptr;
 	info.flags = flags;
 	return info;
@@ -321,18 +321,4 @@ VkSamplerCreateInfo vkinit::sampler_create_info(VkFilter filters, VkSamplerAddre
 	info.addressModeW = samplerAdressMode;
 
 	return info;
-}
-
-VkWriteDescriptorSet vkinit::write_descriptor_image(VkDescriptorType type, VkDescriptorSet dstSet, VkDescriptorImageInfo* imageInfo, uint32_t binding)
-{
-	VkWriteDescriptorSet write = {};
-	write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-	write.pNext = nullptr;
-
-	write.dstBinding = binding;
-	write.dstSet = dstSet;
-	write.descriptorCount = 1;
-	write.descriptorType = type;
-	write.pImageInfo = imageInfo;
-	return write;
 }

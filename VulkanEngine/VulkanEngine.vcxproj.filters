@@ -91,16 +91,7 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <None Include="..\shaders\triangle.vert">
-      <Filter>Shaders</Filter>
-    </None>
-    <None Include="..\shaders\triangle.frag">
-      <Filter>Shaders</Filter>
-    </None>
     <None Include="..\shaders\compile.bat">
-      <Filter>Shaders</Filter>
-    </None>
-    <None Include="..\shaders\colored_triangle.vert">
       <Filter>Shaders</Filter>
     </None>
     <None Include="..\shaders\tri_mesh.vert">
@@ -110,12 +101,6 @@
       <Filter>Shaders</Filter>
     </None>
     <None Include="..\shaders\textured_lit.frag">
-      <Filter>Shaders</Filter>
-    </None>
-    <None Include="..\shaders\normal.frag">
-      <Filter>Shaders</Filter>
-    </None>
-    <None Include="..\shaders\normal.vert">
       <Filter>Shaders</Filter>
     </None>
     <None Include="..\shaders\deferred.vert">
@@ -128,6 +113,15 @@
       <Filter>Shaders</Filter>
     </None>
     <None Include="..\shaders\light.frag">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="..\shaders\raygen.rgen">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="..\shaders\miss.rmiss">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="..\shaders\closestHit.rchit">
       <Filter>Shaders</Filter>
     </None>
   </ItemGroup>
