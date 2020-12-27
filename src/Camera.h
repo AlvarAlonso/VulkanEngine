@@ -40,5 +40,6 @@ public:
     glm::mat4 getProjection();
 
 private:
+
     void updateCameraVectors();
 };

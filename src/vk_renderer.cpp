@@ -86,10 +86,10 @@ void Renderer::init_raytracing()
 void Renderer::create_bottom_level_acceleration_structure()
 {
 	// Setup vertices for a single triangle
-	struct Vertex {
+	struct pVertex {
 		float pos[3];
 	};
-	std::vector<Vertex> vertices = {
+	std::vector<pVertex> vertices = {
 		{ {  1.0f,  1.0f, 0.0f } },
 		{ { -1.0f,  1.0f, 0.0f } },
 		{ {  0.0f, -1.0f, 0.0f } }
@@ -113,8 +113,9 @@ void Renderer::create_bottom_level_acceleration_structure()
 	VmaMemoryUsage memoryUsageFlags = VMA_MEMORY_USAGE_CPU_TO_GPU;
 
 	// Vertex buffer
-	_vertexBuffer = VulkanEngine::cinstance->create_buffer(vertices.size() * sizeof(Vertex),
+	_vertexBuffer = VulkanEngine::cinstance->create_buffer(vertices.size() * sizeof(pVertex),
 		bufferUsageFlags, memoryUsageFlags);
+
 	// Index buffer
 	_indexBuffer = VulkanEngine::cinstance->create_buffer(indices.size() * sizeof(uint32_t),
 		bufferUsageFlags, memoryUsageFlags);
@@ -122,6 +123,21 @@ void Renderer::create_bottom_level_acceleration_structure()
 	// Transform buffer
 	_transformBuffer = VulkanEngine::cinstance->create_buffer(sizeof(VkTransformMatrixKHR),
 		bufferUsageFlags, memoryUsageFlags);
+
+	void* vertexData;
+	vmaMapMemory(VulkanEngine::cinstance->_allocator, _vertexBuffer._allocation, &vertexData);
+	memcpy(vertexData, vertices.data(), vertices.size() * sizeof(pVertex));
+	vmaUnmapMemory(VulkanEngine::cinstance->_allocator, _vertexBuffer._allocation);
+
+	void* indexData;
+	vmaMapMemory(VulkanEngine::cinstance->_allocator, _indexBuffer._allocation, &indexData);
+	memcpy(indexData, indices.data(), indices.size() * sizeof(uint32_t));
+	vmaUnmapMemory(VulkanEngine::cinstance->_allocator, _indexBuffer._allocation);
+
+	void* transformData;
+	vmaMapMemory(VulkanEngine::cinstance->_allocator, _transformBuffer._allocation, &transformData);
+	memcpy(transformData, &transformMatrix, sizeof(VkTransformMatrixKHR));
+	vmaUnmapMemory(VulkanEngine::cinstance->_allocator, _transformBuffer._allocation);
 
 	VkDeviceOrHostAddressConstKHR vertexBufferDeviceAddress{};
 	VkDeviceOrHostAddressConstKHR indexBufferDeviceAddress{};
@@ -140,7 +156,7 @@ void Renderer::create_bottom_level_acceleration_structure()
 	accelerationStructureGeometry.geometry.triangles.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;
 	accelerationStructureGeometry.geometry.triangles.vertexData = vertexBufferDeviceAddress;
 	accelerationStructureGeometry.geometry.triangles.maxVertex = 3;
-	accelerationStructureGeometry.geometry.triangles.vertexStride = sizeof(Vertex);
+	accelerationStructureGeometry.geometry.triangles.vertexStride = sizeof(pVertex);
 	accelerationStructureGeometry.geometry.triangles.indexType = VK_INDEX_TYPE_UINT32;
 	accelerationStructureGeometry.geometry.triangles.indexData = indexBufferDeviceAddress;
 	accelerationStructureGeometry.geometry.triangles.transformData.deviceAddress = 0;
@@ -221,6 +237,8 @@ void Renderer::create_bottom_level_acceleration_structure()
 	accelerationDeviceAddressInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR;
 	accelerationDeviceAddressInfo.accelerationStructure = _bottomLevelAS._handle;
 	_bottomLevelAS._deviceAddress = vkGetAccelerationStructureDeviceAddressKHR(VulkanEngine::cinstance->_device, &accelerationDeviceAddressInfo);
+
+	delete_scratch_buffer(scratchBuffer);
 }
 
 void Renderer::create_top_level_acceleration_structure()
@@ -243,7 +261,7 @@ void Renderer::create_top_level_acceleration_structure()
 	instancesBuffer = VulkanEngine::cinstance->create_buffer(
 		sizeof(VkAccelerationStructureInstanceKHR),
 		VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
-		VMA_MEMORY_USAGE_CPU_TO_GPU, VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT);
+		VMA_MEMORY_USAGE_CPU_TO_GPU);
 
 	void* data;
 	vmaMapMemory(VulkanEngine::cinstance->_allocator, instancesBuffer._allocation, &data);
@@ -344,6 +362,10 @@ void Renderer::create_top_level_acceleration_structure()
 	VulkanEngine::cinstance->_mainDeletionQueue.push_function([=]() {
 		vkDestroyAccelerationStructureKHR(VulkanEngine::cinstance->_device, _topLevelAS._handle, nullptr);
 		});
+
+	delete_scratch_buffer(scratchBuffer);
+
+	vmaDestroyBuffer(VulkanEngine::cinstance->_allocator, instancesBuffer._buffer, instancesBuffer._allocation);
 }
 
 void Renderer::create_storage_image()
@@ -408,11 +430,22 @@ void Renderer::create_uniform_buffer()
 	_ubo = VulkanEngine::cinstance->create_buffer(sizeof(uniformData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
 		VMA_MEMORY_USAGE_CPU_TO_GPU);
 
+	update_uniform_buffers();
+}
+
+void Renderer::update_uniform_buffers()
+{
+	//glm::vec3 camPos = { 0.0f, 0.0f, -2.5f };
+	//glm::mat4 view = glm::translate(glm::mat4(1.0f), camPos);
+	glm::mat4 projection = glm::perspective(glm::radians(60.0f), 1700.0f / 900.0f, 0.1f, 512.0f);
+	projection[1][1] *= -1;
+
 	void* data;
 	vmaMapMemory(VulkanEngine::cinstance->_allocator, _ubo._allocation, &data);
-	uniformData.projInverse = glm::inverse(VulkanEngine::cinstance->camera->getProjection());
+	uniformData.projInverse = glm::inverse(projection);
 	uniformData.viewInverse = glm::inverse(VulkanEngine::cinstance->camera->getView());
 	memcpy(data, &uniformData, sizeof(uniformData));
+	vmaUnmapMemory(VulkanEngine::cinstance->_allocator, _ubo._allocation);
 }
 
 void Renderer::create_raytracing_pipeline()
@@ -635,7 +668,7 @@ void Renderer::create_raytracing_descriptor_sets()
 	VkDescriptorBufferInfo uboBufferDescriptor{};
 	uboBufferDescriptor.offset = 0;
 	uboBufferDescriptor.buffer = _ubo._buffer;
-	uboBufferDescriptor.range = sizeof(UniformData);
+	uboBufferDescriptor.range = sizeof(uniformData);
 
 	VkWriteDescriptorSet resultImageWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, _rayTracingDescriptorSet, &storageImageDescriptor, 1);
 	VkWriteDescriptorSet uniformBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, _rayTracingDescriptorSet, &uboBufferDescriptor, 2);
@@ -860,17 +893,25 @@ RayTracingScratchBuffer Renderer::create_scratch_buffer(VkDeviceSize size)
 	VK_CHECK(vkAllocateMemory(VulkanEngine::cinstance->_device, &memoryAllocateInfo, nullptr, &scratchBuffer._memory));
 	VK_CHECK(vkBindBufferMemory(VulkanEngine::cinstance->_device, scratchBuffer._buffer, scratchBuffer._memory, 0));
 
-	scratchBuffer._deviceAddress = VulkanEngine::cinstance->get_buffer_device_address(scratchBuffer._buffer);
-
-	VulkanEngine::cinstance->_mainDeletionQueue.push_function([=]() {
-		vkFreeMemory(VulkanEngine::cinstance->_device, scratchBuffer._memory, nullptr);
-		vkDestroyBuffer(VulkanEngine::cinstance->_device, scratchBuffer._buffer, nullptr);
-		});
+	VkBufferDeviceAddressInfoKHR bufferDeviceAddressInfo{};
+	bufferDeviceAddressInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+	bufferDeviceAddressInfo.buffer = scratchBuffer._buffer;
+	scratchBuffer._deviceAddress = VulkanEngine::cinstance->vkGetBufferDeviceAddressKHR(VulkanEngine::cinstance->_device, &bufferDeviceAddressInfo);
 
 	return scratchBuffer;
 }
 
-void Renderer::create_acceleration_structure_buffer(AccelerationStructure& accelerationStructure, VkAccelerationStructureBuildSizesInfoKHR buildSizeInfo)
+void Renderer::delete_scratch_buffer(RayTracingScratchBuffer& scratchBuffer)
+{
+	if(scratchBuffer._memory != VK_NULL_HANDLE) {
+		vkFreeMemory(VulkanEngine::cinstance->_device, scratchBuffer._memory, nullptr);
+	}
+	if(scratchBuffer._buffer != VK_NULL_HANDLE) {
+		vkDestroyBuffer(VulkanEngine::cinstance->_device, scratchBuffer._buffer, nullptr);
+	}
+}
+
+void Renderer::create_acceleration_structure_buffer(AccelerationStructure &accelerationStructure, VkAccelerationStructureBuildSizesInfoKHR buildSizeInfo)
 {
 	VkBufferCreateInfo bufferCreateInfo{};
 	bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -1513,6 +1554,8 @@ void Renderer::render_raytracing()
 	//request image from the swapchain
 	uint32_t swapchainImageIndex;
 	VK_CHECK(vkAcquireNextImageKHR(VulkanEngine::cinstance->_device, VulkanEngine::cinstance->_swapchain, 0, _frames[get_current_frame_index()]._presentSemaphore, nullptr, &swapchainImageIndex));
+
+	update_uniform_buffers();
 
 	VkCommandBuffer cmd = _frames[get_current_frame_index()]._mainCommandBuffer;
 

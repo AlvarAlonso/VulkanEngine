@@ -49,7 +49,7 @@ public:
 	RenderMode _renderMode;
 
 	Renderer();
-
+	
 	void init_renderer();
 
 	void draw_scene();
@@ -172,6 +172,8 @@ private:
 
 	void create_uniform_buffer();
 
+	void update_uniform_buffers();
+
 	void create_raytracing_pipeline();
 
 	void create_shader_binding_table();
@@ -181,6 +183,8 @@ private:
 	void record_raytracing_command_buffer(VkCommandBuffer cmd, uint32_t swapchainImageIndex);
 
 	RayTracingScratchBuffer create_scratch_buffer(VkDeviceSize size);
+
+	void delete_scratch_buffer(RayTracingScratchBuffer& scratchBuffer);
 
 	void create_acceleration_structure_buffer(AccelerationStructure& accelerationStructure, VkAccelerationStructureBuildSizesInfoKHR buildSizeInfo);
 

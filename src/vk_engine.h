@@ -19,7 +19,7 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <unordered_map>
 
-const glm::vec3 camera_default_position = { 0.0f, 0.0f, -2.5f };
+const glm::vec3 camera_default_position = { 0.0f, 0.0f, 2.5f };
 
 //constexpr unsigned int FRAME_OVERLAP = 2;
 
