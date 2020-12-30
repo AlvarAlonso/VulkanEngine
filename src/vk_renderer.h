@@ -1,6 +1,7 @@
 #pragma once
 
 #include "vk_utils.h"
+#include "vk_scene.h"
 
 struct RenderObject;
 
@@ -109,6 +110,7 @@ public:
 
 	//Pipelines
 	VkPipeline _forwardPipeline;
+	VkPipeline _texPipeline;
 	VkPipeline _deferredPipeline;
 	VkPipeline _lightPipeline;
 

@@ -5,9 +5,7 @@
 #include "vk_mesh.h"
 
 struct Material {
-	VkDescriptorSet textureSet;
-	VkPipeline pipeline;
-	VkPipelineLayout pipelineLayout;
+	VkDescriptorSet albedoTexture;
 };
 
 class Entity

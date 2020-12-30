@@ -16,7 +16,7 @@ Renderer::Renderer()
 	_allocator = VulkanEngine::cinstance->_allocator;
 	_graphicsQueue = VulkanEngine::cinstance->_graphicsQueue;
 	_graphicsQueueFamily = VulkanEngine::cinstance->_graphicsQueueFamily;
-	_renderMode = RENDER_MODE_RAYTRACING;
+	_renderMode = RENDER_MODE_DEFERRED;
 }
 
 void Renderer::init_renderer()
@@ -1350,9 +1350,9 @@ void Renderer::record_deferred_command_buffers(RenderObject* first, int count)
 
 		vkCmdBindDescriptorSets(_deferredCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, VulkanEngine::cinstance->_deferredPipelineLayout, 1, 1, &VulkanEngine::cinstance->_objectDescriptorSet, 0, nullptr);
 
-		if (object._material->textureSet != VK_NULL_HANDLE)
+		if (object._material->albedoTexture != VK_NULL_HANDLE)
 		{
-			vkCmdBindDescriptorSets(_deferredCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, VulkanEngine::cinstance->_deferredPipelineLayout, 2, 1, &object._material->textureSet, 0, nullptr);
+			vkCmdBindDescriptorSets(_deferredCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, VulkanEngine::cinstance->_deferredPipelineLayout, 2, 1, &object._material->albedoTexture, 0, nullptr);
 		}
 
 		if (object._mesh != lastMesh)
@@ -1558,17 +1558,21 @@ void Renderer::draw_forward(VkCommandBuffer cmd, RenderObject* first, int count)
 
 		if (object._material != lastMaterial)
 		{
-			vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, object._material->pipeline);
 			lastMaterial = object._material;
 
 			uint32_t uniform_offset = vkutil::get_aligned_size(sizeof(GPUSceneData) * frameIndex, VulkanEngine::cinstance->_gpuProperties.limits.minUniformBufferOffsetAlignment);
-			vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, object._material->pipelineLayout, 0, 1, &VulkanEngine::cinstance->_frames[get_current_frame_index()].globalDescriptor, 1, &uniform_offset);
+			vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, VulkanEngine::cinstance->_forwardPipelineLayout, 0, 1, &VulkanEngine::cinstance->_frames[get_current_frame_index()].globalDescriptor, 1, &uniform_offset);
 
-			vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, object._material->pipelineLayout, 1, 1, &VulkanEngine::cinstance->_frames[get_current_frame_index()].objectDescriptor, 0, nullptr);
+			vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, VulkanEngine::cinstance->_forwardPipelineLayout, 1, 1, &VulkanEngine::cinstance->_frames[get_current_frame_index()].objectDescriptor, 0, nullptr);
 
-			if (object._material->textureSet != VK_NULL_HANDLE)
+			if (object._material->albedoTexture != VK_NULL_HANDLE)
 			{
-				vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, object._material->pipelineLayout, 2, 1, &object._material->textureSet, 0, nullptr);
+				vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _texPipeline);
+				vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, VulkanEngine::cinstance->_forwardPipelineLayout, 2, 1, &object._material->albedoTexture, 0, nullptr);
+			}
+			else
+			{
+				vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _forwardPipeline);
 			}
 		}
 		
@@ -1680,7 +1684,11 @@ void Renderer::create_forward_pipelines()
 	mesh_pipeline_layout_info.pPushConstantRanges = &push_constant;
 	mesh_pipeline_layout_info.pushConstantRangeCount = 1;
 
-	std::array<VkDescriptorSetLayout, 3> setLayouts = { VulkanEngine::cinstance->_globalSetLayout, VulkanEngine::cinstance->_objectSetLayout, VulkanEngine::cinstance->_singleTextureSetLayout };
+	std::array<VkDescriptorSetLayout, 3> setLayouts = { 
+		VulkanEngine::cinstance->_globalSetLayout, 
+		VulkanEngine::cinstance->_objectSetLayout, 
+		VulkanEngine::cinstance->_singleTextureSetLayout 
+	};
 
 	mesh_pipeline_layout_info.setLayoutCount = static_cast<uint32_t>(setLayouts.size());
 	mesh_pipeline_layout_info.pSetLayouts = setLayouts.data();
@@ -1732,7 +1740,7 @@ void Renderer::create_forward_pipelines()
 	//build the mesh pipeline
 	_forwardPipeline = pipelineBuilder.build_pipeline(VulkanEngine::cinstance->_device, _defaultRenderPass);
 
-	VulkanEngine::cinstance->create_material(_forwardPipeline, VulkanEngine::cinstance->_forwardPipelineLayout, "defaultmesh");
+	VulkanEngine::cinstance->create_material("untexturedmesh");
 
 
 	//texture pipeline
@@ -1744,8 +1752,8 @@ void Renderer::create_forward_pipelines()
 	pipelineBuilder._shaderStages.push_back(
 		vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, texturedMeshShader));
 
-	VkPipeline texPipeline = pipelineBuilder.build_pipeline(VulkanEngine::cinstance->_device, _defaultRenderPass);
-	VulkanEngine::cinstance->create_material(texPipeline, VulkanEngine::cinstance->_forwardPipelineLayout, "texturedmesh");
+	_texPipeline = pipelineBuilder.build_pipeline(VulkanEngine::cinstance->_device, _defaultRenderPass);
+	VulkanEngine::cinstance->create_material("texturedmesh");
 
 	//deleting all of the vulkan shaders
 	vkDestroyShaderModule(VulkanEngine::cinstance->_device, texturedMeshShader, nullptr);
@@ -1755,7 +1763,7 @@ void Renderer::create_forward_pipelines()
 	//adding the pipelines to the deletion queue
 	VulkanEngine::cinstance->_mainDeletionQueue.push_function([=]() {
 		vkDestroyPipeline(VulkanEngine::cinstance->_device, _forwardPipeline, nullptr);
-		vkDestroyPipeline(VulkanEngine::cinstance->_device, texPipeline, nullptr);
+		vkDestroyPipeline(VulkanEngine::cinstance->_device, _texPipeline, nullptr);
 
 		vkDestroyPipelineLayout(VulkanEngine::cinstance->_device, VulkanEngine::cinstance->_forwardPipelineLayout, nullptr);
 		});

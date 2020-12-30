@@ -92,7 +92,9 @@ void VulkanEngine::init()
 
 	load_meshes();
 
-	init_scene();
+	scene = new Scene();
+	scene->generate_sample_scene();
+	_renderables = scene->_renderables;
 
 	init_imgui();
 
@@ -654,45 +656,6 @@ void VulkanEngine::init_descriptors()
 	vkUpdateDescriptorSets(_device, 1, &camWrite, 0, nullptr);
 }
 
-void VulkanEngine::init_scene()
-{
-	RenderObject map;
-	map._mesh = get_mesh("empire");
-	map._material = get_material("texturedmesh");
-	map._model = glm::translate(glm::vec3{ 5, -10, 0 });
-
-	_renderables.push_back(map);
-
-	RenderObject monkey;
-	monkey._mesh = get_mesh("monkey");
-	monkey._material = get_material("defaultmesh");
-	monkey._model = glm::mat4(1.0f);
-
-	_renderables.push_back(monkey);
-
-	Material* texturedMat = get_material("texturedmesh");
-
-	//allocate the descriptor set for single-texture to use on the material
-	VkDescriptorSetAllocateInfo allocInfo = {};
-	allocInfo.pNext = nullptr;
-	allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-	allocInfo.descriptorPool = _descriptorPool;
-	allocInfo.descriptorSetCount = 1;
-	allocInfo.pSetLayouts = &_singleTextureSetLayout;
-
-	vkAllocateDescriptorSets(_device, &allocInfo, &texturedMat->textureSet);
-
-	//write to the descriptor set so that it points to our empire_diffuse texture
-	VkDescriptorImageInfo imageBufferInfo;
-	imageBufferInfo.sampler = _defaultSampler;
-	imageBufferInfo.imageView = _loadedTextures["empire_diffuse"].imageView;
-	imageBufferInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-	VkWriteDescriptorSet texture1 = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, texturedMat->textureSet, &imageBufferInfo, 0);
-
-	vkUpdateDescriptorSets(_device, 1, &texture1, 0, nullptr);
-}
-
 void VulkanEngine::load_meshes()
 {
 	Mesh monkeyMesh("../assets/monkey_smooth.obj");
@@ -726,12 +689,10 @@ void VulkanEngine::get_enabled_features()
 	deviceCreatepNextChain = &_enabledAccelerationStructureFeatures;
 }
 
-Material* VulkanEngine::create_material(VkPipeline pipeline, VkPipelineLayout layout, const std::string& name)
+Material* VulkanEngine::create_material(const std::string& name)
 {
 	Material mat;
-	mat.pipeline = pipeline;
-	mat.pipelineLayout = layout;
-	mat.textureSet = VK_NULL_HANDLE;
+	mat.albedoTexture = VK_NULL_HANDLE;
 	_materials[name] = mat;
 	return &_materials[name];
 }
@@ -870,4 +831,14 @@ void VulkanEngine::load_images()
 	vkCreateImageView(_device, &imageinfo, nullptr, &lostEmpire.imageView);
 
 	_loadedTextures["empire_diffuse"] = lostEmpire;
+
+
+	Texture defaultTexture;
+
+	vkutil::load_image_from_file(*this, "../assets/plain.jpg", defaultTexture.image);
+
+	VkImageViewCreateInfo imageinfo2 = vkinit::imageview_create_info(VK_FORMAT_R8G8B8A8_UNORM, defaultTexture.image._image, VK_IMAGE_ASPECT_COLOR_BIT);
+	vkCreateImageView(_device, &imageinfo2, nullptr, &defaultTexture.imageView);
+
+	_loadedTextures["default"] = defaultTexture;
 }

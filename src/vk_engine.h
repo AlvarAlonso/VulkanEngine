@@ -5,7 +5,6 @@
 
 #include "vk_renderer.h"
 #include "Camera.h"
-#include "vk_entity.h"
 
 //#define GLM_FORCE_RADIANS
 //#define GLM_FORCE_DEPTH_ZERO_TO_ONE
@@ -32,14 +31,6 @@ struct Texture {
 struct UploadContext {
 	VkFence _uploadFence;
 	VkCommandPool _commandPool;
-};
-
-struct GPUSceneData {
-	glm::vec4 fogColor;
-	glm::vec4 fogDistances;
-	glm::vec4 ambientColor;
-	glm::vec4 sunlightDirection;
-	glm::vec4 sunlightColor;
 };
 
 struct GPUCameraData {
@@ -111,6 +102,8 @@ public:
 	VkPhysicalDeviceProperties _gpuProperties;
 
 	//Scene components
+
+	Scene* scene;
 	
 	Camera* camera;
 	bool mouse_locked = true;
@@ -147,6 +140,7 @@ public:
 
 	//Pipelines
 	VkPipelineLayout _forwardPipelineLayout;
+	VkPipelineLayout _texPipelineLayout;
 	VkPipelineLayout _deferredPipelineLayout;
 	VkPipelineLayout _lightPipelineLayout;
 
@@ -206,7 +200,7 @@ public:
 	void update_descriptors(RenderObject* first, int count);
 	void update_descriptors_forward(RenderObject* first, int count);
 
-	Material* create_material(VkPipeline pipeline, VkPipelineLayout layout, const std::string& name);
+	Material* create_material(const std::string& name);
 	Material* get_material(const std::string& name);
 
 	Mesh* get_mesh(const std::string& name);
@@ -232,8 +226,6 @@ private:
 	void init_descriptor_set_layouts();
 
 	void init_descriptors();
-
-	void init_scene();
 
 	void load_meshes();
 
