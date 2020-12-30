@@ -4,7 +4,6 @@
 #pragma once
 
 #include "vk_renderer.h"
-#include "vk_mesh.h"
 #include "Camera.h"
 #include "vk_entity.h"
 
@@ -179,10 +178,10 @@ public:
 	PFN_vkGetBufferDeviceAddressKHR vkGetBufferDeviceAddressKHR;
 
 	//pnext features
-	VkPhysicalDeviceDescriptorIndexingFeatures			_enabledIndexingFeatures{};
-	VkPhysicalDeviceBufferDeviceAddressFeatures         _enabledBufferDeviceAddressFeatures{};
-	VkPhysicalDeviceRayTracingPipelineFeaturesKHR       _enabledRayTracingPipelineFeatures{};
-	VkPhysicalDeviceAccelerationStructureFeaturesKHR    _enabledAccelerationStructureFeatures{};
+	VkPhysicalDeviceDescriptorIndexingFeatures _enabledIndexingFeatures{};
+	VkPhysicalDeviceBufferDeviceAddressFeatures _enabledBufferDeviceAddressFeatures{};
+	VkPhysicalDeviceRayTracingPipelineFeaturesKHR _enabledRayTracingPipelineFeatures{};
+	VkPhysicalDeviceAccelerationStructureFeaturesKHR _enabledAccelerationStructureFeatures{};
 
 	//Properties and features
 	VkPhysicalDeviceRayTracingPipelinePropertiesKHR  _rayTracingPipelineProperties{};
@@ -202,20 +201,15 @@ public:
 	FrameData& get_current_frame();
 	
 	void immediate_submit(std::function<void(VkCommandBuffer cmd)>&& function);
-	AllocatedBuffer create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage, VmaAllocationCreateFlags flags = 0);
 	void load_images();
 
 	void update_descriptors(RenderObject* first, int count);
 	void update_descriptors_forward(RenderObject* first, int count);
-	size_t get_aligned_size(size_t originalSize, uint32_t alignment);
-	bool load_shader_module(const char* filePath, VkShaderModule* outShaderModule);
+
 	Material* create_material(VkPipeline pipeline, VkPipelineLayout layout, const std::string& name);
 	Material* get_material(const std::string& name);
 
 	Mesh* get_mesh(const std::string& name);
-
-	uint32_t find_memory_type_index(uint32_t allowedTypes, VkMemoryPropertyFlags properties);
-	uint64_t get_buffer_device_address(VkBuffer buffer);
 
 private:
 
@@ -244,8 +238,6 @@ private:
 	void load_meshes();
 
 	// Assets
-
-	void upload_mesh(Mesh& mesh);
 
 	void get_enabled_features();
 };

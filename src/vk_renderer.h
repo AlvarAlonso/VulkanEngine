@@ -1,7 +1,6 @@
 #pragma once
 
-#include "vk_types.h"
-#include"vk_mesh.h"
+#include "vk_utils.h"
 
 struct RenderObject;
 
@@ -158,6 +157,10 @@ public:
 	VkImageView _storageImageView;
 
 private:
+
+	VkPhysicalDevice _physicalDevice;
+	VkDevice _device;
+	VmaAllocator _allocator;
 
 	int _frameNumber{ 0 };
 

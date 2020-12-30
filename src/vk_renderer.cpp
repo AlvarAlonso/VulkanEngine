@@ -11,6 +11,9 @@
 
 Renderer::Renderer()
 {
+	_physicalDevice = VulkanEngine::cinstance->_physicalDevice;
+	_device = VulkanEngine::cinstance->_device;
+	_allocator = VulkanEngine::cinstance->_allocator;
 	_graphicsQueue = VulkanEngine::cinstance->_graphicsQueue;
 	_graphicsQueueFamily = VulkanEngine::cinstance->_graphicsQueueFamily;
 	_renderMode = RENDER_MODE_RAYTRACING;
@@ -127,7 +130,7 @@ void Renderer::create_top_level_acceleration_structure()
 
 	// Buffer for instance data
 	AllocatedBuffer instancesBuffer;
-	instancesBuffer = VulkanEngine::cinstance->create_buffer(
+	instancesBuffer = vkutil::create_buffer(_allocator,
 		sizeof(VkAccelerationStructureInstanceKHR) * instances.size(),
 		VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
 		VMA_MEMORY_USAGE_CPU_TO_GPU);
@@ -138,7 +141,7 @@ void Renderer::create_top_level_acceleration_structure()
 	vmaUnmapMemory(VulkanEngine::cinstance->_allocator, instancesBuffer._allocation);
 
 	VkDeviceOrHostAddressConstKHR instanceDataDeviceAddress{};
-	instanceDataDeviceAddress.deviceAddress = VulkanEngine::cinstance->get_buffer_device_address(instancesBuffer._buffer);
+	instanceDataDeviceAddress.deviceAddress = vkutil::get_buffer_device_address(_device, instancesBuffer._buffer);
 	
 
 	VkAccelerationStructureGeometryKHR accelerationStructureGeometry{};
@@ -257,7 +260,7 @@ void Renderer::create_storage_image()
 	VkMemoryAllocateInfo memoryAllocateInfo = {};
 	memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 	memoryAllocateInfo.allocationSize = memReqs.size;
-	memoryAllocateInfo.memoryTypeIndex = VulkanEngine::cinstance->find_memory_type_index(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	memoryAllocateInfo.memoryTypeIndex = vkutil::find_memory_type_index(_physicalDevice, memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
 	VK_CHECK(vkAllocateMemory(VulkanEngine::cinstance->_device, &memoryAllocateInfo, nullptr, &_storageImageMemory));
 	VK_CHECK(vkBindImageMemory(VulkanEngine::cinstance->_device, _storageImage, _storageImageMemory, 0));
@@ -297,7 +300,7 @@ void Renderer::create_storage_image()
 
 void Renderer::create_uniform_buffer()
 {
-	_ubo = VulkanEngine::cinstance->create_buffer(sizeof(uniformData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+	_ubo = vkutil::create_buffer(_allocator, sizeof(uniformData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
 		VMA_MEMORY_USAGE_CPU_TO_GPU);
 
 	update_uniform_buffers();
@@ -385,7 +388,7 @@ void Renderer::create_raytracing_pipeline()
 	// Ray generation group
 	{
 		VkShaderModule raygenShader;
-		if (!VulkanEngine::cinstance->load_shader_module("../shaders/raygen.rgen.spv", &raygenShader))
+		if (!vkutil::load_shader_module(_device, "../shaders/raygen.rgen.spv", &raygenShader))
 		{
 			std::cout << "Error when building the ray generation shader module" << std::endl;
 		}
@@ -409,7 +412,7 @@ void Renderer::create_raytracing_pipeline()
 	// Miss group
 	{
 		VkShaderModule missShader;
-		if (!VulkanEngine::cinstance->load_shader_module("../shaders/miss.rmiss.spv", &missShader))
+		if (!vkutil::load_shader_module(_device, "../shaders/miss.rmiss.spv", &missShader))
 		{
 			std::cout << "Error when building the miss shader module" << std::endl;
 		}
@@ -433,7 +436,7 @@ void Renderer::create_raytracing_pipeline()
 	// Closest hit group
 	{
 		VkShaderModule closestHitShader;
-		if (!VulkanEngine::cinstance->load_shader_module("../shaders/closestHit.rchit.spv", &closestHitShader))
+		if (!vkutil::load_shader_module(_device, "../shaders/closestHit.rchit.spv", &closestHitShader))
 		{
 			std::cout << "Error when building the closest hit shader module" << std::endl;
 		}
@@ -471,7 +474,7 @@ void Renderer::create_raytracing_pipeline()
 void Renderer::create_shader_binding_table()
 {
 	const uint32_t handleSize = VulkanEngine::cinstance->_rayTracingPipelineProperties.shaderGroupHandleSize;
-	const uint32_t handleSizeAligned = VulkanEngine::cinstance->get_aligned_size(VulkanEngine::cinstance->_rayTracingPipelineProperties.shaderGroupHandleSize, VulkanEngine::cinstance->_rayTracingPipelineProperties.shaderGroupHandleAlignment);
+	const uint32_t handleSizeAligned = vkutil::get_aligned_size(VulkanEngine::cinstance->_rayTracingPipelineProperties.shaderGroupHandleSize, VulkanEngine::cinstance->_rayTracingPipelineProperties.shaderGroupHandleAlignment);
 	const uint32_t groupCount = static_cast<uint32_t>(_shaderGroups.size());
 	const uint32_t sbtSize = groupCount * handleSizeAligned;
 
@@ -481,14 +484,14 @@ void Renderer::create_shader_binding_table()
 	const VkBufferUsageFlags bufferUsageFlags = VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
 	const VmaMemoryUsage memoryUsageFlags = VMA_MEMORY_USAGE_CPU_TO_GPU;
 
-	_raygenShaderBindingTable = VulkanEngine::cinstance->create_buffer(
-		handleSize, bufferUsageFlags, memoryUsageFlags);
+	_raygenShaderBindingTable = vkutil::create_buffer(
+		_allocator, handleSize, bufferUsageFlags, memoryUsageFlags);
 
-	_missShaderBindingTable = VulkanEngine::cinstance->create_buffer(
-		handleSize, bufferUsageFlags, memoryUsageFlags);
+	_missShaderBindingTable = vkutil::create_buffer(
+		_allocator, handleSize, bufferUsageFlags, memoryUsageFlags);
 
-	_hitShaderBindingTable = VulkanEngine::cinstance->create_buffer(
-		handleSize, bufferUsageFlags, memoryUsageFlags);
+	_hitShaderBindingTable = vkutil::create_buffer(
+		_allocator, handleSize, bufferUsageFlags, memoryUsageFlags);
 
 	// Copy handles
 	void* raygen_data;
@@ -585,7 +588,7 @@ void Renderer::create_raytracing_descriptor_sets()
 			rtvs.push_back(rtv);
 		}
 
-		AllocatedBuffer rtVertexBuffer = VulkanEngine::cinstance->create_buffer(rtvs.size() * sizeof(rtVertex), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+		AllocatedBuffer rtVertexBuffer = vkutil::create_buffer(_allocator, rtvs.size() * sizeof(rtVertex), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 
 		VkDescriptorBufferInfo vertexBufferInfo{};
 		vertexBufferInfo.offset = 0;
@@ -606,7 +609,7 @@ void Renderer::create_raytracing_descriptor_sets()
 
 		indicesBufferInfos.push_back(indexBufferInfo);
 
-		AllocatedBuffer transformBuffer = VulkanEngine::cinstance->create_buffer(sizeof(glm::mat4), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+		AllocatedBuffer transformBuffer = vkutil::create_buffer(_allocator, sizeof(glm::mat4), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 
 		VkDescriptorBufferInfo transformBufferInfo{};
 		transformBufferInfo.offset = 0;
@@ -651,7 +654,7 @@ void Renderer::record_raytracing_command_buffer(VkCommandBuffer cmd, uint32_t sw
 		Setup the buffer regions pointing to the shaders in our shader binding table
 	*/
 
-	const uint32_t handleSizeAligned = VulkanEngine::cinstance->get_aligned_size(VulkanEngine::cinstance->_rayTracingPipelineProperties.shaderGroupHandleSize, VulkanEngine::cinstance->_rayTracingPipelineProperties.shaderGroupHandleAlignment);
+	const uint32_t handleSizeAligned = vkutil::get_aligned_size(VulkanEngine::cinstance->_rayTracingPipelineProperties.shaderGroupHandleSize, VulkanEngine::cinstance->_rayTracingPipelineProperties.shaderGroupHandleAlignment);
 
 	VkBufferDeviceAddressInfoKHR raygenDeviceAddressInfo{};
 	raygenDeviceAddressInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
@@ -846,7 +849,7 @@ RayTracingScratchBuffer Renderer::create_scratch_buffer(VkDeviceSize size)
 	memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 	memoryAllocateInfo.pNext = &memoryAllocateFlagsInfo;
 	memoryAllocateInfo.allocationSize = memoryRequirements.size;
-	memoryAllocateInfo.memoryTypeIndex = VulkanEngine::cinstance->find_memory_type_index(memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	memoryAllocateInfo.memoryTypeIndex = vkutil::find_memory_type_index(_physicalDevice, memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 	VK_CHECK(vkAllocateMemory(VulkanEngine::cinstance->_device, &memoryAllocateInfo, nullptr, &scratchBuffer._memory));
 	VK_CHECK(vkBindBufferMemory(VulkanEngine::cinstance->_device, scratchBuffer._buffer, scratchBuffer._memory, 0));
 
@@ -888,7 +891,7 @@ void Renderer::create_acceleration_structure_buffer(AccelerationStructure &accel
 	memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 	memoryAllocateInfo.pNext = &memoryAllocateFlagsInfo;
 	memoryAllocateInfo.allocationSize = memoryRequirements.size;
-	memoryAllocateInfo.memoryTypeIndex = VulkanEngine::cinstance->find_memory_type_index(memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	memoryAllocateInfo.memoryTypeIndex = vkutil::find_memory_type_index(_physicalDevice, memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
 	VK_CHECK(vkAllocateMemory(VulkanEngine::cinstance->_device, &memoryAllocateInfo, nullptr, &accelerationStructure._memory));
 	VK_CHECK(vkBindBufferMemory(VulkanEngine::cinstance->_device, accelerationStructure._buffer, accelerationStructure._memory, 0));
@@ -1558,7 +1561,7 @@ void Renderer::draw_forward(VkCommandBuffer cmd, RenderObject* first, int count)
 			vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, object._material->pipeline);
 			lastMaterial = object._material;
 
-			uint32_t uniform_offset = VulkanEngine::cinstance->get_aligned_size(sizeof(GPUSceneData) * frameIndex, VulkanEngine::cinstance->_gpuProperties.limits.minUniformBufferOffsetAlignment);
+			uint32_t uniform_offset = vkutil::get_aligned_size(sizeof(GPUSceneData) * frameIndex, VulkanEngine::cinstance->_gpuProperties.limits.minUniformBufferOffsetAlignment);
 			vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, object._material->pipelineLayout, 0, 1, &VulkanEngine::cinstance->_frames[get_current_frame_index()].globalDescriptor, 1, &uniform_offset);
 
 			vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, object._material->pipelineLayout, 1, 1, &VulkanEngine::cinstance->_frames[get_current_frame_index()].objectDescriptor, 0, nullptr);
@@ -1609,7 +1612,7 @@ void Renderer::draw_deferred(VkCommandBuffer cmd, int imageIndex)
 	vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _lightPipeline);
 
 	int frameIndex = _frameNumber % FRAME_OVERLAP;
-	uint32_t uniform_offset = VulkanEngine::cinstance->get_aligned_size(sizeof(GPUSceneData) * frameIndex, VulkanEngine::cinstance->_gpuProperties.limits.minUniformBufferOffsetAlignment);
+	uint32_t uniform_offset = vkutil::get_aligned_size(sizeof(GPUSceneData) * frameIndex, VulkanEngine::cinstance->_gpuProperties.limits.minUniformBufferOffsetAlignment);
 	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, VulkanEngine::cinstance->_lightPipelineLayout, 0, 1, &VulkanEngine::cinstance->_frames[get_current_frame_index()].globalDescriptor, 1, &uniform_offset);
 
 	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, VulkanEngine::cinstance->_lightPipelineLayout, 1, 1, &_gbuffersDescriptorSet, 0, nullptr);
@@ -1634,7 +1637,7 @@ void Renderer::create_forward_pipelines()
 
 //default vertex shader for a mesh
 	VkShaderModule meshVertShader;
-	if (!VulkanEngine::cinstance->load_shader_module("../shaders/tri_mesh.vert.spv", &meshVertShader))
+	if (!vkutil::load_shader_module(_device, "../shaders/tri_mesh.vert.spv", &meshVertShader))
 	{
 		std::cout << "Error when building the triangle vertex shader module" << std::endl;
 	}
@@ -1644,7 +1647,7 @@ void Renderer::create_forward_pipelines()
 
 	//shader for default material
 	VkShaderModule colorMeshShader;
-	if (!VulkanEngine::cinstance->load_shader_module("../shaders/default_lit.frag.spv", &colorMeshShader))
+	if (!vkutil::load_shader_module(_device, "../shaders/default_lit.frag.spv", &colorMeshShader))
 	{
 		std::cout << "Error when building the triangle fragment shader module" << std::endl;
 	}
@@ -1655,7 +1658,7 @@ void Renderer::create_forward_pipelines()
 
 	//shader for textured material
 	VkShaderModule texturedMeshShader;
-	if (!VulkanEngine::cinstance->load_shader_module("../shaders/textured_lit.frag.spv", &texturedMeshShader))
+	if (!vkutil::load_shader_module(_device, "../shaders/textured_lit.frag.spv", &texturedMeshShader))
 	{
 		std::cout << "Error when building the textured mesh shader" << std::endl;
 	}
@@ -1765,7 +1768,7 @@ void Renderer::create_deferred_pipelines()
 	//SHADERS LOADING
 
 	VkShaderModule deferredVertex;
-	if (!VulkanEngine::cinstance->load_shader_module("../shaders/deferred.vert.spv", &deferredVertex))
+	if (!vkutil::load_shader_module(_device, "../shaders/deferred.vert.spv", &deferredVertex))
 	{
 		std::cout << "Error when building the deferred vertex shader" << std::endl;
 	}
@@ -1775,7 +1778,7 @@ void Renderer::create_deferred_pipelines()
 	}
 
 	VkShaderModule deferredFrag;
-	if (!VulkanEngine::cinstance->load_shader_module("../shaders/deferred.frag.spv", &deferredFrag))
+	if (!vkutil::load_shader_module(_device, "../shaders/deferred.frag.spv", &deferredFrag))
 	{
 		std::cout << "Error when building the deferred frag shader" << std::endl;
 	}
@@ -1785,7 +1788,7 @@ void Renderer::create_deferred_pipelines()
 	}
 
 	VkShaderModule lightVertex;
-	if (!VulkanEngine::cinstance->load_shader_module("../shaders/light.vert.spv", &lightVertex))
+	if (!vkutil::load_shader_module(_device, "../shaders/light.vert.spv", &lightVertex))
 	{
 		std::cout << "Error when building the light vertex shader" << std::endl;
 	}
@@ -1795,7 +1798,7 @@ void Renderer::create_deferred_pipelines()
 	}
 
 	VkShaderModule lightFrag;
-	if (!VulkanEngine::cinstance->load_shader_module("../shaders/light.frag.spv", &lightFrag))
+	if (!vkutil::load_shader_module(_device, "../shaders/light.frag.spv", &lightFrag))
 	{
 		std::cout << "Error when building the light frag shader" << std::endl;
 	}
@@ -1928,7 +1931,7 @@ BlasInput Renderer::renderable_to_vulkan_geometry(RenderObject renderable)
 	VkBufferUsageFlags bufferUsageFlags = VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
 	VmaMemoryUsage memoryUsageFlags = VMA_MEMORY_USAGE_CPU_TO_GPU;
 
-	AllocatedBuffer transformBuffer = VulkanEngine::cinstance->create_buffer(sizeof(VkTransformMatrixKHR), bufferUsageFlags, memoryUsageFlags);
+	AllocatedBuffer transformBuffer = vkutil::create_buffer(_allocator, sizeof(VkTransformMatrixKHR), bufferUsageFlags, memoryUsageFlags);
 	_transformBuffers.push_back(transformBuffer);
 
 	void* transformData;
@@ -1940,9 +1943,9 @@ BlasInput Renderer::renderable_to_vulkan_geometry(RenderObject renderable)
 	VkDeviceOrHostAddressConstKHR indexBufferDeviceAddress{};
 	VkDeviceOrHostAddressConstKHR transformBufferDeviceAddress{};
 
-	vertexBufferDeviceAddress.deviceAddress = VulkanEngine::cinstance->get_buffer_device_address(renderable._mesh->_vertexBuffer._buffer);
-	indexBufferDeviceAddress.deviceAddress = VulkanEngine::cinstance->get_buffer_device_address(renderable._mesh->_indexBuffer._buffer);
-	transformBufferDeviceAddress.deviceAddress = VulkanEngine::cinstance->get_buffer_device_address(transformBuffer._buffer);
+	vertexBufferDeviceAddress.deviceAddress = vkutil::get_buffer_device_address(_device, renderable._mesh->_vertexBuffer._buffer);
+	indexBufferDeviceAddress.deviceAddress = vkutil::get_buffer_device_address(_device, renderable._mesh->_indexBuffer._buffer);
+	transformBufferDeviceAddress.deviceAddress = vkutil::get_buffer_device_address(_device, transformBuffer._buffer);
 
 	// Build
 	VkAccelerationStructureGeometryKHR accelerationStructureGeometry{};

@@ -1,6 +1,5 @@
 ﻿#define VMA_IMPLEMENTATION
 #include "vk_mem_alloc.h"
-#include <iostream>
 #include "vk_types.h"
 
 #include "vk_engine.h"
@@ -19,7 +18,6 @@
 
 #include "VkBootstrap.h"
 
-#include <fstream>
 #include <array>
 
 #include <chrono>
@@ -552,21 +550,21 @@ void VulkanEngine::init_descriptor_set_layouts()
 	vkCreateDescriptorSetLayout(_device, &set3Info, nullptr, &_singleTextureSetLayout);
 
 	//DESCRIPTOR SET BUFFER CREATION
-	const size_t sceneParamBufferSize = FRAME_OVERLAP * get_aligned_size(sizeof(GPUSceneData), _gpuProperties.limits.minUniformBufferOffsetAlignment);
+	const size_t sceneParamBufferSize = FRAME_OVERLAP * vkutil::get_aligned_size(sizeof(GPUSceneData), _gpuProperties.limits.minUniformBufferOffsetAlignment);
 
-	_sceneParameterBuffer = create_buffer(sceneParamBufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+	_sceneParameterBuffer = vkutil::create_buffer(_allocator, sceneParamBufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 
 	for(int i = 0; i < FRAME_OVERLAP; i++)
 	{
-		_frames[i].objectBuffer = create_buffer(sizeof(GPUObjectData) * MAX_OBJECTS, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
-		_frames[i].cameraBuffer = create_buffer(sizeof(GPUCameraData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+		_frames[i].objectBuffer = vkutil::create_buffer(_allocator, sizeof(GPUObjectData) * MAX_OBJECTS, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+		_frames[i].cameraBuffer = vkutil:: create_buffer(_allocator, sizeof(GPUCameraData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 
 		//cam buffer
-		_camBuffer = create_buffer(sizeof(GPUCameraData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+		_camBuffer = vkutil::create_buffer(_allocator, sizeof(GPUCameraData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 	}
 
 	//deferred
-	_objectBuffer = create_buffer(sizeof(GPUObjectData) * MAX_OBJECTS, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+	_objectBuffer = vkutil::create_buffer(_allocator, sizeof(GPUObjectData) * MAX_OBJECTS, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 }
 
 void VulkanEngine::init_descriptors()
@@ -695,41 +693,6 @@ void VulkanEngine::init_scene()
 	vkUpdateDescriptorSets(_device, 1, &texture1, 0, nullptr);
 }
 
-bool VulkanEngine::load_shader_module(const char* filePath, VkShaderModule* outShaderModule)
-{
-	std::ifstream file(filePath, std::ios::ate | std::ios::binary);
-
-	if(!file.is_open()) {
-		return false;
-	}
-
-	size_t fileSize = (size_t)file.tellg();
-
-	std::vector<uint32_t> buffer(fileSize / sizeof(uint32_t));
-
-	file.seekg(0);
-
-	file.read((char*)buffer.data(), fileSize);
-
-	file.close();
-
-	VkShaderModuleCreateInfo createInfo = {};
-	createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-	createInfo.pNext = nullptr;
-
-	createInfo.codeSize = buffer.size() * sizeof(uint32_t);
-	createInfo.pCode = buffer.data();
-
-	VkShaderModule shaderModule;
-	if(vkCreateShaderModule(_device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS)
-	{
-		return false;
-	}
-
-	*outShaderModule = shaderModule;
-	return true;
-}
-
 void VulkanEngine::load_meshes()
 {
 	Mesh monkeyMesh("../assets/monkey_smooth.obj");
@@ -831,7 +794,7 @@ void VulkanEngine::update_descriptors(RenderObject* first, int count)
 
 	int frameIndex = _frameNumber % FRAME_OVERLAP;
 
-	sceneData += get_aligned_size(sizeof(GPUSceneData), _gpuProperties.limits.minUniformBufferOffsetAlignment) * frameIndex;
+	sceneData += vkutil::get_aligned_size(sizeof(GPUSceneData), _gpuProperties.limits.minUniformBufferOffsetAlignment) * frameIndex;
 
 	memcpy(sceneData, &_sceneParameters, sizeof(GPUSceneData));
 
@@ -877,7 +840,7 @@ void VulkanEngine::update_descriptors_forward(RenderObject* first, int count)
 
 	int frameIndex = _frameNumber % FRAME_OVERLAP;
 
-	sceneData += get_aligned_size(sizeof(GPUSceneData), _gpuProperties.limits.minUniformBufferOffsetAlignment) * frameIndex;
+	sceneData += vkutil::get_aligned_size(sizeof(GPUSceneData), _gpuProperties.limits.minUniformBufferOffsetAlignment) * frameIndex;
 
 	memcpy(sceneData, &_sceneParameters, sizeof(GPUSceneData));
 
@@ -897,29 +860,6 @@ void VulkanEngine::update_descriptors_forward(RenderObject* first, int count)
 	vmaUnmapMemory(_allocator, get_current_frame().objectBuffer._allocation);
 }
 
-AllocatedBuffer VulkanEngine::create_buffer(size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage, VmaAllocationCreateFlags flags)
-{
-	VkBufferCreateInfo bufferInfo = {};
-	bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-	bufferInfo.pNext = nullptr;
-
-	bufferInfo.size = allocSize;
-	bufferInfo.usage = usage;
-
-	VmaAllocationCreateInfo vmaallocInfo = {};
-	vmaallocInfo.usage = memoryUsage;
-	vmaallocInfo.flags = flags;
-
-	AllocatedBuffer newBuffer;
-
-	VK_CHECK(vmaCreateBuffer(_allocator, &bufferInfo, &vmaallocInfo,
-		&newBuffer._buffer,
-		&newBuffer._allocation,
-		nullptr));
-
-	return newBuffer;
-}
-
 void VulkanEngine::load_images()
 {
 	Texture lostEmpire;
@@ -930,39 +870,4 @@ void VulkanEngine::load_images()
 	vkCreateImageView(_device, &imageinfo, nullptr, &lostEmpire.imageView);
 
 	_loadedTextures["empire_diffuse"] = lostEmpire;
-}
-
-size_t VulkanEngine::get_aligned_size(size_t originalSize, uint32_t alignment)
-{
-	//size_t minUboAlignment = _gpuProperties.limits.minUniformBufferOffsetAlignment;
-	size_t alignedSize = originalSize;
-	if(alignment > 0)
-	{
-		alignedSize = (alignedSize + alignment - 1) & ~(alignment - 1);
-	}
-
-	return alignedSize;
-}
-
-uint32_t VulkanEngine::find_memory_type_index(uint32_t allowedTypes, VkMemoryPropertyFlags properties)
-{
-	VkPhysicalDeviceMemoryProperties memoryProperties;
-	vkGetPhysicalDeviceMemoryProperties(_physicalDevice, &memoryProperties);
-
-	for (uint32_t i = 0; i < memoryProperties.memoryTypeCount; i++)
-	{
-		if ((allowedTypes & (1 << i))
-			&& (memoryProperties.memoryTypes[i].propertyFlags & properties) == properties)
-		{
-			return i;
-		}
-	}
-}
-
-uint64_t VulkanEngine::get_buffer_device_address(VkBuffer buffer)
-{
-	VkBufferDeviceAddressInfoKHR bufferDeviceAI{};
-	bufferDeviceAI.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
-	bufferDeviceAI.buffer = buffer;
-	return vkGetBufferDeviceAddressKHR(_device, &bufferDeviceAI);
 }

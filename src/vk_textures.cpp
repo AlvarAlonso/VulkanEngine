@@ -4,6 +4,7 @@
 #include <iostream>
 
 #include "vk_initializers.h"
+#include "vk_utils.h"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
@@ -24,7 +25,7 @@ bool vkutil::load_image_from_file(VulkanEngine& engine, const char* file, Alloca
 
     VkFormat image_format = VK_FORMAT_R8G8B8A8_UNORM;
 
-    AllocatedBuffer stagingBuffer = engine.create_buffer(imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY);
+    AllocatedBuffer stagingBuffer = vkutil::create_buffer(engine._allocator, imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY);
 
 
     void* data;
