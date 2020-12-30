@@ -42,6 +42,13 @@ struct AccelerationStructure
 	VkBuffer _buffer;
 };
 
+struct BlasInput {
+	VkAccelerationStructureGeometryKHR _accelerationStructureGeometry;
+	VkAccelerationStructureBuildGeometryInfoKHR _accelerationStructureBuildGeometryInfo;
+	VkAccelerationStructureBuildSizesInfoKHR _accelerationStructureBuildSizesInfo;
+	VkAccelerationStructureBuildRangeInfoKHR _accelerationStructureBuildRangeInfo;
+};
+
 class Renderer
 {
 public:
@@ -58,6 +65,8 @@ public:
 
 	//support functions
 	int get_current_frame_index();
+
+	void init_raytracing();
 
 	//Render passes
 	VkRenderPass _defaultRenderPass;
@@ -99,8 +108,6 @@ public:
 	sFrameData _frames[FRAME_OVERLAP];
 	VkSemaphore _offscreenSemaphore;
 
-	VkSampler _defaultSampler;
-
 	//Pipelines
 	VkPipeline _forwardPipeline;
 	VkPipeline _deferredPipeline;
@@ -119,14 +126,16 @@ public:
 	PFN_vkGetRayTracingShaderGroupHandlesKHR vkGetRayTracingShaderGroupHandlesKHR;
 	PFN_vkCreateRayTracingPipelinesKHR vkCreateRayTracingPipelinesKHR;
 
-	AccelerationStructure _bottomLevelAS{};
+	std::vector<AccelerationStructure> _bottomLevelAS{};
 	AccelerationStructure _topLevelAS{};
 
 	AllocatedBuffer _vertexBuffer;
 	AllocatedBuffer _indexBuffer;
-	uint32_t _indexCount;
-	AllocatedBuffer _transformBuffer;
+	std::vector<uint32_t> _indexCount;
+	std::vector<AllocatedBuffer> _transformBuffers;
+	std::vector<AllocatedBuffer> _modelBuffers;
 	std::vector<VkRayTracingShaderGroupCreateInfoKHR> _shaderGroups{};
+	std::vector<AllocatedBuffer> _rtVertexBuffers;
 	AllocatedBuffer _raygenShaderBindingTable;
 	AllocatedBuffer _missShaderBindingTable;
 	AllocatedBuffer _hitShaderBindingTable;
@@ -161,8 +170,6 @@ private:
 	//INIT RENDER STRUCTURES AND PIPELINES
 
 	//Init ray tracing structures
-
-	void init_raytracing();
 
 	void create_bottom_level_acceleration_structure();
 
@@ -222,6 +229,10 @@ private:
 	void create_forward_pipelines();
 
 	void create_deferred_pipelines();
+
+	BlasInput renderable_to_vulkan_geometry(RenderObject renderable);
+
+	void build_blas(const std::vector<BlasInput>& input, VkBuildAccelerationStructureFlagsKHR flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR);
 };
 
 class PipelineBuilder {

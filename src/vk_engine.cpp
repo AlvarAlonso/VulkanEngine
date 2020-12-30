@@ -98,6 +98,8 @@ void VulkanEngine::init()
 
 	init_imgui();
 
+	renderer->init_raytracing();
+
 	//everything went fine
 	_isInitialized = true;
 }
@@ -375,7 +377,13 @@ void VulkanEngine::init_swapchain()
 
 	_swapchainImageFormat = vkbSwapchain.image_format;
 
+	//Create Sampler
+	VkSamplerCreateInfo samplerInfo = vkinit::sampler_create_info(VK_FILTER_NEAREST);
+
+	vkCreateSampler(VulkanEngine::cinstance->_device, &samplerInfo, nullptr, &_defaultSampler);
+
 	_mainDeletionQueue.push_function([=]() {
+		vkDestroySampler(_device, _defaultSampler, nullptr);
 		vkDestroySwapchainKHR(_device, _swapchain, nullptr);
 	});
 }
@@ -678,7 +686,7 @@ void VulkanEngine::init_scene()
 
 	//write to the descriptor set so that it points to our empire_diffuse texture
 	VkDescriptorImageInfo imageBufferInfo;
-	imageBufferInfo.sampler = renderer->_defaultSampler;
+	imageBufferInfo.sampler = _defaultSampler;
 	imageBufferInfo.imageView = _loadedTextures["empire_diffuse"].imageView;
 	imageBufferInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
@@ -734,6 +742,11 @@ void VulkanEngine::load_meshes()
 
 void VulkanEngine::get_enabled_features()
 {
+	_enabledIndexingFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES_EXT;
+	//enabledIndexingFeatures.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
+	_enabledIndexingFeatures.runtimeDescriptorArray = VK_TRUE;
+	_enabledIndexingFeatures.pNext = nullptr;
+
 	_enabledBufferDeviceAddressFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES;
 	_enabledBufferDeviceAddressFeatures.bufferDeviceAddress = VK_TRUE;
 	_enabledBufferDeviceAddressFeatures.pNext = nullptr;

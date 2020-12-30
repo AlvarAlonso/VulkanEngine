@@ -172,11 +172,14 @@ public:
 
 	UploadContext _uploadContext;
 
+	VkSampler _defaultSampler;
+
 	//RAY TRACING
 
 	PFN_vkGetBufferDeviceAddressKHR vkGetBufferDeviceAddressKHR;
 
 	//pnext features
+	VkPhysicalDeviceDescriptorIndexingFeatures			_enabledIndexingFeatures{};
 	VkPhysicalDeviceBufferDeviceAddressFeatures         _enabledBufferDeviceAddressFeatures{};
 	VkPhysicalDeviceRayTracingPipelineFeaturesKHR       _enabledRayTracingPipelineFeatures{};
 	VkPhysicalDeviceAccelerationStructureFeaturesKHR    _enabledAccelerationStructureFeatures{};

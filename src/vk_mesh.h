@@ -15,7 +15,9 @@ struct VertexInputDescription {
 	VkPipelineVertexInputStateCreateFlags flags = 0;
 };
 
+
 struct Vertex {
+
 	glm::vec3 position;
 	glm::vec3 normal;
 	glm::vec3 color;
@@ -26,6 +28,12 @@ struct Vertex {
 	bool operator==(const Vertex& other) const {
 		return position == other.position && normal == other.normal && uv == other.uv;
 	}
+};
+
+struct rtVertex {
+	glm::vec4 position;
+	glm::vec4 normal;
+	glm::vec4 uv;
 };
 
 namespace std {
