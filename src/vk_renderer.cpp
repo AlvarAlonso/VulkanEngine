@@ -16,7 +16,7 @@ Renderer::Renderer()
 	_allocator = VulkanEngine::cinstance->_allocator;
 	_graphicsQueue = VulkanEngine::cinstance->_graphicsQueue;
 	_graphicsQueueFamily = VulkanEngine::cinstance->_graphicsQueueFamily;
-	_renderMode = RENDER_MODE_DEFERRED;
+	_renderMode = RENDER_MODE_RAYTRACING;
 }
 
 void Renderer::init_renderer()
@@ -2069,6 +2069,7 @@ void Renderer::build_blas(const std::vector<BlasInput>& input, VkBuildAccelerati
 	}
 }
 
+/*
 VkPipeline PipelineBuilder::build_pipeline(VkDevice device, VkRenderPass pass)
 {
 	VkPipelineViewportStateCreateInfo viewportState = {};
@@ -2120,3 +2121,4 @@ VkPipeline PipelineBuilder::build_pipeline(VkDevice device, VkRenderPass pass)
 		return newPipeline;
 	}
 }
+*/

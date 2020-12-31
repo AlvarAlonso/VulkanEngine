@@ -22,7 +22,7 @@
 
 #include <chrono>
 
-std::vector<const char*> required_device_extensions = {
+std::vector<const char*> rrequired_device_extensions = {
 		VK_KHR_SWAPCHAIN_EXTENSION_NAME,
 		VK_KHR_DEDICATED_ALLOCATION_EXTENSION_NAME,
 		VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME,
@@ -103,6 +103,7 @@ void VulkanEngine::init()
 	//everything went fine
 	_isInitialized = true;
 }
+
 void VulkanEngine::cleanup()
 {	
 	if (_isInitialized) {
@@ -308,7 +309,7 @@ void VulkanEngine::init_vulkan()
 	vkb::PhysicalDevice physicalDevice = selector
 		.set_minimum_version(1, 1)
 		.set_surface(_surface)
-		.add_required_extensions(required_device_extensions)
+		.add_required_extensions(rrequired_device_extensions)
 		.select()
 		.value();
 
@@ -380,7 +381,7 @@ void VulkanEngine::init_swapchain()
 	//Create Sampler
 	VkSamplerCreateInfo samplerInfo = vkinit::sampler_create_info(VK_FILTER_NEAREST);
 
-	vkCreateSampler(VulkanEngine::cinstance->_device, &samplerInfo, nullptr, &_defaultSampler);
+	vkCreateSampler(_device, &samplerInfo, nullptr, &_defaultSampler);
 
 	_mainDeletionQueue.push_function([=]() {
 		vkDestroySampler(_device, _defaultSampler, nullptr);
@@ -551,7 +552,7 @@ void VulkanEngine::init_descriptor_set_layouts()
 
 	vkCreateDescriptorSetLayout(_device, &set3Info, nullptr, &_singleTextureSetLayout);
 
-	//DESCRIPTOR SET BUFFER CREATION
+	//  TODO        !!!!!!!!!!!!!!!!!!!         DESCRIPTOR SET BUFFER CREATION HAS TO BE DONE IN RENDERER
 	const size_t sceneParamBufferSize = FRAME_OVERLAP * vkutil::get_aligned_size(sizeof(GPUSceneData), _gpuProperties.limits.minUniformBufferOffsetAlignment);
 
 	_sceneParameterBuffer = vkutil::create_buffer(_allocator, sceneParamBufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
@@ -688,6 +689,7 @@ void VulkanEngine::get_enabled_features()
 
 	deviceCreatepNextChain = &_enabledAccelerationStructureFeatures;
 }
+
 
 Material* VulkanEngine::create_material(const std::string& name)
 {

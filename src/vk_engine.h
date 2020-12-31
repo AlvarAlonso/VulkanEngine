@@ -3,19 +3,9 @@
 
 #pragma once
 
+#include "vk_render_engine.h"
 #include "vk_renderer.h"
 #include "Camera.h"
-
-//#define GLM_FORCE_RADIANS
-//#define GLM_FORCE_DEPTH_ZERO_TO_ONE
-#define GLM_ENABLE_EXPERIMENTAL
-#include <glm/glm.hpp>
-#include <glm/gtc/matrix_inverse.hpp>
-#include <glm/glm.hpp>
-#include <glm/gtc/matrix_transform.hpp>
-#include <glm/gtc/matrix_inverse.hpp>
-#include <glm/gtc/type_ptr.hpp>
-#include <unordered_map>
 
 const glm::vec3 camera_default_position = { 0.0f, 0.0f, 2.5f };
 
@@ -26,11 +16,6 @@ const int MAX_OBJECTS = 10000;
 struct Texture {
 	AllocatedImage image;
 	VkImageView imageView;
-};
-
-struct UploadContext {
-	VkFence _uploadFence;
-	VkCommandPool _commandPool;
 };
 
 struct GPUCameraData {
@@ -49,40 +34,6 @@ struct FrameData {
 
 struct GPUObjectData {
 	glm::mat4 modelMatrix;
-};
-
-/*
-struct RenderObject {
-	Mesh* mesh;
-
-	Material* material;
-
-	glm::mat4 transformMatrix;
-};*/
-
-struct MeshPushConstants {
-	glm::vec4 data;
-	glm::mat4 render_matrix;
-};
-
-struct DeletionQueue
-{
-	std::deque<std::function<void()>> deletors;
-
-	void push_function(std::function<void()>&& function)
-	{
-		deletors.push_back(function);
-	}
-
-	void flush()
-	{
-		for(auto it = deletors.rbegin(); it != deletors.rend(); it++)
-		{
-			(*it)();
-		}
-
-		deletors.clear();
-	}
 };
 
 class VulkanEngine {
