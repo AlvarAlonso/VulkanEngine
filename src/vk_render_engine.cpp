@@ -34,6 +34,10 @@ std::vector<const char*> required_device_extensions = {
 		VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME
 };
 
+RenderEngine::RenderEngine()
+{
+}
+
 void RenderEngine::init()
 {
 	// We initialize SDL and create a window with it. 
@@ -157,6 +161,7 @@ void RenderEngine::init_swapchain()
 		});
 }
 
+// upload info command pool
 void RenderEngine::init_command_pools()
 {
 	// Upload Context
@@ -907,6 +912,23 @@ void RenderEngine::get_enabled_features()
 	_enabledAccelerationStructureFeatures.pNext = &_enabledRayTracingPipelineFeatures;
 
 	deviceCreatepNextChain = &_enabledAccelerationStructureFeatures;
+}
+
+void RenderEngine::cleanup()
+{
+	// TODO: Poner render fence al renderer i fer el cleanup del render engine despres
+
+	if (_isInitialized) {
+
+		_mainDeletionQueue.flush();
+
+		vkDestroySurfaceKHR(_instance, _surface, nullptr);
+
+		vkDestroyDevice(_device, nullptr);
+		vkDestroyInstance(_instance, nullptr);
+
+		SDL_DestroyWindow(_window);
+	}
 }
 
 VkPipeline PipelineBuilder::build_pipeline(VkDevice device, VkRenderPass pass)

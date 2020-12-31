@@ -54,6 +54,8 @@ class RenderEngine
 {
 public:
 
+	RenderEngine();
+
 	bool _isInitialized{ false };
 
 	VkExtent2D _windowExtent{ 1700 , 900 };
@@ -67,8 +69,8 @@ public:
 	// Core 
 	VkInstance _instance;
 	VkDebugUtilsMessengerEXT _debug_messenger;
-	VkPhysicalDevice _physicalDevice;
-	VkDevice _device;
+	static VkPhysicalDevice _physicalDevice;
+	static VkDevice _device;
 	VkSurfaceKHR _surface;
 
 	// Swapchain
@@ -79,26 +81,26 @@ public:
 	std::vector<VkImageView> _swapchainImageViews;
 
 	// Queues
-	VkQueue _graphicsQueue;
+	static VkQueue _graphicsQueue;
 	uint32_t _graphicsQueueFamily;
 
 	// Samplers
-	VkSampler _defaultSampler;
+	static VkSampler _defaultSampler;
 
 	//Deletion
-	DeletionQueue _mainDeletionQueue;
-	VmaAllocator _allocator;
+	static DeletionQueue _mainDeletionQueue;
+	static VmaAllocator _allocator;
 
 	// Upload Context for immediate submit
-	UploadContext _uploadContext;
+	static UploadContext _uploadContext;
 
 	// Scene Descriptors
 	// - Descriptor Pool
-	VkDescriptorPool _descriptorPool;
+	static VkDescriptorPool _descriptorPool;
 	// - Descriptor Layouts
 	VkDescriptorSetLayout _globalSetLayout;
 	VkDescriptorSetLayout _objectSetLayout;
-	VkDescriptorSetLayout _singleTextureSetLayout;
+	static VkDescriptorSetLayout _singleTextureSetLayout;
 	VkDescriptorSetLayout _camSetLayout;
 
 	// - Pipeline Layouts
@@ -122,12 +124,10 @@ public:
 	Image _normalImage;
 	Image _albedoImage;
 
-	// - Descriptors
+	// - Deferred Descriptors
 	VkDescriptorPool _gbuffersPool;
 	VkDescriptorSetLayout _gbuffersSetLayout;
 	VkDescriptorSet _gbuffersDescriptorSet;
-
-	Mesh deferred_quad;
 
 	// Render passes
 	VkRenderPass _defaultRenderPass;
@@ -151,6 +151,9 @@ public:
 	void* deviceCreatepNextChain = nullptr;
 
 	void init();
+
+	//shuts down the engine
+	void cleanup();
 
 private:
 	void init_vulkan();

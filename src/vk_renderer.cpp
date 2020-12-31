@@ -1,6 +1,7 @@
 #include "vk_renderer.h"
 #include "vk_initializers.h"
 #include "vk_engine.h"
+#include "vk_utils.h"
 #include <iostream>
 
 #include <imgui.h>
@@ -11,24 +12,33 @@
 
 Renderer::Renderer()
 {
-	_physicalDevice = VulkanEngine::cinstance->_physicalDevice;
-	_device = VulkanEngine::cinstance->_device;
-	_allocator = VulkanEngine::cinstance->_allocator;
-	_graphicsQueue = VulkanEngine::cinstance->_graphicsQueue;
-	_graphicsQueueFamily = VulkanEngine::cinstance->_graphicsQueueFamily;
-	_renderMode = RENDER_MODE_RAYTRACING;
+	re = new RenderEngine();
+	re->init();
+	
+	_physicalDevice = re->_physicalDevice;
+	_device = RenderEngine::_device;
+	_allocator = re->_allocator;
+	_graphicsQueue = re->_graphicsQueue;
+	_graphicsQueueFamily = re->_graphicsQueueFamily;
+	_renderMode = RENDER_MODE_DEFERRED;
+
+	init_renderer();
+}
+
+void Renderer::cleanup()
+{
+	re->cleanup();
+}
+
+SDL_Window* Renderer::get_sdl_window()
+{
+	return re->_window;
 }
 
 void Renderer::init_renderer()
 {
-	create_depth_buffer();
-	create_deferred_attachments();
 	init_commands();
 	init_sync_structures();
-	init_default_render_pass();
-	init_deferred_render_pass();
-	init_framebuffers();
-	init_gbuffers_descriptors();
 
 	deferred_quad.create_quad();
 }
@@ -60,15 +70,29 @@ void Renderer::draw_scene()
 void Renderer::init_raytracing()
 {
 	// Get the ray tracing and accelertion structure related function pointers required by this sample
-	vkCmdBuildAccelerationStructuresKHR = reinterpret_cast<PFN_vkCmdBuildAccelerationStructuresKHR>(vkGetDeviceProcAddr(VulkanEngine::cinstance->_device, "vkCmdBuildAccelerationStructuresKHR"));
-	vkBuildAccelerationStructuresKHR = reinterpret_cast<PFN_vkBuildAccelerationStructuresKHR>(vkGetDeviceProcAddr(VulkanEngine::cinstance->_device, "vkBuildAccelerationStructuresKHR"));
-	vkCreateAccelerationStructureKHR = reinterpret_cast<PFN_vkCreateAccelerationStructureKHR>(vkGetDeviceProcAddr(VulkanEngine::cinstance->_device, "vkCreateAccelerationStructureKHR"));
-	vkDestroyAccelerationStructureKHR = reinterpret_cast<PFN_vkDestroyAccelerationStructureKHR>(vkGetDeviceProcAddr(VulkanEngine::cinstance->_device, "vkDestroyAccelerationStructureKHR"));
-	vkGetAccelerationStructureBuildSizesKHR = reinterpret_cast<PFN_vkGetAccelerationStructureBuildSizesKHR>(vkGetDeviceProcAddr(VulkanEngine::cinstance->_device, "vkGetAccelerationStructureBuildSizesKHR"));
-	vkGetAccelerationStructureDeviceAddressKHR = reinterpret_cast<PFN_vkGetAccelerationStructureDeviceAddressKHR>(vkGetDeviceProcAddr(VulkanEngine::cinstance->_device, "vkGetAccelerationStructureDeviceAddressKHR"));
-	vkCmdTraceRaysKHR = reinterpret_cast<PFN_vkCmdTraceRaysKHR>(vkGetDeviceProcAddr(VulkanEngine::cinstance->_device, "vkCmdTraceRaysKHR"));
-	vkGetRayTracingShaderGroupHandlesKHR = reinterpret_cast<PFN_vkGetRayTracingShaderGroupHandlesKHR>(vkGetDeviceProcAddr(VulkanEngine::cinstance->_device, "vkGetRayTracingShaderGroupHandlesKHR"));
-	vkCreateRayTracingPipelinesKHR = reinterpret_cast<PFN_vkCreateRayTracingPipelinesKHR>(vkGetDeviceProcAddr(VulkanEngine::cinstance->_device, "vkCreateRayTracingPipelinesKHR"));
+	vkGetBufferDeviceAddressKHR = reinterpret_cast<PFN_vkGetBufferDeviceAddressKHR>(vkGetDeviceProcAddr(_device, "vkGetBufferDeviceAddressKHR"));
+	vkCmdBuildAccelerationStructuresKHR = reinterpret_cast<PFN_vkCmdBuildAccelerationStructuresKHR>(vkGetDeviceProcAddr(_device, "vkCmdBuildAccelerationStructuresKHR"));
+	vkBuildAccelerationStructuresKHR = reinterpret_cast<PFN_vkBuildAccelerationStructuresKHR>(vkGetDeviceProcAddr(_device, "vkBuildAccelerationStructuresKHR"));
+	vkCreateAccelerationStructureKHR = reinterpret_cast<PFN_vkCreateAccelerationStructureKHR>(vkGetDeviceProcAddr(_device, "vkCreateAccelerationStructureKHR"));
+	vkDestroyAccelerationStructureKHR = reinterpret_cast<PFN_vkDestroyAccelerationStructureKHR>(vkGetDeviceProcAddr(_device, "vkDestroyAccelerationStructureKHR"));
+	vkGetAccelerationStructureBuildSizesKHR = reinterpret_cast<PFN_vkGetAccelerationStructureBuildSizesKHR>(vkGetDeviceProcAddr(_device, "vkGetAccelerationStructureBuildSizesKHR"));
+	vkGetAccelerationStructureDeviceAddressKHR = reinterpret_cast<PFN_vkGetAccelerationStructureDeviceAddressKHR>(vkGetDeviceProcAddr(_device, "vkGetAccelerationStructureDeviceAddressKHR"));
+	vkCmdTraceRaysKHR = reinterpret_cast<PFN_vkCmdTraceRaysKHR>(vkGetDeviceProcAddr(_device, "vkCmdTraceRaysKHR"));
+	vkGetRayTracingShaderGroupHandlesKHR = reinterpret_cast<PFN_vkGetRayTracingShaderGroupHandlesKHR>(vkGetDeviceProcAddr(_device, "vkGetRayTracingShaderGroupHandlesKHR"));
+	vkCreateRayTracingPipelinesKHR = reinterpret_cast<PFN_vkCreateRayTracingPipelinesKHR>(vkGetDeviceProcAddr(_device, "vkCreateRayTracingPipelinesKHR"));
+
+	re->_rayTracingPipelineProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR;
+	VkPhysicalDeviceProperties2 deviceProperties2{};
+	deviceProperties2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+	deviceProperties2.pNext = &re->_rayTracingPipelineProperties;
+	vkGetPhysicalDeviceProperties2(_physicalDevice, &deviceProperties2);
+
+	// Requesting ray tracing features
+	re->_accelerationStructureFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
+	VkPhysicalDeviceFeatures2 deviceFeatures2{};
+	deviceFeatures2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+	deviceFeatures2.pNext = &re->_accelerationStructureFeatures;
+	vkGetPhysicalDeviceFeatures2(_physicalDevice, &deviceFeatures2);
 
 	create_bottom_level_acceleration_structure();
 
@@ -136,9 +160,9 @@ void Renderer::create_top_level_acceleration_structure()
 		VMA_MEMORY_USAGE_CPU_TO_GPU);
 
 	void* data;
-	vmaMapMemory(VulkanEngine::cinstance->_allocator, instancesBuffer._allocation, &data);
+	vmaMapMemory(_allocator, instancesBuffer._allocation, &data);
 	memcpy(data, instances.data(), sizeof(VkAccelerationStructureInstanceKHR) * instances.size());
-	vmaUnmapMemory(VulkanEngine::cinstance->_allocator, instancesBuffer._allocation);
+	vmaUnmapMemory(_allocator, instancesBuffer._allocation);
 
 	VkDeviceOrHostAddressConstKHR instanceDataDeviceAddress{};
 	instanceDataDeviceAddress.deviceAddress = vkutil::get_buffer_device_address(_device, instancesBuffer._buffer);
@@ -168,7 +192,7 @@ void Renderer::create_top_level_acceleration_structure()
 	VkAccelerationStructureBuildSizesInfoKHR accelerationStructureBuildSizesInfo{};
 	accelerationStructureBuildSizesInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
 	vkGetAccelerationStructureBuildSizesKHR(
-		VulkanEngine::cinstance->_device,
+		_device,
 		VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR,
 		&accelerationStructureBuildGeometryInfo,
 		&primitive_count,
@@ -182,7 +206,7 @@ void Renderer::create_top_level_acceleration_structure()
 	accelerationStructureCreateInfo.size = accelerationStructureBuildSizesInfo.accelerationStructureSize;
 	accelerationStructureCreateInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
 
-	vkCreateAccelerationStructureKHR(VulkanEngine::cinstance->_device, &accelerationStructureCreateInfo, nullptr, &_topLevelAS._handle);
+	vkCreateAccelerationStructureKHR(_device, &accelerationStructureCreateInfo, nullptr, &_topLevelAS._handle);
 
 	// Create a small scratch buffer used during build of the top level acceleration structure
 	RayTracingScratchBuffer scratchBuffer = create_scratch_buffer(accelerationStructureBuildSizesInfo.buildScratchSize);
@@ -204,11 +228,11 @@ void Renderer::create_top_level_acceleration_structure()
 	accelerationStructureBuildRangeInfo.transformOffset = 0;
 	std::vector<VkAccelerationStructureBuildRangeInfoKHR*> accelerationBuildStructureRangeInfos = { &accelerationStructureBuildRangeInfo };
 
-	if (VulkanEngine::cinstance->_accelerationStructureFeatures.accelerationStructureHostCommands)
+	if (re->_accelerationStructureFeatures.accelerationStructureHostCommands)
 	{
 		// Implementation supports building acceleration structure building on host
 		vkBuildAccelerationStructuresKHR(
-			VulkanEngine::cinstance->_device,
+			_device,
 			VK_NULL_HANDLE,
 			1,
 			&accelerationBuildGeometryInfo,
@@ -217,7 +241,7 @@ void Renderer::create_top_level_acceleration_structure()
 	else
 	{
 		// Acceleration structure needs to be build on the device
-		VulkanEngine::cinstance->immediate_submit([&](VkCommandBuffer cmd)
+		vkupload::immediate_submit([&](VkCommandBuffer cmd)
 			{
 				vkCmdBuildAccelerationStructuresKHR(
 					cmd,
@@ -230,46 +254,46 @@ void Renderer::create_top_level_acceleration_structure()
 	VkAccelerationStructureDeviceAddressInfoKHR accelerationDeviceAddressInfo{};
 	accelerationDeviceAddressInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR;
 	accelerationDeviceAddressInfo.accelerationStructure = _topLevelAS._handle;
-	_topLevelAS._deviceAddress = vkGetAccelerationStructureDeviceAddressKHR(VulkanEngine::cinstance->_device, &accelerationDeviceAddressInfo);
+	_topLevelAS._deviceAddress = vkGetAccelerationStructureDeviceAddressKHR(_device, &accelerationDeviceAddressInfo);
 
-	VulkanEngine::cinstance->_mainDeletionQueue.push_function([=]() {
-		vkDestroyAccelerationStructureKHR(VulkanEngine::cinstance->_device, _topLevelAS._handle, nullptr);
+	re->_mainDeletionQueue.push_function([=]() {
+		vkDestroyAccelerationStructureKHR(_device, _topLevelAS._handle, nullptr);
 		});
 
 	delete_scratch_buffer(scratchBuffer);
 
-	vmaDestroyBuffer(VulkanEngine::cinstance->_allocator, instancesBuffer._buffer, instancesBuffer._allocation);
+	vmaDestroyBuffer(_allocator, instancesBuffer._buffer, instancesBuffer._allocation);
 }
 
 void Renderer::create_storage_image()
 {
 	VkExtent3D extent = 
 	{
-		VulkanEngine::cinstance->_windowExtent.width,
-		VulkanEngine::cinstance->_windowExtent.height,
+		re->_windowExtent.width,
+		re->_windowExtent.height,
 		1
 	};
 
 	VkImageCreateInfo image = vkinit::image_create_info(VK_FORMAT_B8G8R8A8_UNORM, VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_STORAGE_BIT, extent);
 	image.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-	VK_CHECK(vkCreateImage(VulkanEngine::cinstance->_device, &image, nullptr, &_storageImage));
+	VK_CHECK(vkCreateImage(_device, &image, nullptr, &_storageImage));
 
 	VkMemoryRequirements memReqs;
-	vkGetImageMemoryRequirements(VulkanEngine::cinstance->_device, _storageImage, &memReqs);
+	vkGetImageMemoryRequirements(_device, _storageImage, &memReqs);
 
 	VkMemoryAllocateInfo memoryAllocateInfo = {};
 	memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 	memoryAllocateInfo.allocationSize = memReqs.size;
 	memoryAllocateInfo.memoryTypeIndex = vkutil::find_memory_type_index(_physicalDevice, memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
-	VK_CHECK(vkAllocateMemory(VulkanEngine::cinstance->_device, &memoryAllocateInfo, nullptr, &_storageImageMemory));
-	VK_CHECK(vkBindImageMemory(VulkanEngine::cinstance->_device, _storageImage, _storageImageMemory, 0));
+	VK_CHECK(vkAllocateMemory(_device, &memoryAllocateInfo, nullptr, &_storageImageMemory));
+	VK_CHECK(vkBindImageMemory(_device, _storageImage, _storageImageMemory, 0));
 
 	VkImageViewCreateInfo colorImageView = vkinit::imageview_create_info(VK_FORMAT_B8G8R8A8_UNORM, _storageImage, VK_IMAGE_ASPECT_COLOR_BIT);
 
-	VK_CHECK(vkCreateImageView(VulkanEngine::cinstance->_device, &colorImageView, nullptr, &_storageImageView));
+	VK_CHECK(vkCreateImageView(_device, &colorImageView, nullptr, &_storageImageView));
 
-	VulkanEngine::cinstance->immediate_submit([&](VkCommandBuffer cmd) {
+	vkupload::immediate_submit([&](VkCommandBuffer cmd) {
 		VkImageMemoryBarrier barrier = {};
 		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
 		barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -314,11 +338,11 @@ void Renderer::update_uniform_buffers()
 	projection[1][1] *= -1;
 
 	void* data;
-	vmaMapMemory(VulkanEngine::cinstance->_allocator, _ubo._allocation, &data);
+	vmaMapMemory(_allocator, _ubo._allocation, &data);
 	uniformData.projInverse = glm::inverse(projection);
 	uniformData.viewInverse = glm::inverse(VulkanEngine::cinstance->camera->getView());
 	memcpy(data, &uniformData, sizeof(uniformData));
-	vmaUnmapMemory(VulkanEngine::cinstance->_allocator, _ubo._allocation);
+	vmaUnmapMemory(_allocator, _ubo._allocation);
 }
 
 void Renderer::create_raytracing_pipeline()
@@ -372,13 +396,13 @@ void Renderer::create_raytracing_pipeline()
 	desc_set_layout_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
 	desc_set_layout_info.bindingCount = static_cast<uint32_t>(bindings.size());
 	desc_set_layout_info.pBindings = bindings.data();
-	VK_CHECK(vkCreateDescriptorSetLayout(VulkanEngine::cinstance->_device, &desc_set_layout_info, nullptr, &_rayTracingSetLayout));
+	VK_CHECK(vkCreateDescriptorSetLayout(_device, &desc_set_layout_info, nullptr, &_rayTracingSetLayout));
 
 	VkPipelineLayoutCreateInfo pipeline_layout_info{};
 	pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 	pipeline_layout_info.setLayoutCount = 1;
 	pipeline_layout_info.pSetLayouts = &_rayTracingSetLayout;
-	VK_CHECK(vkCreatePipelineLayout(VulkanEngine::cinstance->_device, &pipeline_layout_info, nullptr, &_rayTracingPipelineLayout));
+	VK_CHECK(vkCreatePipelineLayout(_device, &pipeline_layout_info, nullptr, &_rayTracingPipelineLayout));
 
 	/*
 		Setup ray tracing shader groups
@@ -468,18 +492,18 @@ void Renderer::create_raytracing_pipeline()
 	raytracing_pipeline_info.pGroups = _shaderGroups.data();
 	raytracing_pipeline_info.maxPipelineRayRecursionDepth = 1;
 	raytracing_pipeline_info.layout = _rayTracingPipelineLayout;
-	VK_CHECK(vkCreateRayTracingPipelinesKHR(VulkanEngine::cinstance->_device, VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &raytracing_pipeline_info, nullptr, &_rayTracingPipeline));
+	VK_CHECK(vkCreateRayTracingPipelinesKHR(_device, VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &raytracing_pipeline_info, nullptr, &_rayTracingPipeline));
 }
 
 void Renderer::create_shader_binding_table()
 {
-	const uint32_t handleSize = VulkanEngine::cinstance->_rayTracingPipelineProperties.shaderGroupHandleSize;
-	const uint32_t handleSizeAligned = vkutil::get_aligned_size(VulkanEngine::cinstance->_rayTracingPipelineProperties.shaderGroupHandleSize, VulkanEngine::cinstance->_rayTracingPipelineProperties.shaderGroupHandleAlignment);
+	const uint32_t handleSize = re->_rayTracingPipelineProperties.shaderGroupHandleSize;
+	const uint32_t handleSizeAligned = vkutil::get_aligned_size(re->_rayTracingPipelineProperties.shaderGroupHandleSize, re->_rayTracingPipelineProperties.shaderGroupHandleAlignment);
 	const uint32_t groupCount = static_cast<uint32_t>(_shaderGroups.size());
 	const uint32_t sbtSize = groupCount * handleSizeAligned;
 
 	std::vector<uint8_t> shaderHandleStorage(sbtSize);
-	VK_CHECK(vkGetRayTracingShaderGroupHandlesKHR(VulkanEngine::cinstance->_device, _rayTracingPipeline, 0, groupCount, sbtSize, shaderHandleStorage.data()));
+	VK_CHECK(vkGetRayTracingShaderGroupHandlesKHR(_device, _rayTracingPipeline, 0, groupCount, sbtSize, shaderHandleStorage.data()));
 
 	const VkBufferUsageFlags bufferUsageFlags = VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
 	const VmaMemoryUsage memoryUsageFlags = VMA_MEMORY_USAGE_CPU_TO_GPU;
@@ -495,19 +519,19 @@ void Renderer::create_shader_binding_table()
 
 	// Copy handles
 	void* raygen_data;
-	vmaMapMemory(VulkanEngine::cinstance->_allocator, _raygenShaderBindingTable._allocation, &raygen_data);
+	vmaMapMemory(_allocator, _raygenShaderBindingTable._allocation, &raygen_data);
 	memcpy(raygen_data, shaderHandleStorage.data(), handleSize);
-	vmaUnmapMemory(VulkanEngine::cinstance->_allocator, _raygenShaderBindingTable._allocation);
+	vmaUnmapMemory(_allocator, _raygenShaderBindingTable._allocation);
 
 	void* miss_data;
-	vmaMapMemory(VulkanEngine::cinstance->_allocator, _missShaderBindingTable._allocation, &miss_data);
+	vmaMapMemory(_allocator, _missShaderBindingTable._allocation, &miss_data);
 	memcpy(miss_data, shaderHandleStorage.data() + handleSizeAligned, handleSize);
-	vmaUnmapMemory(VulkanEngine::cinstance->_allocator, _missShaderBindingTable._allocation);
+	vmaUnmapMemory(_allocator, _missShaderBindingTable._allocation);
 
 	void* hit_data;
-	vmaMapMemory(VulkanEngine::cinstance->_allocator, _hitShaderBindingTable._allocation, &hit_data);
+	vmaMapMemory(_allocator, _hitShaderBindingTable._allocation, &hit_data);
 	memcpy(hit_data, shaderHandleStorage.data() + handleSizeAligned * 2, handleSize);
-	vmaUnmapMemory(VulkanEngine::cinstance->_allocator, _hitShaderBindingTable._allocation);
+	vmaUnmapMemory(_allocator, _hitShaderBindingTable._allocation);
 }
 
 void Renderer::create_raytracing_descriptor_sets()
@@ -529,10 +553,10 @@ void Renderer::create_raytracing_descriptor_sets()
 	dp_info.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
 	dp_info.pPoolSizes = poolSizes.data();
 
-	VK_CHECK(vkCreateDescriptorPool(VulkanEngine::cinstance->_device, &dp_info, nullptr, &_rayTracingDescriptorPool));
+	VK_CHECK(vkCreateDescriptorPool(_device, &dp_info, nullptr, &_rayTracingDescriptorPool));
 
-	VulkanEngine::cinstance->_mainDeletionQueue.push_function([=]() {
-		vkDestroyDescriptorPool(VulkanEngine::cinstance->_device, _rayTracingDescriptorPool, nullptr);
+	re->_mainDeletionQueue.push_function([=]() {
+		vkDestroyDescriptorPool(_device, _rayTracingDescriptorPool, nullptr);
 		});
 
 	VkDescriptorSetAllocateInfo alloc_info = {};
@@ -542,7 +566,7 @@ void Renderer::create_raytracing_descriptor_sets()
 	alloc_info.descriptorSetCount = 1;
 	alloc_info.pSetLayouts = &_rayTracingSetLayout;
 
-	VK_CHECK(vkAllocateDescriptorSets(VulkanEngine::cinstance->_device, &alloc_info, &_rayTracingDescriptorSet));
+	VK_CHECK(vkAllocateDescriptorSets(_device, &alloc_info, &_rayTracingDescriptorSet));
 
 	VkWriteDescriptorSetAccelerationStructureKHR descriptorAccelerationStructureInfo{};
 	descriptorAccelerationStructureInfo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR;
@@ -596,9 +620,9 @@ void Renderer::create_raytracing_descriptor_sets()
 		vertexBufferInfo.range = sizeof(rtVertex) * rtvs.size();
 
 		void* vertexData;
-		vmaMapMemory(VulkanEngine::cinstance->_allocator, rtVertexBuffer._allocation, &vertexData);
+		vmaMapMemory(_allocator, rtVertexBuffer._allocation, &vertexData);
 		memcpy(vertexData, rtvs.data(), sizeof(rtVertex) * rtvs.size());
-		vmaUnmapMemory(VulkanEngine::cinstance->_allocator, rtVertexBuffer._allocation);
+		vmaUnmapMemory(_allocator, rtVertexBuffer._allocation);
 
 		verticesBufferInfos.push_back(vertexBufferInfo);
 
@@ -619,9 +643,9 @@ void Renderer::create_raytracing_descriptor_sets()
 		transformBufferInfos.push_back(transformBufferInfo);
 
 		void* data;
-		vmaMapMemory(VulkanEngine::cinstance->_allocator, transformBuffer._allocation, &data);
+		vmaMapMemory(_allocator, transformBuffer._allocation, &data);
 		memcpy(data, &renderables[i]._model, sizeof(glm::mat4));
-		vmaUnmapMemory(VulkanEngine::cinstance->_allocator, transformBuffer._allocation);
+		vmaUnmapMemory(_allocator, transformBuffer._allocation);
 	}
 
 	VkWriteDescriptorSet resultImageWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, _rayTracingDescriptorSet, &storageImageDescriptor, 1);
@@ -639,7 +663,7 @@ void Renderer::create_raytracing_descriptor_sets()
 		transformBufferWrite
 	};
 
-	vkUpdateDescriptorSets(VulkanEngine::cinstance->_device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, VK_NULL_HANDLE);
+	vkUpdateDescriptorSets(_device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, VK_NULL_HANDLE);
 }
 
 void Renderer::record_raytracing_command_buffer(VkCommandBuffer cmd, uint32_t swapchainImageIndex)
@@ -654,14 +678,14 @@ void Renderer::record_raytracing_command_buffer(VkCommandBuffer cmd, uint32_t sw
 		Setup the buffer regions pointing to the shaders in our shader binding table
 	*/
 
-	const uint32_t handleSizeAligned = vkutil::get_aligned_size(VulkanEngine::cinstance->_rayTracingPipelineProperties.shaderGroupHandleSize, VulkanEngine::cinstance->_rayTracingPipelineProperties.shaderGroupHandleAlignment);
+	const uint32_t handleSizeAligned = vkutil::get_aligned_size(re->_rayTracingPipelineProperties.shaderGroupHandleSize, re->_rayTracingPipelineProperties.shaderGroupHandleAlignment);
 
 	VkBufferDeviceAddressInfoKHR raygenDeviceAddressInfo{};
 	raygenDeviceAddressInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
 	raygenDeviceAddressInfo.buffer = _raygenShaderBindingTable._buffer;
 
 	VkStridedDeviceAddressRegionKHR raygenShaderSbtEntry{};
-	raygenShaderSbtEntry.deviceAddress = vkGetBufferDeviceAddress(VulkanEngine::cinstance->_device, &raygenDeviceAddressInfo);
+	raygenShaderSbtEntry.deviceAddress = vkGetBufferDeviceAddress(_device, &raygenDeviceAddressInfo);
 	raygenShaderSbtEntry.stride = handleSizeAligned;
 	raygenShaderSbtEntry.size = handleSizeAligned;
 
@@ -670,7 +694,7 @@ void Renderer::record_raytracing_command_buffer(VkCommandBuffer cmd, uint32_t sw
 	missDeviceAddressInfo.buffer = _missShaderBindingTable._buffer;
 
 	VkStridedDeviceAddressRegionKHR missShaderSbtEntry{};
-	missShaderSbtEntry.deviceAddress = vkGetBufferDeviceAddress(VulkanEngine::cinstance->_device, &missDeviceAddressInfo);
+	missShaderSbtEntry.deviceAddress = vkGetBufferDeviceAddress(_device, &missDeviceAddressInfo);
 	missShaderSbtEntry.stride = handleSizeAligned;
 	missShaderSbtEntry.size = handleSizeAligned;
 
@@ -679,7 +703,7 @@ void Renderer::record_raytracing_command_buffer(VkCommandBuffer cmd, uint32_t sw
 	hitDeviceAddressInfo.buffer = _hitShaderBindingTable._buffer;
 
 	VkStridedDeviceAddressRegionKHR hitShaderSbtEntry{};
-	hitShaderSbtEntry.deviceAddress = vkGetBufferDeviceAddress(VulkanEngine::cinstance->_device, &hitDeviceAddressInfo);
+	hitShaderSbtEntry.deviceAddress = vkGetBufferDeviceAddress(_device, &hitDeviceAddressInfo);
 	hitShaderSbtEntry.stride = handleSizeAligned;
 	hitShaderSbtEntry.size = handleSizeAligned;
 
@@ -698,8 +722,8 @@ void Renderer::record_raytracing_command_buffer(VkCommandBuffer cmd, uint32_t sw
 		&missShaderSbtEntry,
 		&hitShaderSbtEntry,
 		&callableShaderSbtEntry,
-		VulkanEngine::cinstance->_windowExtent.width,
-		VulkanEngine::cinstance->_windowExtent.height,
+		re->_windowExtent.width,
+		re->_windowExtent.height,
 		1);
 	
 	/*
@@ -714,7 +738,7 @@ void Renderer::record_raytracing_command_buffer(VkCommandBuffer cmd, uint32_t sw
 		barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
 		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		barrier.image = VulkanEngine::cinstance->_swapchainImages[swapchainImageIndex];
+		barrier.image = re->_swapchainImages[swapchainImageIndex];
 		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		barrier.subresourceRange.baseMipLevel = 0;
 		barrier.subresourceRange.levelCount = 1;
@@ -767,8 +791,8 @@ void Renderer::record_raytracing_command_buffer(VkCommandBuffer cmd, uint32_t sw
 	copyRegion.srcOffset = { 0, 0, 0 };
 	copyRegion.dstSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
 	copyRegion.dstOffset = { 0, 0, 0 };
-	copyRegion.extent = { VulkanEngine::cinstance->_windowExtent.width, VulkanEngine::cinstance->_windowExtent.height, 1 };
-	vkCmdCopyImage(cmd, _storageImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VulkanEngine::cinstance->_swapchainImages[swapchainImageIndex], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
+	copyRegion.extent = { re->_windowExtent.width, re->_windowExtent.height, 1 };
+	vkCmdCopyImage(cmd, _storageImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, re->_swapchainImages[swapchainImageIndex], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
 		
 	// Transition swap chain image back for presentation
 	{
@@ -778,7 +802,7 @@ void Renderer::record_raytracing_command_buffer(VkCommandBuffer cmd, uint32_t sw
 		barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		barrier.image = VulkanEngine::cinstance->_swapchainImages[swapchainImageIndex];
+		barrier.image = re->_swapchainImages[swapchainImageIndex];
 		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		barrier.subresourceRange.baseMipLevel = 0;
 		barrier.subresourceRange.levelCount = 1;
@@ -836,10 +860,10 @@ RayTracingScratchBuffer Renderer::create_scratch_buffer(VkDeviceSize size)
 	bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
 	bufferCreateInfo.size = size;
 	bufferCreateInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-	VK_CHECK(vkCreateBuffer(VulkanEngine::cinstance->_device, &bufferCreateInfo, nullptr, &scratchBuffer._buffer));
+	VK_CHECK(vkCreateBuffer(_device, &bufferCreateInfo, nullptr, &scratchBuffer._buffer));
 
 	VkMemoryRequirements memoryRequirements{};
-	vkGetBufferMemoryRequirements(VulkanEngine::cinstance->_device, scratchBuffer._buffer, &memoryRequirements);
+	vkGetBufferMemoryRequirements(_device, scratchBuffer._buffer, &memoryRequirements);
 
 	VkMemoryAllocateFlagsInfo memoryAllocateFlagsInfo{};
 	memoryAllocateFlagsInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO;
@@ -850,13 +874,13 @@ RayTracingScratchBuffer Renderer::create_scratch_buffer(VkDeviceSize size)
 	memoryAllocateInfo.pNext = &memoryAllocateFlagsInfo;
 	memoryAllocateInfo.allocationSize = memoryRequirements.size;
 	memoryAllocateInfo.memoryTypeIndex = vkutil::find_memory_type_index(_physicalDevice, memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	VK_CHECK(vkAllocateMemory(VulkanEngine::cinstance->_device, &memoryAllocateInfo, nullptr, &scratchBuffer._memory));
-	VK_CHECK(vkBindBufferMemory(VulkanEngine::cinstance->_device, scratchBuffer._buffer, scratchBuffer._memory, 0));
+	VK_CHECK(vkAllocateMemory(_device, &memoryAllocateInfo, nullptr, &scratchBuffer._memory));
+	VK_CHECK(vkBindBufferMemory(_device, scratchBuffer._buffer, scratchBuffer._memory, 0));
 
 	VkBufferDeviceAddressInfoKHR bufferDeviceAddressInfo{};
 	bufferDeviceAddressInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
 	bufferDeviceAddressInfo.buffer = scratchBuffer._buffer;
-	scratchBuffer._deviceAddress = VulkanEngine::cinstance->vkGetBufferDeviceAddressKHR(VulkanEngine::cinstance->_device, &bufferDeviceAddressInfo);
+	scratchBuffer._deviceAddress = vkGetBufferDeviceAddressKHR(_device, &bufferDeviceAddressInfo);
 
 	return scratchBuffer;
 }
@@ -864,10 +888,10 @@ RayTracingScratchBuffer Renderer::create_scratch_buffer(VkDeviceSize size)
 void Renderer::delete_scratch_buffer(RayTracingScratchBuffer& scratchBuffer)
 {
 	if(scratchBuffer._memory != VK_NULL_HANDLE) {
-		vkFreeMemory(VulkanEngine::cinstance->_device, scratchBuffer._memory, nullptr);
+		vkFreeMemory(_device, scratchBuffer._memory, nullptr);
 	}
 	if(scratchBuffer._buffer != VK_NULL_HANDLE) {
-		vkDestroyBuffer(VulkanEngine::cinstance->_device, scratchBuffer._buffer, nullptr);
+		vkDestroyBuffer(_device, scratchBuffer._buffer, nullptr);
 	}
 }
 
@@ -878,10 +902,10 @@ void Renderer::create_acceleration_structure_buffer(AccelerationStructure &accel
 	bufferCreateInfo.size = buildSizeInfo.accelerationStructureSize;
 	bufferCreateInfo.usage = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
 
-	VK_CHECK(vkCreateBuffer(VulkanEngine::cinstance->_device, &bufferCreateInfo, nullptr, &accelerationStructure._buffer));
+	VK_CHECK(vkCreateBuffer(_device, &bufferCreateInfo, nullptr, &accelerationStructure._buffer));
 
 	VkMemoryRequirements memoryRequirements{};
-	vkGetBufferMemoryRequirements(VulkanEngine::cinstance->_device, accelerationStructure._buffer, &memoryRequirements);
+	vkGetBufferMemoryRequirements(_device, accelerationStructure._buffer, &memoryRequirements);
 
 	VkMemoryAllocateFlagsInfo memoryAllocateFlagsInfo{};
 	memoryAllocateFlagsInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO;
@@ -893,77 +917,12 @@ void Renderer::create_acceleration_structure_buffer(AccelerationStructure &accel
 	memoryAllocateInfo.allocationSize = memoryRequirements.size;
 	memoryAllocateInfo.memoryTypeIndex = vkutil::find_memory_type_index(_physicalDevice, memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
-	VK_CHECK(vkAllocateMemory(VulkanEngine::cinstance->_device, &memoryAllocateInfo, nullptr, &accelerationStructure._memory));
-	VK_CHECK(vkBindBufferMemory(VulkanEngine::cinstance->_device, accelerationStructure._buffer, accelerationStructure._memory, 0));
+	VK_CHECK(vkAllocateMemory(_device, &memoryAllocateInfo, nullptr, &accelerationStructure._memory));
+	VK_CHECK(vkBindBufferMemory(_device, accelerationStructure._buffer, accelerationStructure._memory, 0));
 
-	VulkanEngine::cinstance->_mainDeletionQueue.push_function([=]() {
-		vkFreeMemory(VulkanEngine::cinstance->_device, accelerationStructure._memory, nullptr);
-		vkDestroyBuffer(VulkanEngine::cinstance->_device, accelerationStructure._buffer, nullptr);
-		});
-}
-
-void Renderer::create_depth_buffer()
-{
-	VkExtent3D depthImageExtent = {
-		VulkanEngine::cinstance->_windowExtent.width,
-		VulkanEngine::cinstance->_windowExtent.height,
-		1
-	};
-
-	_depthFormat = VK_FORMAT_D32_SFLOAT;
-
-	VkImageCreateInfo dimg_info = vkinit::image_create_info(_depthFormat, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, depthImageExtent);
-
-	VmaAllocationCreateInfo dimg_allocinfo = {};
-	dimg_allocinfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-	dimg_allocinfo.requiredFlags = VkMemoryPropertyFlagBits(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
-	vmaCreateImage(VulkanEngine::cinstance->_allocator, &dimg_info, &dimg_allocinfo, &_depthImage._image, &_depthImage._allocation, nullptr);
-
-	VkImageViewCreateInfo dview_info = vkinit::imageview_create_info(_depthFormat, _depthImage._image, VK_IMAGE_ASPECT_DEPTH_BIT);
-
-	VK_CHECK(vkCreateImageView(VulkanEngine::cinstance->_device, &dview_info, nullptr, &_depthImageView));
-}
-
-void Renderer::create_deferred_attachments()
-{
-	VkExtent3D attachmentExtent{
-	VulkanEngine::cinstance->_windowExtent.width,
-	VulkanEngine::cinstance->_windowExtent.height,
-	1
-	};
-
-	_positionFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
-	_normalFormat = VK_FORMAT_R16G16B16A16_SFLOAT;
-	_albedoFormat = VK_FORMAT_R8G8B8A8_UNORM;
-
-	VkImageCreateInfo position_igm = vkinit::image_create_info(_positionFormat, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, attachmentExtent);
-	VkImageCreateInfo normal_igm = vkinit::image_create_info(_normalFormat, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, attachmentExtent);
-	VkImageCreateInfo albedo_igm = vkinit::image_create_info(_albedoFormat, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, attachmentExtent);
-
-	VmaAllocationCreateInfo img_alloc_info = {};
-	img_alloc_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-	img_alloc_info.requiredFlags = VkMemoryPropertyFlagBits(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
-	vmaCreateImage(VulkanEngine::cinstance->_allocator, &position_igm, &img_alloc_info, &_positionImage._image, &_positionImage._allocation, nullptr);
-	vmaCreateImage(VulkanEngine::cinstance->_allocator, &normal_igm, &img_alloc_info, &_normalImage._image, &_normalImage._allocation, nullptr);
-	vmaCreateImage(VulkanEngine::cinstance->_allocator, &albedo_igm, &img_alloc_info, &_albedoImage._image, &_albedoImage._allocation, nullptr);
-
-	VkImageViewCreateInfo position_view_igm = vkinit::imageview_create_info(VK_FORMAT_R16G16B16A16_SFLOAT, _positionImage._image, VK_IMAGE_ASPECT_COLOR_BIT);
-	VkImageViewCreateInfo normal_view_igm = vkinit::imageview_create_info(VK_FORMAT_R16G16B16A16_SFLOAT, _normalImage._image, VK_IMAGE_ASPECT_COLOR_BIT);
-	VkImageViewCreateInfo albedo_view_igm = vkinit::imageview_create_info(VK_FORMAT_R8G8B8A8_UNORM, _albedoImage._image, VK_IMAGE_ASPECT_COLOR_BIT);
-
-	VK_CHECK(vkCreateImageView(VulkanEngine::cinstance->_device, &position_view_igm, nullptr, &_positionImageView));
-	VK_CHECK(vkCreateImageView(VulkanEngine::cinstance->_device, &normal_view_igm, nullptr, &_normalImageView));
-	VK_CHECK(vkCreateImageView(VulkanEngine::cinstance->_device, &albedo_view_igm, nullptr, &_albedoImageView));
-
-	VulkanEngine::cinstance->_mainDeletionQueue.push_function([=]() {
-		vkDestroyImageView(VulkanEngine::cinstance->_device, _positionImageView, nullptr);
-		vmaDestroyImage(VulkanEngine::cinstance->_allocator, _positionImage._image, _positionImage._allocation);
-		vkDestroyImageView(VulkanEngine::cinstance->_device, _normalImageView, nullptr);
-		vmaDestroyImage(VulkanEngine::cinstance->_allocator, _normalImage._image, _normalImage._allocation);
-		vkDestroyImageView(VulkanEngine::cinstance->_device, _albedoImageView, nullptr);
-		vmaDestroyImage(VulkanEngine::cinstance->_allocator, _albedoImage._image, _albedoImage._allocation);
+	re->_mainDeletionQueue.push_function([=]() {
+		vkFreeMemory(_device, accelerationStructure._memory, nullptr);
+		vkDestroyBuffer(_device, accelerationStructure._buffer, nullptr);
 		});
 }
 
@@ -974,79 +933,26 @@ void Renderer::init_commands()
 
 	for (int i = 0; i < FRAME_OVERLAP; i++)
 	{
-		VK_CHECK(vkCreateCommandPool(VulkanEngine::cinstance->_device, &commandPoolInfo, nullptr, &_frames[i]._commandPool));
+		VK_CHECK(vkCreateCommandPool(_device, &commandPoolInfo, nullptr, &_frames[i]._commandPool));
 
 		//allocat the default command buffer that we will use for rendering
 		VkCommandBufferAllocateInfo cmdAllocInfo = vkinit::command_buffer_allocate_info(_frames[i]._commandPool, 1);
 
-		VK_CHECK(vkAllocateCommandBuffers(VulkanEngine::cinstance->_device, &cmdAllocInfo, &_frames[i]._mainCommandBuffer));
+		VK_CHECK(vkAllocateCommandBuffers(_device, &cmdAllocInfo, &_frames[i]._mainCommandBuffer));
 
-		VulkanEngine::cinstance->_mainDeletionQueue.push_function([=]() {
-			vkDestroyCommandPool(VulkanEngine::cinstance->_device, _frames[i]._commandPool, nullptr);
+		re->_mainDeletionQueue.push_function([=]() {
+			vkDestroyCommandPool(_device, _frames[i]._commandPool, nullptr);
 			});
 	}
 
-	VK_CHECK(vkCreateCommandPool(VulkanEngine::cinstance->_device, &commandPoolInfo, nullptr, &_deferredCommandPool));
+	VK_CHECK(vkCreateCommandPool(_device, &commandPoolInfo, nullptr, &_deferredCommandPool));
 
 	VkCommandBufferAllocateInfo cmdAllocInfo = vkinit::command_buffer_allocate_info(_deferredCommandPool, 1);
-	VK_CHECK(vkAllocateCommandBuffers(VulkanEngine::cinstance->_device, &cmdAllocInfo, &_deferredCommandBuffer));
+	VK_CHECK(vkAllocateCommandBuffers(_device, &cmdAllocInfo, &_deferredCommandBuffer));
 
-	VulkanEngine::cinstance->_mainDeletionQueue.push_function([=]() {
-		vkDestroyCommandPool(VulkanEngine::cinstance->_device, _deferredCommandPool, nullptr);
+	re->_mainDeletionQueue.push_function([=]() {
+		vkDestroyCommandPool(_device, _deferredCommandPool, nullptr);
 		});
-}
-
-void Renderer::init_framebuffers()
-{
-	//OFFSCREEN FRAMEBUFFER
-
-	std::array<VkImageView, 4> attachments;
-	attachments[0] = _positionImageView;
-	attachments[1] = _normalImageView;
-	attachments[2] = _albedoImageView;
-	attachments[3] = _depthImageView;
-
-	VkFramebufferCreateInfo fb_info = {};
-	fb_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-	fb_info.pNext = nullptr;
-	fb_info.renderPass = _deferredRenderPass;
-	fb_info.attachmentCount = static_cast<uint32_t>(attachments.size());
-	fb_info.pAttachments = attachments.data();
-	fb_info.width = VulkanEngine::cinstance->_windowExtent.width;
-	fb_info.height = VulkanEngine::cinstance->_windowExtent.height;
-	fb_info.layers = 1;
-
-	VK_CHECK(vkCreateFramebuffer(VulkanEngine::cinstance->_device, &fb_info, nullptr, &_offscreen_framebuffer));
-
-	//SWAPCHAIN FRAMEBUFFERS
-
-	VkFramebufferCreateInfo sc_fb_info = {};
-	sc_fb_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-	sc_fb_info.pNext = nullptr;
-
-	sc_fb_info.renderPass = _defaultRenderPass;
-	sc_fb_info.attachmentCount = 1;
-	sc_fb_info.width = VulkanEngine::cinstance->_windowExtent.width;
-	sc_fb_info.height = VulkanEngine::cinstance->_windowExtent.height;
-	sc_fb_info.layers = 1;
-
-	const uint32_t swapchain_imagecount = VulkanEngine::cinstance->_swapchainImages.size();
-	_framebuffers = std::vector<VkFramebuffer>(swapchain_imagecount);
-
-	for (int i = 0; i < swapchain_imagecount; i++)
-	{
-		std::array<VkImageView, 2> attachments = { VulkanEngine::cinstance->_swapchainImageViews[i], _depthImageView };
-
-		sc_fb_info.attachmentCount = static_cast<uint32_t>(attachments.size());
-		sc_fb_info.pAttachments = attachments.data();
-
-		VK_CHECK(vkCreateFramebuffer(VulkanEngine::cinstance->_device, &sc_fb_info, nullptr, &_framebuffers[i]));
-
-		VulkanEngine::cinstance->_mainDeletionQueue.push_function([=]() {
-			vkDestroyFramebuffer(VulkanEngine::cinstance->_device, _framebuffers[i], nullptr);
-			vkDestroyImageView(VulkanEngine::cinstance->_device, VulkanEngine::cinstance->_swapchainImageViews[i], nullptr);
-			});
-	}
 }
 
 void Renderer::init_sync_structures()
@@ -1066,254 +972,47 @@ void Renderer::init_sync_structures()
 	offscreenSemaphoreInfo.pNext = nullptr;
 	offscreenSemaphoreInfo.flags = 0;
 
-	VK_CHECK(vkCreateSemaphore(VulkanEngine::cinstance->_device, &offscreenSemaphoreInfo, nullptr, &_offscreenSemaphore));
+	VK_CHECK(vkCreateSemaphore(_device, &offscreenSemaphoreInfo, nullptr, &_offscreenSemaphore));
 
-	VulkanEngine::cinstance->_mainDeletionQueue.push_function([=]() {
-		vkDestroySemaphore(VulkanEngine::cinstance->_device, _offscreenSemaphore, nullptr);
+	re->_mainDeletionQueue.push_function([=]() {
+		vkDestroySemaphore(_device, _offscreenSemaphore, nullptr);
 		});
 
 	for (int i = 0; i < FRAME_OVERLAP; i++)
 	{
-		VK_CHECK(vkCreateFence(VulkanEngine::cinstance->_device, &fenceCreateInfo, nullptr, &_frames[i]._renderFence));
+		VK_CHECK(vkCreateFence(_device, &fenceCreateInfo, nullptr, &_frames[i]._renderFence));
 
-		VulkanEngine::cinstance->_mainDeletionQueue.push_function([=]() {
-			vkDestroyFence(VulkanEngine::cinstance->_device, _frames[i]._renderFence, nullptr);
+		re->_mainDeletionQueue.push_function([=]() {
+			vkDestroyFence(_device, _frames[i]._renderFence, nullptr);
 			});
 
-		VK_CHECK(vkCreateSemaphore(VulkanEngine::cinstance->_device, &semaphoreCreateInfo, nullptr, &_frames[i]._presentSemaphore));
-		VK_CHECK(vkCreateSemaphore(VulkanEngine::cinstance->_device, &semaphoreCreateInfo, nullptr, &_frames[i]._renderSemaphore));
+		VK_CHECK(vkCreateSemaphore(_device, &semaphoreCreateInfo, nullptr, &_frames[i]._presentSemaphore));
+		VK_CHECK(vkCreateSemaphore(_device, &semaphoreCreateInfo, nullptr, &_frames[i]._renderSemaphore));
 
-		VulkanEngine::cinstance->_mainDeletionQueue.push_function([=]() {
-			vkDestroySemaphore(VulkanEngine::cinstance->_device, _frames[i]._presentSemaphore, nullptr);
-			vkDestroySemaphore(VulkanEngine::cinstance->_device, _frames[i]._renderSemaphore, nullptr);
+		re->_mainDeletionQueue.push_function([=]() {
+			vkDestroySemaphore(_device, _frames[i]._presentSemaphore, nullptr);
+			vkDestroySemaphore(_device, _frames[i]._renderSemaphore, nullptr);
 			});
 	}
 }
 
-void Renderer::init_default_render_pass()
+void Renderer::create_descriptor_buffers()
 {
-	VkAttachmentDescription color_attachment = {};
-	color_attachment.format = VulkanEngine::cinstance->_swapchainImageFormat;
-	color_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
-	color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-	color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-	color_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-	color_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-	color_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-	color_attachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+	const size_t sceneParamBufferSize = FRAME_OVERLAP * vkutil::get_aligned_size(sizeof(GPUSceneData), re->_gpuProperties.limits.minUniformBufferOffsetAlignment);
 
-	VkAttachmentReference color_attachment_ref = {};
-	color_attachment_ref.attachment = 0;
-	color_attachment_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	_sceneParameterBuffer = vkutil::create_buffer(_allocator, sceneParamBufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 
-	VkAttachmentDescription depth_attachment = {};
-	depth_attachment.flags = 0;
-	depth_attachment.format = _depthFormat;
-	depth_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
-	depth_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-	depth_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-	depth_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-	depth_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-	depth_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-	depth_attachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+	for (int i = 0; i < FRAME_OVERLAP; i++)
+	{
+		_frames[i].objectBuffer = vkutil::create_buffer(_allocator, sizeof(GPUObjectData) * MAX_OBJECTS, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+		_frames[i].cameraBuffer = vkutil::create_buffer(_allocator, sizeof(GPUCameraData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 
-	VkAttachmentReference depth_attachment_ref = {};
-	depth_attachment_ref.attachment = 1;
-	depth_attachment_ref.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+		//cam buffer
+		_camBuffer = vkutil::create_buffer(_allocator, sizeof(GPUCameraData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+	}
 
-	VkSubpassDescription subpass = {};
-	subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-	subpass.colorAttachmentCount = 1;
-	subpass.pColorAttachments = &color_attachment_ref;
-	subpass.pDepthStencilAttachment = &depth_attachment_ref;
-
-	VkAttachmentDescription attachments[2] = { color_attachment, depth_attachment };
-
-	VkRenderPassCreateInfo render_pass_info = {};
-	render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-	render_pass_info.attachmentCount = 2;
-	render_pass_info.pAttachments = &attachments[0];
-	render_pass_info.subpassCount = 1;
-	render_pass_info.pSubpasses = &subpass;
-
-	VK_CHECK(vkCreateRenderPass(VulkanEngine::cinstance->_device, &render_pass_info, nullptr, &_defaultRenderPass));
-
-	VulkanEngine::cinstance->_mainDeletionQueue.push_function([=]() {
-		vkDestroyRenderPass(VulkanEngine::cinstance->_device, _defaultRenderPass, nullptr);
-		});
-}
-
-void Renderer::init_deferred_render_pass()
-{
-	//gBuffers Pass
-
-	VkAttachmentDescription position_attachment = {};
-	position_attachment.format = _positionFormat;
-	position_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
-	position_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-	position_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-	position_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-	position_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-	position_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-	position_attachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-	VkAttachmentDescription normal_attachment = {};
-	normal_attachment.format = _normalFormat;
-	normal_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
-	normal_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-	normal_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-	normal_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-	normal_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-	normal_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-	normal_attachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-	VkAttachmentDescription albedo_attachment = {};
-	albedo_attachment.format = _albedoFormat;
-	albedo_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
-	albedo_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-	albedo_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-	albedo_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-	albedo_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-	albedo_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-	albedo_attachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-	VkAttachmentDescription depth_attachment = {};
-	depth_attachment.format = _depthFormat;
-	depth_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
-	depth_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-	depth_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-	depth_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-	depth_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-	depth_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-	depth_attachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-	std::array<VkAttachmentDescription, 4> attachment_descriptions = { position_attachment, normal_attachment, albedo_attachment, depth_attachment };
-
-	VkAttachmentReference position_ref;
-	position_ref.attachment = 0;
-	position_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-	VkAttachmentReference normal_ref;
-	normal_ref.attachment = 1;
-	normal_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-	VkAttachmentReference albedo_ref;
-	albedo_ref.attachment = 2;
-	albedo_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-	std::array<VkAttachmentReference, 3> color_references = { position_ref, normal_ref, albedo_ref };
-
-	VkAttachmentReference depth_ref;
-	depth_ref.attachment = 3;
-	depth_ref.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-	VkSubpassDescription subpass = {};
-	subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-	subpass.colorAttachmentCount = static_cast<uint32_t>(color_references.size());
-	subpass.pColorAttachments = color_references.data();
-	subpass.pDepthStencilAttachment = &depth_ref;
-
-	std::array<VkSubpassDependency, 2> dependencies;
-
-	dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
-	dependencies[0].dstSubpass = 0;
-	dependencies[0].srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-	dependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-	dependencies[0].srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
-	dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-	dependencies[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
-
-	dependencies[1].srcSubpass = 0;
-	dependencies[1].dstSubpass = VK_SUBPASS_EXTERNAL;
-	dependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-	dependencies[1].dstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-	dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-	dependencies[1].dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
-	dependencies[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
-
-	VkRenderPassCreateInfo deferred_pass = {};
-	deferred_pass.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-	deferred_pass.pNext = nullptr;
-	deferred_pass.attachmentCount = static_cast<uint32_t>(attachment_descriptions.size());
-	deferred_pass.pAttachments = attachment_descriptions.data();
-	deferred_pass.subpassCount = 1;
-	deferred_pass.pSubpasses = &subpass;
-	deferred_pass.dependencyCount = static_cast<uint32_t>(dependencies.size());
-	deferred_pass.pDependencies = dependencies.data();
-
-	VK_CHECK(vkCreateRenderPass(VulkanEngine::cinstance->_device, &deferred_pass, nullptr, &_deferredRenderPass));
-
-	VulkanEngine::cinstance->_mainDeletionQueue.push_function([=]() {
-		vkDestroyRenderPass(VulkanEngine::cinstance->_device, _deferredRenderPass, nullptr);
-		});
-}
-
-void Renderer::init_gbuffers_descriptors()
-{
-	VkDescriptorPoolSize pool_size = {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 10};
-
-	VkDescriptorPoolCreateInfo pool_info = {};
-	pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-	pool_info.flags = 0;
-	pool_info.maxSets = 10;
-	pool_info.poolSizeCount = 1;
-	pool_info.pPoolSizes = &pool_size;
-
-	vkCreateDescriptorPool(VulkanEngine::cinstance->_device, &pool_info, nullptr, &_gbuffersPool);
-
-	//gbuffers
-	VkDescriptorSetLayoutBinding position_bind = vkinit::descriptorset_layout_binding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 0);
-	VkDescriptorSetLayoutBinding normal_bind = vkinit::descriptorset_layout_binding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1);
-	VkDescriptorSetLayoutBinding albedo_bind = vkinit::descriptorset_layout_binding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 2);
-
-	std::array<VkDescriptorSetLayoutBinding, 3> deferred_set_layouts = { position_bind, normal_bind, albedo_bind };
-
-	VkDescriptorSetLayoutCreateInfo deferred_layout_info = {};
-	deferred_layout_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-	deferred_layout_info.pNext = nullptr;
-	deferred_layout_info.flags = 0;
-	deferred_layout_info.bindingCount = static_cast<uint32_t>(deferred_set_layouts.size());
-	deferred_layout_info.pBindings = deferred_set_layouts.data();
-
-	VK_CHECK(vkCreateDescriptorSetLayout(VulkanEngine::cinstance->_device, &deferred_layout_info, nullptr, &_gbuffersSetLayout));
-
-	VkDescriptorSetAllocateInfo deferred_set_alloc = {};
-	deferred_set_alloc.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-	deferred_set_alloc.pNext = nullptr;
-	deferred_set_alloc.descriptorPool = _gbuffersPool;
-	deferred_set_alloc.descriptorSetCount = 1;
-	deferred_set_alloc.pSetLayouts = &_gbuffersSetLayout;
-
-	vkAllocateDescriptorSets(VulkanEngine::cinstance->_device, &deferred_set_alloc, &_gbuffersDescriptorSet);
-
-	VkDescriptorImageInfo position_descriptor_image;
-	position_descriptor_image.sampler = VulkanEngine::cinstance->_defaultSampler;
-	position_descriptor_image.imageView = _positionImageView;
-	position_descriptor_image.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-	VkDescriptorImageInfo normal_descriptor_image;
-	normal_descriptor_image.sampler = VulkanEngine::cinstance->_defaultSampler;
-	normal_descriptor_image.imageView = _normalImageView;
-	normal_descriptor_image.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-	VkDescriptorImageInfo albedo_descriptor_image;
-	albedo_descriptor_image.sampler = VulkanEngine::cinstance->_defaultSampler;
-	albedo_descriptor_image.imageView = _albedoImageView;
-	albedo_descriptor_image.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-	VkWriteDescriptorSet position_texture = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, _gbuffersDescriptorSet, &position_descriptor_image, 0);
-	VkWriteDescriptorSet normal_texture = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, _gbuffersDescriptorSet, &normal_descriptor_image, 1);
-	VkWriteDescriptorSet albedo_texture = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, _gbuffersDescriptorSet, &albedo_descriptor_image, 2);
-
-	std::array<VkWriteDescriptorSet, 3> setWrites = { position_texture, normal_texture, albedo_texture };
-
-	vkUpdateDescriptorSets(VulkanEngine::cinstance->_device, static_cast<uint32_t>(setWrites.size()), setWrites.data(), 0, nullptr);
-}
-
-void Renderer::create_pipelines()
-{
-	create_forward_pipelines();
-	create_deferred_pipelines();
+	//deferred
+	_objectBuffer = vkutil::create_buffer(_allocator, sizeof(GPUObjectData) * MAX_OBJECTS, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 }
 
 void Renderer::record_deferred_command_buffers(RenderObject* first, int count)
@@ -1330,7 +1029,7 @@ void Renderer::record_deferred_command_buffers(RenderObject* first, int count)
 	VkClearValue first_depthClear;
 	first_depthClear.depthStencil.depth = 1.0f;
 
-	VkRenderPassBeginInfo rpInfo = vkinit::renderpass_begin_info(_deferredRenderPass, VulkanEngine::cinstance->_windowExtent, _offscreen_framebuffer);
+	VkRenderPassBeginInfo rpInfo = vkinit::renderpass_begin_info(re->_deferredRenderPass, re->_windowExtent, re->_offscreen_framebuffer);
 
 	std::array<VkClearValue, 4> first_clearValues = { first_clearValue, first_clearValue, first_clearValue, first_depthClear };
 
@@ -1339,20 +1038,20 @@ void Renderer::record_deferred_command_buffers(RenderObject* first, int count)
 
 	vkCmdBeginRenderPass(_deferredCommandBuffer, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-	vkCmdBindPipeline(_deferredCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, _deferredPipeline);
+	vkCmdBindPipeline(_deferredCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_deferredPipeline);
 
 	Mesh* lastMesh = nullptr;
 	for (int i = 0; i < count; i++)
 	{
 		RenderObject& object = first[i];
 
-		vkCmdBindDescriptorSets(_deferredCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, VulkanEngine::cinstance->_deferredPipelineLayout, 0, 1, &VulkanEngine::cinstance->_camDescriptorSet, 0, nullptr);
+		vkCmdBindDescriptorSets(_deferredCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_deferredPipelineLayout, 0, 1, &_camDescriptorSet, 0, nullptr);
 
-		vkCmdBindDescriptorSets(_deferredCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, VulkanEngine::cinstance->_deferredPipelineLayout, 1, 1, &VulkanEngine::cinstance->_objectDescriptorSet, 0, nullptr);
+		vkCmdBindDescriptorSets(_deferredCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_deferredPipelineLayout, 1, 1, &_objectDescriptorSet, 0, nullptr);
 
 		if (object._material->albedoTexture != VK_NULL_HANDLE)
 		{
-			vkCmdBindDescriptorSets(_deferredCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, VulkanEngine::cinstance->_deferredPipelineLayout, 2, 1, &object._material->albedoTexture, 0, nullptr);
+			vkCmdBindDescriptorSets(_deferredCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_deferredPipelineLayout, 2, 1, &object._material->albedoTexture, 0, nullptr);
 		}
 
 		if (object._mesh != lastMesh)
@@ -1370,6 +1069,191 @@ void Renderer::record_deferred_command_buffers(RenderObject* first, int count)
 	VK_CHECK(vkEndCommandBuffer(_deferredCommandBuffer));
 }
 
+void Renderer::init_descriptors()
+{
+	for (int i = 0; i < FRAME_OVERLAP; i++)
+	{
+		VkDescriptorSetAllocateInfo allocInfo = {};
+		allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+		allocInfo.pNext = nullptr;
+		allocInfo.descriptorPool = re->_descriptorPool;
+		allocInfo.descriptorSetCount = 1;
+		allocInfo.pSetLayouts = &re->_globalSetLayout;
+
+		vkAllocateDescriptorSets(_device, &allocInfo, &_frames[i].globalDescriptor);
+
+		VkDescriptorSetAllocateInfo objectSetAlloc = {};
+		objectSetAlloc.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+		objectSetAlloc.pNext = nullptr;
+		objectSetAlloc.descriptorPool = re->_descriptorPool;
+		objectSetAlloc.descriptorSetCount = 1;
+		objectSetAlloc.pSetLayouts = &re->_objectSetLayout;
+
+		vkAllocateDescriptorSets(_device, &objectSetAlloc, &_frames[i].objectDescriptor);
+
+		VkDescriptorBufferInfo cameraInfo = {};
+		cameraInfo.buffer = _frames[i].cameraBuffer._buffer;
+		cameraInfo.offset = 0;
+		cameraInfo.range = sizeof(GPUCameraData);
+
+		VkDescriptorBufferInfo sceneInfo = {};
+		sceneInfo.buffer = _sceneParameterBuffer._buffer;
+		sceneInfo.offset = 0;
+		sceneInfo.range = sizeof(GPUSceneData);
+
+		VkDescriptorBufferInfo objectBufferInfo;
+		objectBufferInfo.buffer = _frames[i].objectBuffer._buffer;
+		objectBufferInfo.offset = 0;
+		objectBufferInfo.range = sizeof(GPUObjectData) * MAX_OBJECTS;
+
+		VkWriteDescriptorSet cameraWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, _frames[i].globalDescriptor, &cameraInfo, 0);
+
+		VkWriteDescriptorSet sceneWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, _frames[i].globalDescriptor, &sceneInfo, 1);
+
+		VkWriteDescriptorSet objectWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _frames[i].objectDescriptor, &objectBufferInfo, 0);
+
+		std::array<VkWriteDescriptorSet, 3> setWrites = { cameraWrite, sceneWrite, objectWrite };
+
+		vkUpdateDescriptorSets(_device, static_cast<uint32_t>(setWrites.size()), setWrites.data(), 0, nullptr);
+	}
+
+	//DEFERRED DESCRIPTORS
+
+	VkDescriptorSetAllocateInfo objectSetAlloc = {};
+	objectSetAlloc.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	objectSetAlloc.pNext = nullptr;
+	objectSetAlloc.descriptorPool = re->_descriptorPool;
+	objectSetAlloc.descriptorSetCount = 1;
+	objectSetAlloc.pSetLayouts = &re->_objectSetLayout;
+
+	VkDescriptorBufferInfo objectBufferInfo;
+	objectBufferInfo.buffer = _objectBuffer._buffer;
+	objectBufferInfo.offset = 0;
+	objectBufferInfo.range = sizeof(GPUObjectData) * MAX_OBJECTS;
+
+	vkAllocateDescriptorSets(_device, &objectSetAlloc, &_objectDescriptorSet);
+
+	VkWriteDescriptorSet objectWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _objectDescriptorSet, &objectBufferInfo, 0);
+
+	vkUpdateDescriptorSets(_device, 1, &objectWrite, 0, nullptr);
+
+	VkDescriptorSetAllocateInfo cameraSetAllocInfo = {};
+	cameraSetAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	cameraSetAllocInfo.pNext = nullptr;
+	cameraSetAllocInfo.descriptorPool = re->_descriptorPool;
+	cameraSetAllocInfo.descriptorSetCount = 1;
+	cameraSetAllocInfo.pSetLayouts = &re->_camSetLayout;
+
+	vkAllocateDescriptorSets(_device, &cameraSetAllocInfo, &_camDescriptorSet);
+
+	VkDescriptorBufferInfo camBufferInfo = {};
+	camBufferInfo.buffer = _camBuffer._buffer;
+	camBufferInfo.offset = 0;
+	camBufferInfo.range = sizeof(GPUCameraData);
+
+	VkWriteDescriptorSet camWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, _camDescriptorSet, &camBufferInfo, 0);
+
+	vkUpdateDescriptorSets(_device, 1, &camWrite, 0, nullptr);
+}
+
+void Renderer::update_descriptors_forward(RenderObject* first, size_t count)
+{
+	//Update buffers info
+	glm::vec3 camPos = { 0.0f, -50.0f, -10.0f };
+	glm::mat4 view = glm::translate(glm::mat4(1.0f), camPos);
+	glm::mat4 projection = glm::perspective(glm::radians(70.0f), 1700.0f / 900.0f, 0.1f, 200.0f);
+	projection[1][1] *= -1;
+
+	GPUCameraData camData;
+	camData.projection = projection;
+	camData.view = VulkanEngine::cinstance->camera->getView();
+	camData.viewproj = projection * VulkanEngine::cinstance->camera->getView();
+
+	void* data;
+	vmaMapMemory(_allocator, get_current_frame().cameraBuffer._allocation, &data);
+	memcpy(data, &camData, sizeof(GPUCameraData));
+	vmaUnmapMemory(_allocator, get_current_frame().cameraBuffer._allocation);
+
+	void* firstPassData;
+	vmaMapMemory(_allocator, _camBuffer._allocation, &firstPassData);
+	memcpy(firstPassData, &camData, sizeof(GPUCameraData));
+	vmaUnmapMemory(_allocator, _camBuffer._allocation);
+
+	float framed = { _frameNumber / 120.0f };
+
+	_sceneParameters.ambientColor = { sin(framed), 0, cos(framed), 1 };
+
+	char* sceneData;
+	vmaMapMemory(_allocator, _sceneParameterBuffer._allocation, (void**)&sceneData);
+
+	int frameIndex = _frameNumber % FRAME_OVERLAP;
+
+	sceneData += vkutil::get_aligned_size(sizeof(GPUSceneData), re->_gpuProperties.limits.minUniformBufferOffsetAlignment) * frameIndex;
+
+	memcpy(sceneData, &_sceneParameters, sizeof(GPUSceneData));
+
+	vmaUnmapMemory(_allocator, _sceneParameterBuffer._allocation);
+
+	void* objectData;
+	vmaMapMemory(_allocator, _objectBuffer._allocation, &objectData);
+
+	GPUObjectData* objectSSBO = (GPUObjectData*)objectData;
+
+	for (int i = 0; i < count; i++)
+	{
+		RenderObject& object = first[i];
+		objectSSBO[i].modelMatrix = object._model;
+	}
+
+	vmaUnmapMemory(_allocator, _objectBuffer._allocation);
+}
+
+void Renderer::update_descriptors(RenderObject* first, size_t count)
+{
+	glm::vec3 camPos = { 0.0f, -50.0f, -10.0f };
+	glm::mat4 view = glm::translate(glm::mat4(1.0f), camPos);
+	glm::mat4 projection = glm::perspective(glm::radians(70.0f), 1700.0f / 900.0f, 0.1f, 200.0f);
+	projection[1][1] *= -1;
+
+	GPUCameraData camData;
+	camData.projection = projection;
+	camData.view = view;
+	camData.viewproj = projection * view;
+
+	void* data;
+	vmaMapMemory(_allocator, get_current_frame().cameraBuffer._allocation, &data);
+	memcpy(data, &camData, sizeof(GPUCameraData));
+	vmaUnmapMemory(_allocator, get_current_frame().cameraBuffer._allocation);
+
+	float framed = { _frameNumber / 120.0f };
+
+	_sceneParameters.ambientColor = { sin(framed), 0, cos(framed), 1 };
+
+	char* sceneData;
+	vmaMapMemory(_allocator, _sceneParameterBuffer._allocation, (void**)&sceneData);
+
+	int frameIndex = _frameNumber % FRAME_OVERLAP;
+
+	sceneData += vkutil::get_aligned_size(sizeof(GPUSceneData), re->_gpuProperties.limits.minUniformBufferOffsetAlignment) * frameIndex;
+
+	memcpy(sceneData, &_sceneParameters, sizeof(GPUSceneData));
+
+	vmaUnmapMemory(_allocator, _sceneParameterBuffer._allocation);
+
+	void* objectData;
+	vmaMapMemory(_allocator, get_current_frame().objectBuffer._allocation, &objectData);
+
+	GPUObjectData* objectSSBO = (GPUObjectData*)objectData;
+
+	for (int i = 0; i < count; i++)
+	{
+		RenderObject& object = first[i];
+		objectSSBO[i].modelMatrix = object._model;
+	}
+
+	vmaUnmapMemory(_allocator, get_current_frame().objectBuffer._allocation);
+}
+
 int Renderer::get_current_frame_index()
 {
 	return VulkanEngine::cinstance->_frameNumber % FRAME_OVERLAP;
@@ -1377,12 +1261,12 @@ int Renderer::get_current_frame_index()
 
 void Renderer::render_forward()
 {
-	VK_CHECK(vkWaitForFences(VulkanEngine::cinstance->_device, 1, &_frames[get_current_frame_index()]._renderFence, true, UINT64_MAX));
-	VK_CHECK(vkResetFences(VulkanEngine::cinstance->_device, 1, &_frames[get_current_frame_index()]._renderFence));
+	VK_CHECK(vkWaitForFences(_device, 1, &_frames[get_current_frame_index()]._renderFence, true, UINT64_MAX));
+	VK_CHECK(vkResetFences(_device, 1, &_frames[get_current_frame_index()]._renderFence));
 
 	//request image from the swapchain
 	uint32_t swapchainImageIndex;
-	VK_CHECK(vkAcquireNextImageKHR(VulkanEngine::cinstance->_device, VulkanEngine::cinstance->_swapchain, 0, _frames[get_current_frame_index()]._presentSemaphore, nullptr, &swapchainImageIndex));
+	VK_CHECK(vkAcquireNextImageKHR(_device, re->_swapchain, 0, _frames[get_current_frame_index()]._presentSemaphore, nullptr, &swapchainImageIndex));
 
 	VK_CHECK(vkResetCommandBuffer(_frames[get_current_frame_index()]._mainCommandBuffer, 0));
 
@@ -1399,7 +1283,7 @@ void Renderer::render_forward()
 	VkClearValue depthClear;
 	depthClear.depthStencil.depth = 1.0f;
 
-	VkRenderPassBeginInfo rpInfo = vkinit::renderpass_begin_info(_defaultRenderPass, VulkanEngine::cinstance->_windowExtent, _framebuffers[swapchainImageIndex]);
+	VkRenderPassBeginInfo rpInfo = vkinit::renderpass_begin_info(re->_defaultRenderPass, re->_windowExtent, re->_framebuffers[swapchainImageIndex]);
 
 	std::array<VkClearValue, 2> clearValues = { clearValue, depthClear };
 
@@ -1430,7 +1314,7 @@ void Renderer::render_forward()
 	presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
 	presentInfo.pNext = nullptr;
 
-	presentInfo.pSwapchains = &VulkanEngine::cinstance->_swapchain;
+	presentInfo.pSwapchains = &re->_swapchain;
 	presentInfo.swapchainCount = 1;
 
 	presentInfo.pWaitSemaphores = &_frames[get_current_frame_index()]._renderSemaphore;
@@ -1445,17 +1329,17 @@ void Renderer::render_forward()
 
 void Renderer::render_deferred()
 {
-	VK_CHECK(vkWaitForFences(VulkanEngine::cinstance->_device, 1, &_frames[get_current_frame_index()]._renderFence, true, UINT64_MAX));
-	VK_CHECK(vkResetFences(VulkanEngine::cinstance->_device, 1, &_frames[get_current_frame_index()]._renderFence));
+	VK_CHECK(vkWaitForFences(_device, 1, &_frames[get_current_frame_index()]._renderFence, true, UINT64_MAX));
+	VK_CHECK(vkResetFences(_device, 1, &_frames[get_current_frame_index()]._renderFence));
 
 	//request image from the swapchain
 	uint32_t swapchainImageIndex;
 	//VK_CHECK(vkAcquireNextImageKHR(_device, _swapchain, 0, get_current_frame()._presentSemaphore, nullptr, &swapchainImageIndex));
-	VkResult result = vkAcquireNextImageKHR(VulkanEngine::cinstance->_device, VulkanEngine::cinstance->_swapchain, 0, _frames[get_current_frame_index()]._presentSemaphore, nullptr, &swapchainImageIndex);
+	VkResult result = vkAcquireNextImageKHR(_device, re->_swapchain, 0, _frames[get_current_frame_index()]._presentSemaphore, nullptr, &swapchainImageIndex);
 
 	VkCommandBuffer cmd = _frames[get_current_frame_index()]._mainCommandBuffer;
 
-	VulkanEngine::cinstance->update_descriptors(VulkanEngine::cinstance->_renderables.data(), VulkanEngine::cinstance->_renderables.size());
+	update_descriptors(VulkanEngine::cinstance->_renderables.data(), VulkanEngine::cinstance->_renderables.size());
 
 	draw_deferred(cmd, swapchainImageIndex);
 
@@ -1487,7 +1371,7 @@ void Renderer::render_deferred()
 	presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
 	presentInfo.pNext = nullptr;
 
-	presentInfo.pSwapchains = &VulkanEngine::cinstance->_swapchain;
+	presentInfo.pSwapchains = &re->_swapchain;
 	presentInfo.swapchainCount = 1;
 
 	presentInfo.pWaitSemaphores = &_frames[get_current_frame_index()]._renderSemaphore;
@@ -1502,12 +1386,12 @@ void Renderer::render_deferred()
 
 void Renderer::render_raytracing()
 {
-	VK_CHECK(vkWaitForFences(VulkanEngine::cinstance->cinstance->_device, 1, &_frames[get_current_frame_index()]._renderFence, true, UINT64_MAX));
-	VK_CHECK(vkResetFences(VulkanEngine::cinstance->_device, 1, &_frames[get_current_frame_index()]._renderFence));
+	VK_CHECK(vkWaitForFences(_device, 1, &_frames[get_current_frame_index()]._renderFence, true, UINT64_MAX));
+	VK_CHECK(vkResetFences(_device, 1, &_frames[get_current_frame_index()]._renderFence));
 
 	//request image from the swapchain
 	uint32_t swapchainImageIndex;
-	VK_CHECK(vkAcquireNextImageKHR(VulkanEngine::cinstance->_device, VulkanEngine::cinstance->_swapchain, 0, _frames[get_current_frame_index()]._presentSemaphore, nullptr, &swapchainImageIndex));
+	VK_CHECK(vkAcquireNextImageKHR(_device, re->_swapchain, 0, _frames[get_current_frame_index()]._presentSemaphore, nullptr, &swapchainImageIndex));
 
 	update_uniform_buffers();
 
@@ -1532,7 +1416,7 @@ void Renderer::render_raytracing()
 	presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
 	presentInfo.pNext = nullptr;
 
-	presentInfo.pSwapchains = &VulkanEngine::cinstance->_swapchain;
+	presentInfo.pSwapchains = &re->_swapchain;
 	presentInfo.swapchainCount = 1;
 
 	presentInfo.pWaitSemaphores = &_frames[get_current_frame_index()]._renderSemaphore;
@@ -1560,19 +1444,19 @@ void Renderer::draw_forward(VkCommandBuffer cmd, RenderObject* first, int count)
 		{
 			lastMaterial = object._material;
 
-			uint32_t uniform_offset = vkutil::get_aligned_size(sizeof(GPUSceneData) * frameIndex, VulkanEngine::cinstance->_gpuProperties.limits.minUniformBufferOffsetAlignment);
-			vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, VulkanEngine::cinstance->_forwardPipelineLayout, 0, 1, &VulkanEngine::cinstance->_frames[get_current_frame_index()].globalDescriptor, 1, &uniform_offset);
+			uint32_t uniform_offset = vkutil::get_aligned_size(sizeof(GPUSceneData) * frameIndex, re->_gpuProperties.limits.minUniformBufferOffsetAlignment);
+			vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_forwardPipelineLayout, 0, 1, &_frames[get_current_frame_index()].globalDescriptor, 1, &uniform_offset);
 
-			vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, VulkanEngine::cinstance->_forwardPipelineLayout, 1, 1, &VulkanEngine::cinstance->_frames[get_current_frame_index()].objectDescriptor, 0, nullptr);
+			vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_forwardPipelineLayout, 1, 1, &_frames[get_current_frame_index()].objectDescriptor, 0, nullptr);
 
 			if (object._material->albedoTexture != VK_NULL_HANDLE)
 			{
-				vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _texPipeline);
-				vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, VulkanEngine::cinstance->_forwardPipelineLayout, 2, 1, &object._material->albedoTexture, 0, nullptr);
+				vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_texPipeline);
+				vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_forwardPipelineLayout, 2, 1, &object._material->albedoTexture, 0, nullptr);
 			}
 			else
 			{
-				vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _forwardPipeline);
+				vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_forwardPipeline);
 			}
 		}
 		
@@ -1604,7 +1488,7 @@ void Renderer::draw_deferred(VkCommandBuffer cmd, int imageIndex)
 	VkClearValue depthClear;
 	depthClear.depthStencil.depth = 1.0f;
 
-	VkRenderPassBeginInfo light_rpInfo = vkinit::renderpass_begin_info(_defaultRenderPass, VulkanEngine::cinstance->_windowExtent, _framebuffers[imageIndex]);
+	VkRenderPassBeginInfo light_rpInfo = vkinit::renderpass_begin_info(re->_defaultRenderPass, re->_windowExtent, re->_framebuffers[imageIndex]);
 
 	std::array<VkClearValue, 2> clearValues = { clearValue, depthClear };
 
@@ -1613,13 +1497,13 @@ void Renderer::draw_deferred(VkCommandBuffer cmd, int imageIndex)
 
 	vkCmdBeginRenderPass(cmd, &light_rpInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-	vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, _lightPipeline);
+	vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_lightPipeline);
 
 	int frameIndex = _frameNumber % FRAME_OVERLAP;
-	uint32_t uniform_offset = vkutil::get_aligned_size(sizeof(GPUSceneData) * frameIndex, VulkanEngine::cinstance->_gpuProperties.limits.minUniformBufferOffsetAlignment);
-	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, VulkanEngine::cinstance->_lightPipelineLayout, 0, 1, &VulkanEngine::cinstance->_frames[get_current_frame_index()].globalDescriptor, 1, &uniform_offset);
+	uint32_t uniform_offset = vkutil::get_aligned_size(sizeof(GPUSceneData) * frameIndex, re->_gpuProperties.limits.minUniformBufferOffsetAlignment);
+	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_lightPipelineLayout, 0, 1, &_frames[get_current_frame_index()].globalDescriptor, 1, &uniform_offset);
 
-	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, VulkanEngine::cinstance->_lightPipelineLayout, 1, 1, &_gbuffersDescriptorSet, 0, nullptr);
+	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_lightPipelineLayout, 1, 1, &re->_gbuffersDescriptorSet, 0, nullptr);
 
 	//deferred quad
 	VkDeviceSize offset = 0;
@@ -1633,294 +1517,6 @@ void Renderer::draw_deferred(VkCommandBuffer cmd, int imageIndex)
 	vkCmdEndRenderPass(cmd);
 
 	VK_CHECK(vkEndCommandBuffer(cmd));
-}
-
-void Renderer::create_forward_pipelines()
-{
-	//FORWARD PIPELINES
-
-//default vertex shader for a mesh
-	VkShaderModule meshVertShader;
-	if (!vkutil::load_shader_module(_device, "../shaders/tri_mesh.vert.spv", &meshVertShader))
-	{
-		std::cout << "Error when building the triangle vertex shader module" << std::endl;
-	}
-	else {
-		std::cout << "Red Triangle vertex shader succesfully loaded" << std::endl;
-	}
-
-	//shader for default material
-	VkShaderModule colorMeshShader;
-	if (!vkutil::load_shader_module(_device, "../shaders/default_lit.frag.spv", &colorMeshShader))
-	{
-		std::cout << "Error when building the triangle fragment shader module" << std::endl;
-	}
-	else
-	{
-		std::cout << "Triangle fragment shader succesfully loaded" << std::endl;
-	}
-
-	//shader for textured material
-	VkShaderModule texturedMeshShader;
-	if (!vkutil::load_shader_module(_device, "../shaders/textured_lit.frag.spv", &texturedMeshShader))
-	{
-		std::cout << "Error when building the textured mesh shader" << std::endl;
-	}
-	else
-	{
-		std::cout << "Textured mesh shader succesfully loaded" << endl;
-	}
-
-	// Layouts
-
-	//mesh layout
-	VkPipelineLayoutCreateInfo mesh_pipeline_layout_info = vkinit::pipeline_layout_create_info();
-
-	VkPushConstantRange push_constant;
-	push_constant.offset = 0;
-	push_constant.size = sizeof(MeshPushConstants);
-	push_constant.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
-	mesh_pipeline_layout_info.pPushConstantRanges = &push_constant;
-	mesh_pipeline_layout_info.pushConstantRangeCount = 1;
-
-	std::array<VkDescriptorSetLayout, 3> setLayouts = { 
-		VulkanEngine::cinstance->_globalSetLayout, 
-		VulkanEngine::cinstance->_objectSetLayout, 
-		VulkanEngine::cinstance->_singleTextureSetLayout 
-	};
-
-	mesh_pipeline_layout_info.setLayoutCount = static_cast<uint32_t>(setLayouts.size());
-	mesh_pipeline_layout_info.pSetLayouts = setLayouts.data();
-
-	VK_CHECK(vkCreatePipelineLayout(VulkanEngine::cinstance->_device, &mesh_pipeline_layout_info, nullptr, &VulkanEngine::cinstance->_forwardPipelineLayout));
-
-	//PIPELINES
-	PipelineBuilder pipelineBuilder;
-
-	//color mesh pipeline
-
-	pipelineBuilder._vertexInputInfo = vkinit::vertex_input_state_create_info();
-	//connect the pipeline builder vertex input info to the one we get from Vertex
-	VertexInputDescription vertexDescription = Vertex::get_vertex_description();
-	pipelineBuilder._vertexInputInfo.pVertexAttributeDescriptions = vertexDescription.attributes.data();
-	pipelineBuilder._vertexInputInfo.vertexAttributeDescriptionCount = vertexDescription.attributes.size();
-
-	pipelineBuilder._vertexInputInfo.pVertexBindingDescriptions = vertexDescription.bindings.data();
-	pipelineBuilder._vertexInputInfo.vertexBindingDescriptionCount = vertexDescription.bindings.size();
-
-
-	pipelineBuilder._inputAssembly = vkinit::input_assembly_create_info(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-
-	pipelineBuilder._viewport.x = 0.0f;
-	pipelineBuilder._viewport.y = 0.0f;
-	pipelineBuilder._viewport.width = (float)VulkanEngine::cinstance->_windowExtent.width;
-	pipelineBuilder._viewport.height = (float)VulkanEngine::cinstance->_windowExtent.height;
-	pipelineBuilder._viewport.minDepth = 0.0f;
-	pipelineBuilder._viewport.maxDepth = 1.0f;
-
-	pipelineBuilder._scissor.offset = { 0, 0 };
-	pipelineBuilder._scissor.extent = VulkanEngine::cinstance->_windowExtent;
-
-	pipelineBuilder._depthStencil = vkinit::depth_stencil_create_info(true, true, VK_COMPARE_OP_LESS_OR_EQUAL);
-
-	pipelineBuilder._rasterizer = vkinit::rasterization_state_create_info(VK_POLYGON_MODE_FILL);
-	pipelineBuilder._multisampling = vkinit::multisampling_state_create_info();
-	pipelineBuilder._colorBlendAttachment.push_back(vkinit::color_blend_attachment_state());
-
-	//add shaders
-	pipelineBuilder._shaderStages.push_back(
-		vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT, meshVertShader));
-
-	pipelineBuilder._shaderStages.push_back(
-		vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, colorMeshShader));
-
-	pipelineBuilder._pipelineLayout = VulkanEngine::cinstance->_forwardPipelineLayout;
-
-	//build the mesh pipeline
-	_forwardPipeline = pipelineBuilder.build_pipeline(VulkanEngine::cinstance->_device, _defaultRenderPass);
-
-	VulkanEngine::cinstance->create_material("untexturedmesh");
-
-
-	//texture pipeline
-
-	pipelineBuilder._shaderStages.clear();
-	pipelineBuilder._shaderStages.push_back(
-		vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT, meshVertShader));
-
-	pipelineBuilder._shaderStages.push_back(
-		vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, texturedMeshShader));
-
-	_texPipeline = pipelineBuilder.build_pipeline(VulkanEngine::cinstance->_device, _defaultRenderPass);
-	VulkanEngine::cinstance->create_material("texturedmesh");
-
-	//deleting all of the vulkan shaders
-	vkDestroyShaderModule(VulkanEngine::cinstance->_device, texturedMeshShader, nullptr);
-	vkDestroyShaderModule(VulkanEngine::cinstance->_device, colorMeshShader, nullptr);
-	vkDestroyShaderModule(VulkanEngine::cinstance->_device, meshVertShader, nullptr);
-
-	//adding the pipelines to the deletion queue
-	VulkanEngine::cinstance->_mainDeletionQueue.push_function([=]() {
-		vkDestroyPipeline(VulkanEngine::cinstance->_device, _forwardPipeline, nullptr);
-		vkDestroyPipeline(VulkanEngine::cinstance->_device, _texPipeline, nullptr);
-
-		vkDestroyPipelineLayout(VulkanEngine::cinstance->_device, VulkanEngine::cinstance->_forwardPipelineLayout, nullptr);
-		});
-}
-
-void Renderer::create_deferred_pipelines()
-{
-	//DEFERRED PIPELINES
-
-	//SHADERS LOADING
-
-	VkShaderModule deferredVertex;
-	if (!vkutil::load_shader_module(_device, "../shaders/deferred.vert.spv", &deferredVertex))
-	{
-		std::cout << "Error when building the deferred vertex shader" << std::endl;
-	}
-	else
-	{
-		std::cout << "Deferred vertex shader succesfully loaded" << endl;
-	}
-
-	VkShaderModule deferredFrag;
-	if (!vkutil::load_shader_module(_device, "../shaders/deferred.frag.spv", &deferredFrag))
-	{
-		std::cout << "Error when building the deferred frag shader" << std::endl;
-	}
-	else
-	{
-		std::cout << "Frag vertex shader succesfully loaded" << endl;
-	}
-
-	VkShaderModule lightVertex;
-	if (!vkutil::load_shader_module(_device, "../shaders/light.vert.spv", &lightVertex))
-	{
-		std::cout << "Error when building the light vertex shader" << std::endl;
-	}
-	else
-	{
-		std::cout << "Light vertex shader succesfully loaded" << endl;
-	}
-
-	VkShaderModule lightFrag;
-	if (!vkutil::load_shader_module(_device, "../shaders/light.frag.spv", &lightFrag))
-	{
-		std::cout << "Error when building the light frag shader" << std::endl;
-	}
-	else
-	{
-		std::cout << "Light frag shader succesfully loaded" << endl;
-	}
-
-	//LAYOUTS
-	VkPipelineLayoutCreateInfo layoutInfo = vkinit::pipeline_layout_create_info();
-
-	std::array<VkDescriptorSetLayout, 3> deferredSetLayouts = { VulkanEngine::cinstance->_camSetLayout, VulkanEngine::cinstance->_objectSetLayout, VulkanEngine::cinstance->_singleTextureSetLayout };
-
-	layoutInfo.pushConstantRangeCount = 0;
-	layoutInfo.pPushConstantRanges = nullptr;
-	layoutInfo.setLayoutCount = static_cast<uint32_t>(deferredSetLayouts.size());
-	layoutInfo.pSetLayouts = deferredSetLayouts.data();
-
-	VK_CHECK(vkCreatePipelineLayout(VulkanEngine::cinstance->_device, &layoutInfo, nullptr, &VulkanEngine::cinstance->_deferredPipelineLayout));
-
-	std::array<VkDescriptorSetLayout, 2> lightSetLayouts = { VulkanEngine::cinstance->_globalSetLayout, _gbuffersSetLayout };
-
-	layoutInfo.setLayoutCount = static_cast<uint32_t>(lightSetLayouts.size());
-	layoutInfo.pSetLayouts = lightSetLayouts.data();
-
-	VK_CHECK(vkCreatePipelineLayout(VulkanEngine::cinstance->_device, &layoutInfo, nullptr, &VulkanEngine::cinstance->_lightPipelineLayout));
-
-	//DEFERRED PIPELINE CREATION
-	PipelineBuilder pipelineBuilder;
-
-	//Deferred Vertex Info
-	pipelineBuilder._vertexInputInfo = vkinit::vertex_input_state_create_info();
-
-	VertexInputDescription vertexDescription = Vertex::get_vertex_description();
-	pipelineBuilder._vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertexDescription.attributes.size());
-	pipelineBuilder._vertexInputInfo.pVertexAttributeDescriptions = vertexDescription.attributes.data();
-	pipelineBuilder._vertexInputInfo.vertexBindingDescriptionCount = static_cast<uint32_t>(vertexDescription.bindings.size());
-	pipelineBuilder._vertexInputInfo.pVertexBindingDescriptions = vertexDescription.bindings.data();
-
-	//Deferred Assembly Info
-	pipelineBuilder._inputAssembly = vkinit::input_assembly_create_info(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-
-	//Viewport and Scissor
-	pipelineBuilder._viewport.x = 0.0f;
-	pipelineBuilder._viewport.y = 0.0f;
-	pipelineBuilder._viewport.width = (float)VulkanEngine::cinstance->_windowExtent.width;
-	pipelineBuilder._viewport.height = (float)VulkanEngine::cinstance->_windowExtent.height;
-	pipelineBuilder._viewport.minDepth = 0.0f;
-	pipelineBuilder._viewport.maxDepth = 1.0f;
-
-	pipelineBuilder._scissor.offset = { 0, 0 };
-	pipelineBuilder._scissor.extent = VulkanEngine::cinstance->_windowExtent;
-
-	//Deferred Depth Stencil
-	pipelineBuilder._depthStencil = vkinit::depth_stencil_create_info(true, true, VK_COMPARE_OP_LESS_OR_EQUAL);
-
-	//Deferred Rasterizer
-	pipelineBuilder._rasterizer = vkinit::rasterization_state_create_info(VK_POLYGON_MODE_FILL);
-
-	//Deferred Multisampling
-	pipelineBuilder._multisampling = vkinit::multisampling_state_create_info();
-
-	//Deferred Color Blend Attachment
-	pipelineBuilder._colorBlendAttachment.push_back(vkinit::color_blend_attachment_state());
-	pipelineBuilder._colorBlendAttachment.push_back(vkinit::color_blend_attachment_state());
-	pipelineBuilder._colorBlendAttachment.push_back(vkinit::color_blend_attachment_state());
-
-	//Deferred Shaders
-	pipelineBuilder._shaderStages.push_back(
-		vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT, deferredVertex));
-	pipelineBuilder._shaderStages.push_back(
-		vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, deferredFrag));
-
-	//Deferred Layout
-	pipelineBuilder._pipelineLayout = VulkanEngine::cinstance->_deferredPipelineLayout;
-
-	_deferredPipeline = pipelineBuilder.build_pipeline(VulkanEngine::cinstance->_device, _deferredRenderPass);
-
-	//LIGHT PIPELINE CREATION
-
-	//Light Depth Stencil
-	pipelineBuilder._depthStencil = vkinit::depth_stencil_create_info(false, false, VK_COMPARE_OP_ALWAYS);
-
-	//Deferred Color Blend Attachment
-	pipelineBuilder._colorBlendAttachment.clear();
-	pipelineBuilder._colorBlendAttachment.push_back(vkinit::color_blend_attachment_state());
-
-	//Light Shaders
-	pipelineBuilder._shaderStages.clear();
-	pipelineBuilder._shaderStages.push_back(
-		vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT, lightVertex));
-	pipelineBuilder._shaderStages.push_back(
-		vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, lightFrag));
-
-	//Light Layout
-	pipelineBuilder._pipelineLayout = VulkanEngine::cinstance->_lightPipelineLayout;
-
-	_lightPipeline = pipelineBuilder.build_pipeline(VulkanEngine::cinstance->_device, _defaultRenderPass);
-
-
-	//DELETIONS
-
-	vkDestroyShaderModule(VulkanEngine::cinstance->_device, lightFrag, nullptr);
-	vkDestroyShaderModule(VulkanEngine::cinstance->_device, lightVertex, nullptr);
-	vkDestroyShaderModule(VulkanEngine::cinstance->_device, deferredFrag, nullptr);
-	vkDestroyShaderModule(VulkanEngine::cinstance->_device, deferredVertex, nullptr);
-
-	VulkanEngine::cinstance->_mainDeletionQueue.push_function([=]() {
-		vkDestroyPipeline(VulkanEngine::cinstance->_device, _deferredPipeline, nullptr);
-		vkDestroyPipeline(VulkanEngine::cinstance->_device, _lightPipeline, nullptr);
-
-		vkDestroyPipelineLayout(VulkanEngine::cinstance->_device, VulkanEngine::cinstance->_deferredPipelineLayout, nullptr);
-		vkDestroyPipelineLayout(VulkanEngine::cinstance->_device, VulkanEngine::cinstance->_lightPipelineLayout, nullptr);
-		});
 }
 
 BlasInput Renderer::renderable_to_vulkan_geometry(RenderObject renderable)
@@ -1943,9 +1539,9 @@ BlasInput Renderer::renderable_to_vulkan_geometry(RenderObject renderable)
 	_transformBuffers.push_back(transformBuffer);
 
 	void* transformData;
-	vmaMapMemory(VulkanEngine::cinstance->_allocator, transformBuffer._allocation, &transformData);
+	vmaMapMemory(_allocator, transformBuffer._allocation, &transformData);
 	memcpy(transformData, &transformMatrix, sizeof(VkTransformMatrixKHR));
-	vmaUnmapMemory(VulkanEngine::cinstance->_allocator, transformBuffer._allocation);
+	vmaUnmapMemory(_allocator, transformBuffer._allocation);
 
 	VkDeviceOrHostAddressConstKHR vertexBufferDeviceAddress{};
 	VkDeviceOrHostAddressConstKHR indexBufferDeviceAddress{};
@@ -1983,7 +1579,7 @@ BlasInput Renderer::renderable_to_vulkan_geometry(RenderObject renderable)
 	VkAccelerationStructureBuildSizesInfoKHR accelerationStructureBuildSizesInfo{};
 	accelerationStructureBuildSizesInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
 	vkGetAccelerationStructureBuildSizesKHR(
-		VulkanEngine::cinstance->_device,
+		_device,
 		VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR,
 		&accelerationStructureBuildGeometryInfo,
 		&numTriangles,
@@ -2017,7 +1613,7 @@ void Renderer::build_blas(const std::vector<BlasInput>& input, VkBuildAccelerati
 		accelerationStructureCreateInfo.size = blasInput._accelerationStructureBuildSizesInfo.accelerationStructureSize;
 		accelerationStructureCreateInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
 
-		vkCreateAccelerationStructureKHR(VulkanEngine::cinstance->_device, &accelerationStructureCreateInfo, nullptr, &newAccelerationStructure._handle);
+		vkCreateAccelerationStructureKHR(_device, &accelerationStructureCreateInfo, nullptr, &newAccelerationStructure._handle);
 
 		// Create a small scratch buffer used during build of the bottom level acceleration structure
 		RayTracingScratchBuffer scratchBuffer = create_scratch_buffer(blasInput._accelerationStructureBuildSizesInfo.buildScratchSize);
@@ -2035,11 +1631,11 @@ void Renderer::build_blas(const std::vector<BlasInput>& input, VkBuildAccelerati
 		VkAccelerationStructureBuildRangeInfoKHR buildRangeInfo = blasInput._accelerationStructureBuildRangeInfo;
 		std::vector<VkAccelerationStructureBuildRangeInfoKHR*> accelerationBuildStructureRangeInfos = { &buildRangeInfo };
 
-		if (VulkanEngine::cinstance->_accelerationStructureFeatures.accelerationStructureHostCommands)
+		if (re->_accelerationStructureFeatures.accelerationStructureHostCommands)
 		{
 			// Implementation supports building acceleration structure building on host
 			vkBuildAccelerationStructuresKHR(
-				VulkanEngine::cinstance->_device,
+				_device,
 				VK_NULL_HANDLE,
 				1,
 				&accelerationBuildGeometryInfo,
@@ -2048,7 +1644,7 @@ void Renderer::build_blas(const std::vector<BlasInput>& input, VkBuildAccelerati
 		else
 		{
 			// Acceleration structure needs to be build on the device
-			VulkanEngine::cinstance->immediate_submit([&](VkCommandBuffer cmd)
+			vkupload::immediate_submit([&](VkCommandBuffer cmd)
 				{
 					vkCmdBuildAccelerationStructuresKHR(
 						cmd,
@@ -2062,11 +1658,16 @@ void Renderer::build_blas(const std::vector<BlasInput>& input, VkBuildAccelerati
 		VkAccelerationStructureDeviceAddressInfoKHR accelerationDeviceAddressInfo{};
 		accelerationDeviceAddressInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR;
 		accelerationDeviceAddressInfo.accelerationStructure = newAccelerationStructure._handle;
-		newAccelerationStructure._deviceAddress = vkGetAccelerationStructureDeviceAddressKHR(VulkanEngine::cinstance->_device, &accelerationDeviceAddressInfo);
+		newAccelerationStructure._deviceAddress = vkGetAccelerationStructureDeviceAddressKHR(_device, &accelerationDeviceAddressInfo);
 
 		_bottomLevelAS.push_back(newAccelerationStructure);
 		delete_scratch_buffer(scratchBuffer);
 	}
+}
+
+FrameData& Renderer::get_current_frame()
+{
+	return _frames[_frameNumber % FRAME_OVERLAP];
 }
 
 /*

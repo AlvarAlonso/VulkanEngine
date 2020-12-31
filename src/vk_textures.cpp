@@ -1,6 +1,4 @@
 #include "vk_textures.h"
-
-#include "vk_textures.h"
 #include <iostream>
 
 #include "vk_initializers.h"
@@ -8,6 +6,7 @@
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
+#include "vk_render_engine.h"
 
 bool vkutil::load_image_from_file(VulkanEngine& engine, const char* file, AllocatedImage& outImage)
 {
@@ -25,13 +24,13 @@ bool vkutil::load_image_from_file(VulkanEngine& engine, const char* file, Alloca
 
     VkFormat image_format = VK_FORMAT_R8G8B8A8_UNORM;
 
-    AllocatedBuffer stagingBuffer = vkutil::create_buffer(engine._allocator, imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY);
+    AllocatedBuffer stagingBuffer = vkutil::create_buffer(RenderEngine::_allocator, imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY);
 
 
     void* data;
-    vmaMapMemory(engine._allocator, stagingBuffer._allocation, &data);
+    vmaMapMemory(RenderEngine::_allocator, stagingBuffer._allocation, &data);
     memcpy(data, pixel_ptr, static_cast<size_t>(imageSize));
-    vmaUnmapMemory(engine._allocator, stagingBuffer._allocation);
+    vmaUnmapMemory(RenderEngine::_allocator, stagingBuffer._allocation);
 
     stbi_image_free(pixels);
 
@@ -47,9 +46,9 @@ bool vkutil::load_image_from_file(VulkanEngine& engine, const char* file, Alloca
     VmaAllocationCreateInfo dimg_allocinfo = {};
     dimg_allocinfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
 
-    vmaCreateImage(engine._allocator, &dimg_info, &dimg_allocinfo, &newImage._image, &newImage._allocation, nullptr);
+    vmaCreateImage(RenderEngine::_allocator, &dimg_info, &dimg_allocinfo, &newImage._image, &newImage._allocation, nullptr);
 
-    engine.immediate_submit([&](VkCommandBuffer cmd) {
+    vkupload::immediate_submit([&](VkCommandBuffer cmd) {
         VkImageSubresourceRange range;
         range.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
         range.baseMipLevel = 0;
@@ -100,11 +99,11 @@ bool vkutil::load_image_from_file(VulkanEngine& engine, const char* file, Alloca
             1, &imageBarrier_toReadable);
     });
 
-    engine._mainDeletionQueue.push_function([=]() {
-        vmaDestroyImage(engine._allocator, newImage._image, newImage._allocation);
+    RenderEngine::_mainDeletionQueue.push_function([=]() {
+        vmaDestroyImage(RenderEngine::_allocator, newImage._image, newImage._allocation);
     });
 
-    vmaDestroyBuffer(engine._allocator, stagingBuffer._buffer, stagingBuffer._allocation);
+    vmaDestroyBuffer(RenderEngine::_allocator, stagingBuffer._buffer, stagingBuffer._allocation);
 
     outImage = newImage;
 

@@ -1,9 +1,10 @@
 #pragma once
 
-#include "vk_utils.h"
 #include "vk_scene.h"
 
 struct RenderObject;
+struct SDL_Window;
+struct RenderEngine;
 
 constexpr unsigned int FRAME_OVERLAP = 2;
 
@@ -13,7 +14,7 @@ enum RenderMode {
 	RENDER_MODE_RAYTRACING
 };
 
-struct sFrameData {
+struct FrameData {
 	VkSemaphore _presentSemaphore, _renderSemaphore;
 	VkFence _renderFence;
 
@@ -57,66 +58,36 @@ public:
 
 	Renderer();
 	
-	void init_renderer();
+	void cleanup();
+
+	SDL_Window* get_sdl_window();
 
 	void draw_scene();
 
-	void create_pipelines();
-
-	//support functions
-	int get_current_frame_index();
-
-	void init_raytracing();
-
-	//Render passes
-	VkRenderPass _defaultRenderPass;
-	VkRenderPass _deferredRenderPass;
-
-	//Depth Buffer
-	VkImageView _depthImageView;
-	AllocatedImage _depthImage;
-	VkFormat _depthFormat;
-
-	//deferred attachments
-	VkImageView _positionImageView;
-	AllocatedImage _positionImage;
-	VkFormat _positionFormat;
-
-	VkImageView _normalImageView;
-	AllocatedImage _normalImage;
-	VkFormat _normalFormat;
-
-	VkImageView _albedoImageView;
-	AllocatedImage _albedoImage;
-	VkFormat _albedoFormat;
-
-	VkDescriptorPool _gbuffersPool;
-	VkDescriptorSetLayout _gbuffersSetLayout;
-	VkDescriptorSet _gbuffersDescriptorSet;
-
 	Mesh deferred_quad;
 
-	//Framebuffers
-	std::vector<VkFramebuffer> _framebuffers;
-	VkFramebuffer _offscreen_framebuffer;
+	AllocatedBuffer _camBuffer;
+	AllocatedBuffer _objectBuffer;
+
+	FrameData _frames[FRAME_OVERLAP];
 
 	//Commands
 	VkCommandPool _forwardCommandPool;
 	VkCommandPool _deferredCommandPool;
 
 	VkCommandBuffer _deferredCommandBuffer;
-	sFrameData _frames[FRAME_OVERLAP];
 	VkSemaphore _offscreenSemaphore;
 
-	//Pipelines
-	VkPipeline _forwardPipeline;
-	VkPipeline _texPipeline;
-	VkPipeline _deferredPipeline;
-	VkPipeline _lightPipeline;
+	VkDescriptorSet _camDescriptorSet;
+	VkDescriptorSet _objectDescriptorSet;
+
+	GPUSceneData _sceneParameters;
+	AllocatedBuffer _sceneParameterBuffer;
 
 	//RAY TRACING PIPELINE
 		
 	//raytracing function pointers
+	PFN_vkGetBufferDeviceAddressKHR vkGetBufferDeviceAddressKHR;
 	PFN_vkCreateAccelerationStructureKHR vkCreateAccelerationStructureKHR;
 	PFN_vkDestroyAccelerationStructureKHR vkDestroyAccelerationStructureKHR;
 	PFN_vkGetAccelerationStructureBuildSizesKHR vkGetAccelerationStructureBuildSizesKHR;
@@ -160,6 +131,7 @@ public:
 
 private:
 
+	RenderEngine* re;
 	VkPhysicalDevice _physicalDevice;
 	VkDevice _device;
 	VmaAllocator _allocator;
@@ -175,6 +147,15 @@ private:
 	//INIT RENDER STRUCTURES AND PIPELINES
 
 	//Init ray tracing structures
+
+	void init_renderer();
+
+	//support functions
+	int get_current_frame_index();
+
+	void init_raytracing();
+
+	// Init functions
 
 	void create_bottom_level_acceleration_structure();
 
@@ -202,23 +183,20 @@ private:
 
 	//init raster structures
 
-	void create_depth_buffer();
-
-	void create_deferred_attachments();
-
 	void init_commands();
-
-	void init_framebuffers();
 
 	void init_sync_structures();
 
-	void init_default_render_pass();
-
-	void init_deferred_render_pass();
-
-	void init_gbuffers_descriptors();
+	void create_descriptor_buffers();
 
 	void record_deferred_command_buffers(RenderObject* first, int count);
+
+	void init_descriptors();
+
+	//update descriptors
+	void update_descriptors_forward(RenderObject* first, size_t count);
+
+	void update_descriptors(RenderObject* first, size_t count);
 
 	//draw functions
 	void render_forward();
@@ -231,9 +209,7 @@ private:
 
 	void draw_deferred(VkCommandBuffer cmd, int imageIndex);		
 
-	void create_forward_pipelines();
-
-	void create_deferred_pipelines();
+	FrameData& get_current_frame();
 
 	BlasInput renderable_to_vulkan_geometry(RenderObject renderable);
 

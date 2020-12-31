@@ -17,3 +17,10 @@ namespace vkutil {
 
 	AllocatedBuffer create_buffer(VmaAllocator allocator, size_t allocSize, VkBufferUsageFlags usage, VmaMemoryUsage memoryUsage, VmaAllocationCreateFlags flags = 0);
 }
+
+#include "vk_render_engine.h"
+
+namespace vkupload {
+
+	void immediate_submit(std::function<void(VkCommandBuffer cmd)>&& function);
+}
