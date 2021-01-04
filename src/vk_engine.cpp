@@ -34,9 +34,9 @@ void VulkanEngine::init()
 	
 	_window = renderer->get_sdl_window();
 
-	load_images();
+	//load_images();
 
-	load_meshes();
+	//load_meshes();
 
 	/*
 	scene = new Scene();

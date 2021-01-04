@@ -41,6 +41,7 @@ void Renderer::init_renderer()
 	init_sync_structures();
 	create_descriptor_buffers();
 	init_descriptors();
+	VulkanEngine::cinstance->load_images();
 
 	deferred_quad.create_quad(1);
 
@@ -50,6 +51,29 @@ void Renderer::init_renderer()
 	RenderObject object;
 	object._model = glm::mat4(1);
 	object._mesh = &someMesh;
+	object._material = VulkanEngine::cinstance->get_material("texturedmesh");
+
+	Material* texMaterial = VulkanEngine::cinstance->get_material("texturedmesh");
+
+	//allocate the descriptor set for single-texture to use on the material
+	VkDescriptorSetAllocateInfo allocInfo = {};
+	allocInfo.pNext = nullptr;
+	allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	allocInfo.descriptorPool = RenderEngine::_descriptorPool;
+	allocInfo.descriptorSetCount = 1;
+	allocInfo.pSetLayouts = &RenderEngine::_singleTextureSetLayout;
+
+	vkAllocateDescriptorSets(_device, &allocInfo, &texMaterial->albedoTexture);
+
+	//write to the descriptor set so that it points to our empire_diffuse texture
+	VkDescriptorImageInfo imageBufferInfo;
+	imageBufferInfo.sampler = RenderEngine::_defaultSampler;
+	imageBufferInfo.imageView = VulkanEngine::cinstance->_loadedTextures["empire_diffuse"].imageView;
+	imageBufferInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+	VkWriteDescriptorSet texture1 = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, texMaterial->albedoTexture, &imageBufferInfo, 0);
+
+	vkUpdateDescriptorSets(RenderEngine::_device, 1, &texture1, 0, nullptr);
 
 	_renderables.push_back(object);
 
@@ -1079,6 +1103,7 @@ void Renderer::record_deferred_command_buffers(RenderObject* first, int count)
 			vkCmdBindIndexBuffer(_deferredCommandBuffer, object._mesh->_indexBuffer._buffer, 0, VK_INDEX_TYPE_UINT32);
 		}
 
+		//vkCmdDraw(_deferredCommandBuffer, 3, 1, 0, 0);
 		vkCmdDrawIndexed(_deferredCommandBuffer, static_cast<uint32_t>(object._mesh->_indices.size()), 1, 0, 0, i);
 	}
 
@@ -1240,16 +1265,19 @@ void Renderer::update_descriptors(RenderObject* first, size_t count)
 	camData.view = VulkanEngine::cinstance->camera->getView();
 	camData.viewproj = projection * VulkanEngine::cinstance->camera->getView();
 	*/
-	glm::vec3 camPos = { 0.0f, 0.0f, 2.5f };
-	glm::mat4 view = glm::translate(glm::mat4(1.0f), camPos);
 	glm::mat4 projection = glm::perspective(glm::radians(70.0f), 1700.0f / 900.0f, 0.1f, 200.0f);
 	projection[1][1] *= -1;
 
 	GPUCameraData camData;
 	camData.projection = projection;
-	camData.view = view;
-	camData.viewproj = projection * view;
+	camData.view = VulkanEngine::cinstance->camera->getView();
+	camData.viewproj = projection * camData.view;
 	
+	void* data2;
+	vmaMapMemory(_allocator, _camBuffer._allocation, &data2);
+	memcpy(data2, &camData, sizeof(GPUCameraData));
+	vmaUnmapMemory(_allocator, _camBuffer._allocation);
+
 	void* data;
 	vmaMapMemory(_allocator, get_current_frame().cameraBuffer._allocation, &data);
 	memcpy(data, &camData, sizeof(GPUCameraData));
