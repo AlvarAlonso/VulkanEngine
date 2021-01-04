@@ -728,8 +728,6 @@ Mesh* VulkanEngine::get_mesh(const std::string& name)
 void VulkanEngine::update_descriptors(RenderObject* first, int count)
 {
 	//Update buffers info
-	glm::vec3 camPos = { 0.0f, -50.0f, -10.0f };
-	glm::mat4 view = glm::translate(glm::mat4(1.0f), camPos);
 	glm::mat4 projection = glm::perspective(glm::radians(70.0f), 1700.0f / 900.0f, 0.1f, 200.0f);
 	projection[1][1] *= -1;
 

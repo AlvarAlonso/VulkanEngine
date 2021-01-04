@@ -16,7 +16,7 @@ Renderer::Renderer()
 	_allocator = VulkanEngine::cinstance->_allocator;
 	_graphicsQueue = VulkanEngine::cinstance->_graphicsQueue;
 	_graphicsQueueFamily = VulkanEngine::cinstance->_graphicsQueueFamily;
-	_renderMode = RENDER_MODE_RAYTRACING;
+	_renderMode = RENDER_MODE_DEFERRED;
 }
 
 void Renderer::init_renderer()
