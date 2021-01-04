@@ -11,6 +11,16 @@
 
 #include <array>
 
+VkPhysicalDevice RenderEngine::_physicalDevice = VK_NULL_HANDLE;
+VkDevice RenderEngine::_device = VK_NULL_HANDLE;
+VkQueue RenderEngine::_graphicsQueue = VK_NULL_HANDLE;
+VkSampler RenderEngine::_defaultSampler = VK_NULL_HANDLE;
+DeletionQueue RenderEngine::_mainDeletionQueue{};
+VmaAllocator RenderEngine::_allocator = nullptr;
+UploadContext RenderEngine::_uploadContext;
+VkDescriptorPool RenderEngine::_descriptorPool = VK_NULL_HANDLE;
+VkDescriptorSetLayout RenderEngine::_singleTextureSetLayout = VK_NULL_HANDLE;
+
 std::vector<const char*> required_device_extensions = {
 		VK_KHR_SWAPCHAIN_EXTENSION_NAME,
 		VK_KHR_DEDICATED_ALLOCATION_EXTENSION_NAME,
@@ -64,8 +74,8 @@ void RenderEngine::init()
 	init_deferred_attachments();
 	init_render_passes();
 	init_framebuffers();
-	init_pipelines();
 	init_gbuffer_descriptors();
+	init_pipelines();
 
 	_isInitialized = true;
 }
@@ -545,7 +555,7 @@ void RenderEngine::init_pipelines()
 {
 	{
 		//FORWARD PIPELINES
-//default vertex shader for a mesh
+		//default vertex shader for a mesh
 		VkShaderModule meshVertShader;
 		if (!vkutil::load_shader_module(_device, "../shaders/tri_mesh.vert.spv", &meshVertShader))
 		{

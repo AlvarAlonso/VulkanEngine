@@ -39,19 +39,32 @@ void Renderer::init_renderer()
 {
 	init_commands();
 	init_sync_structures();
+	create_descriptor_buffers();
+	init_descriptors();
 
-	deferred_quad.create_quad();
+	deferred_quad.create_quad(1);
+
+	Mesh mesh("../assets/lost_empire.obj");
+	someMesh = mesh;
+
+	RenderObject object;
+	object._model = glm::mat4(1);
+	object._mesh = &someMesh;
+
+	_renderables.push_back(object);
+
+	//deferred_quad = someMesh;
 }
 
 void Renderer::draw_scene()
 {
 	if(!isDeferredCommandInit)
 	{
-		record_deferred_command_buffers(VulkanEngine::cinstance->_renderables.data(), VulkanEngine::cinstance->_renderables.size());
+		record_deferred_command_buffers(_renderables.data(), _renderables.size());
 		isDeferredCommandInit = true;
 	}
 
-	ImGui::Render();
+	//ImGui::Render();
 	
 	if(_renderMode == RENDER_MODE_FORWARD)
 	{
@@ -112,12 +125,12 @@ void Renderer::init_raytracing()
 void Renderer::create_bottom_level_acceleration_structure()
 {
 	std::vector<BlasInput> allBlas;
-	allBlas.reserve(VulkanEngine::cinstance->_renderables.size());
+	allBlas.reserve(_renderables.size());
 
 	_bottomLevelAS.reserve(allBlas.size());
 	_transformBuffers.reserve(allBlas.size());
 
-	for(const auto& renderable : VulkanEngine::cinstance->_renderables)
+	for(const auto& renderable : _renderables)
 	{
 		auto blas = renderable_to_vulkan_geometry(renderable);
 		allBlas.push_back(blas);
@@ -129,11 +142,11 @@ void Renderer::create_bottom_level_acceleration_structure()
 void Renderer::create_top_level_acceleration_structure()
 {
 	std::vector<VkAccelerationStructureInstanceKHR> instances;
-	instances.reserve(VulkanEngine::cinstance->_renderables.size());
+	instances.reserve(_renderables.size());
 
-	for (int i = 0; i < VulkanEngine::cinstance->_renderables.size(); i++)
+	for (int i = 0; i < _renderables.size(); i++)
 	{
-		glm::mat4 model = glm::transpose(VulkanEngine::cinstance->_renderables[i]._model);
+		glm::mat4 model = glm::transpose(_renderables[i]._model);
 
 		VkTransformMatrixKHR transformMatrix = {
 			model[0].x, model[0].y, model[0].z, model[0].w,
@@ -368,19 +381,19 @@ void Renderer::create_raytracing_pipeline()
 	VkDescriptorSetLayoutBinding vertexBufferBinding{};
 	vertexBufferBinding.binding = 3;
 	vertexBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-	vertexBufferBinding.descriptorCount = VulkanEngine::cinstance->_renderables.size();
+	vertexBufferBinding.descriptorCount = _renderables.size();
 	vertexBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
 	VkDescriptorSetLayoutBinding indexBufferBinding{};
 	indexBufferBinding.binding = 4;
 	indexBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-	indexBufferBinding.descriptorCount = VulkanEngine::cinstance->_renderables.size();
+	indexBufferBinding.descriptorCount = _renderables.size();
 	indexBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
 	VkDescriptorSetLayoutBinding transformBufferBinding{};
 	transformBufferBinding.binding = 5;
 	transformBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-	transformBufferBinding.descriptorCount = VulkanEngine::cinstance->_renderables.size();
+	transformBufferBinding.descriptorCount = _renderables.size();
 	transformBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
 	std::vector<VkDescriptorSetLayoutBinding> bindings({
@@ -595,7 +608,7 @@ void Renderer::create_raytracing_descriptor_sets()
 	std::vector<VkDescriptorBufferInfo> indicesBufferInfos;
 	std::vector<VkDescriptorBufferInfo> transformBufferInfos;
 
-	std::vector<RenderObject>& renderables = VulkanEngine::cinstance->_renderables;
+	std::vector<RenderObject>& renderables = _renderables;
 
 	verticesBufferInfos.reserve(renderables.size());
 	indicesBufferInfos.reserve(renderables.size());
@@ -1023,15 +1036,17 @@ void Renderer::record_deferred_command_buffers(RenderObject* first, int count)
 
 	VK_CHECK(vkBeginCommandBuffer(_deferredCommandBuffer, &deferredCmdBeginInfo));
 
-	VkClearValue first_clearValue;
-	first_clearValue.color = { {0.0f, 0.0f, 0.0f, 1.0f} };
+	VkClearValue first_clearValue, position, normal;
+	first_clearValue.color = { {0.3f, 0.0f, 0.0f, 1.0f} };
+	position.color = { 0.0f, 0.3f, 0.0f, 1.0f };
+	normal.color = { 0.0f, 0.0f, 0.3f, 1.0f };
 
 	VkClearValue first_depthClear;
 	first_depthClear.depthStencil.depth = 1.0f;
 
 	VkRenderPassBeginInfo rpInfo = vkinit::renderpass_begin_info(re->_deferredRenderPass, re->_windowExtent, re->_offscreen_framebuffer);
 
-	std::array<VkClearValue, 4> first_clearValues = { first_clearValue, first_clearValue, first_clearValue, first_depthClear };
+	std::array<VkClearValue, 4> first_clearValues = { position, normal, first_clearValue, first_depthClear };
 
 	rpInfo.clearValueCount = static_cast<uint32_t>(first_clearValues.size());
 	rpInfo.pClearValues = first_clearValues.data();
@@ -1049,9 +1064,12 @@ void Renderer::record_deferred_command_buffers(RenderObject* first, int count)
 
 		vkCmdBindDescriptorSets(_deferredCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_deferredPipelineLayout, 1, 1, &_objectDescriptorSet, 0, nullptr);
 
-		if (object._material->albedoTexture != VK_NULL_HANDLE)
+		if (object._material != nullptr)
 		{
-			vkCmdBindDescriptorSets(_deferredCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_deferredPipelineLayout, 2, 1, &object._material->albedoTexture, 0, nullptr);
+			if(object._material->albedoTexture != VK_NULL_HANDLE)
+			{
+				vkCmdBindDescriptorSets(_deferredCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_deferredPipelineLayout, 2, 1, &object._material->albedoTexture, 0, nullptr);
+			}
 		}
 
 		if (object._mesh != lastMesh)
@@ -1210,7 +1228,19 @@ void Renderer::update_descriptors_forward(RenderObject* first, size_t count)
 
 void Renderer::update_descriptors(RenderObject* first, size_t count)
 {
+	/*
+	//Update buffers info
 	glm::vec3 camPos = { 0.0f, -50.0f, -10.0f };
+	glm::mat4 view = glm::translate(glm::mat4(1.0f), camPos);
+	glm::mat4 projection = glm::perspective(glm::radians(70.0f), 1700.0f / 900.0f, 0.1f, 200.0f);
+	projection[1][1] *= -1;
+
+	GPUCameraData camData;
+	camData.projection = projection;
+	camData.view = VulkanEngine::cinstance->camera->getView();
+	camData.viewproj = projection * VulkanEngine::cinstance->camera->getView();
+	*/
+	glm::vec3 camPos = { 0.0f, 0.0f, 2.5f };
 	glm::mat4 view = glm::translate(glm::mat4(1.0f), camPos);
 	glm::mat4 projection = glm::perspective(glm::radians(70.0f), 1700.0f / 900.0f, 0.1f, 200.0f);
 	projection[1][1] *= -1;
@@ -1219,7 +1249,7 @@ void Renderer::update_descriptors(RenderObject* first, size_t count)
 	camData.projection = projection;
 	camData.view = view;
 	camData.viewproj = projection * view;
-
+	
 	void* data;
 	vmaMapMemory(_allocator, get_current_frame().cameraBuffer._allocation, &data);
 	memcpy(data, &camData, sizeof(GPUCameraData));
@@ -1256,7 +1286,7 @@ void Renderer::update_descriptors(RenderObject* first, size_t count)
 
 int Renderer::get_current_frame_index()
 {
-	return VulkanEngine::cinstance->_frameNumber % FRAME_OVERLAP;
+	return _frameNumber % FRAME_OVERLAP;
 }
 
 void Renderer::render_forward()
@@ -1292,7 +1322,7 @@ void Renderer::render_forward()
 
 	vkCmdBeginRenderPass(cmd, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-	draw_forward(cmd, VulkanEngine::cinstance->_renderables.data(), VulkanEngine::cinstance->_renderables.size());
+	draw_forward(cmd, _renderables.data(), _renderables.size());
 
 	vkCmdEndRenderPass(cmd);
 
@@ -1324,7 +1354,7 @@ void Renderer::render_forward()
 
 	VK_CHECK(vkQueuePresentKHR(_graphicsQueue, &presentInfo));
 
-	VulkanEngine::cinstance->_frameNumber++;
+	_frameNumber++;
 }
 
 void Renderer::render_deferred()
@@ -1337,9 +1367,10 @@ void Renderer::render_deferred()
 	//VK_CHECK(vkAcquireNextImageKHR(_device, _swapchain, 0, get_current_frame()._presentSemaphore, nullptr, &swapchainImageIndex));
 	VkResult result = vkAcquireNextImageKHR(_device, re->_swapchain, 0, _frames[get_current_frame_index()]._presentSemaphore, nullptr, &swapchainImageIndex);
 
+	int idx = get_current_frame_index();
 	VkCommandBuffer cmd = _frames[get_current_frame_index()]._mainCommandBuffer;
 
-	update_descriptors(VulkanEngine::cinstance->_renderables.data(), VulkanEngine::cinstance->_renderables.size());
+	update_descriptors(_renderables.data(), _renderables.size());
 
 	draw_deferred(cmd, swapchainImageIndex);
 
@@ -1381,7 +1412,7 @@ void Renderer::render_deferred()
 
 	VK_CHECK(vkQueuePresentKHR(_graphicsQueue, &presentInfo));
 
-	VulkanEngine::cinstance->_frameNumber++;
+	_frameNumber++;
 }
 
 void Renderer::render_raytracing()
@@ -1427,7 +1458,7 @@ void Renderer::render_raytracing()
 	VK_CHECK(vkQueuePresentKHR(_graphicsQueue, &presentInfo));
 
 
-	VulkanEngine::cinstance->_frameNumber++;
+	_frameNumber++;
 }
 
 void Renderer::draw_forward(VkCommandBuffer cmd, RenderObject* first, int count)
@@ -1512,7 +1543,7 @@ void Renderer::draw_deferred(VkCommandBuffer cmd, int imageIndex)
 
 	vkCmdDrawIndexed(cmd, static_cast<uint32_t>(deferred_quad._indices.size()), 1, 0, 0, 0);
 
-	ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
+	//ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
 
 	vkCmdEndRenderPass(cmd);
 

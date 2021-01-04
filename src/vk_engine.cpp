@@ -31,28 +31,24 @@ void VulkanEngine::init()
 	camera = new Camera(camera_default_position);
 
 	renderer = new Renderer();
-
+	
 	_window = renderer->get_sdl_window();
-
-	/*
-	init_descriptors();
-	*/
 
 	load_images();
 
 	load_meshes();
 
+	/*
 	scene = new Scene();
 	scene->generate_sample_scene();
 	_renderables = scene->_renderables;
-
+	*/
 	//init_imgui();
 
 	//everything went fine
 	_isInitialized = true;
 }
 
-//PAL RENDER ENGINE
 void VulkanEngine::cleanup()
 {	
 	renderer->cleanup();
@@ -60,7 +56,6 @@ void VulkanEngine::cleanup()
 
 void VulkanEngine::run()
 {
-
 	SDL_Event e;
 	bool bQuit = false;
 	double lastFrame = 0.0f;
@@ -77,7 +72,7 @@ void VulkanEngine::run()
 		//Handle events on queue
 		while (SDL_PollEvent(&e) != 0)
 		{
-			ImGui_ImplSDL2_ProcessEvent(&e);
+			//ImGui_ImplSDL2_ProcessEvent(&e);
 
 			int x, y;
 			SDL_GetMouseState(&x, &y);
@@ -172,6 +167,7 @@ void VulkanEngine::run()
 			yMouseOld = center_y;
 		}
 
+		/*
 		//imgui new frame
 		ImGui_ImplVulkan_NewFrame();
 		ImGui_ImplSDL2_NewFrame(_window);
@@ -180,7 +176,7 @@ void VulkanEngine::run()
 
 		//imgui commands
 		ImGui::ShowDemoWindow();
-
+		*/
 		//draw();
 		renderer->draw_scene();
 	}

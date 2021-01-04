@@ -24,17 +24,12 @@ struct GPUCameraData {
 	glm::mat4 viewproj;
 };
 
-struct GPUObjectData {
-	glm::mat4 modelMatrix;
-};
-
 class VulkanEngine {
 public:
 
 	struct SDL_Window* _window{ nullptr };
 	float dt;
 	bool _isInitialized{ false };
-	int _frameNumber {0};
 	int _pipelineSelected{ 0 };
 
 	static VulkanEngine* cinstance;
@@ -46,7 +41,7 @@ public:
 	Camera* camera;
 	bool mouse_locked = true;
 
-	std::vector<RenderObject> _renderables;
+	//std::vector<RenderObject> _renderables;
 
 	std::unordered_map<std::string, Material> _materials;
 	std::unordered_map<std::string, Mesh> _meshes;
@@ -69,9 +64,9 @@ public:
 
 	Mesh* get_mesh(const std::string& name);
 
+	void load_meshes();
+
 private:
 
 	void init_imgui();
-
-	void load_meshes();
 };
