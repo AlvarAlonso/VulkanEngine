@@ -41,50 +41,15 @@ void Renderer::init_renderer()
 	init_sync_structures();
 	create_descriptor_buffers();
 	init_descriptors();
-	VulkanEngine::cinstance->load_images();
 
 	deferred_quad.create_quad(1);
-
-	Mesh mesh("../assets/lost_empire.obj");
-	someMesh = mesh;
-
-	RenderObject object;
-	object._model = glm::mat4(1);
-	object._mesh = &someMesh;
-	object._material = VulkanEngine::cinstance->get_material("texturedmesh");
-
-	Material* texMaterial = VulkanEngine::cinstance->get_material("texturedmesh");
-
-	//allocate the descriptor set for single-texture to use on the material
-	VkDescriptorSetAllocateInfo allocInfo = {};
-	allocInfo.pNext = nullptr;
-	allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-	allocInfo.descriptorPool = RenderEngine::_descriptorPool;
-	allocInfo.descriptorSetCount = 1;
-	allocInfo.pSetLayouts = &RenderEngine::_singleTextureSetLayout;
-
-	vkAllocateDescriptorSets(_device, &allocInfo, &texMaterial->albedoTexture);
-
-	//write to the descriptor set so that it points to our empire_diffuse texture
-	VkDescriptorImageInfo imageBufferInfo;
-	imageBufferInfo.sampler = RenderEngine::_defaultSampler;
-	imageBufferInfo.imageView = VulkanEngine::cinstance->_loadedTextures["empire_diffuse"].imageView;
-	imageBufferInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-	VkWriteDescriptorSet texture1 = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, texMaterial->albedoTexture, &imageBufferInfo, 0);
-
-	vkUpdateDescriptorSets(RenderEngine::_device, 1, &texture1, 0, nullptr);
-
-	_renderables.push_back(object);
-
-	//deferred_quad = someMesh;
 }
 
 void Renderer::draw_scene()
 {
 	if(!isDeferredCommandInit)
 	{
-		record_deferred_command_buffers(_renderables.data(), _renderables.size());
+		record_deferred_command_buffers(VulkanEngine::cinstance->_renderables.data(), VulkanEngine::cinstance->_renderables.size());
 		isDeferredCommandInit = true;
 	}
 
@@ -149,12 +114,12 @@ void Renderer::init_raytracing()
 void Renderer::create_bottom_level_acceleration_structure()
 {
 	std::vector<BlasInput> allBlas;
-	allBlas.reserve(_renderables.size());
+	allBlas.reserve(VulkanEngine::cinstance->_renderables.size());
 
 	_bottomLevelAS.reserve(allBlas.size());
 	_transformBuffers.reserve(allBlas.size());
 
-	for(const auto& renderable : _renderables)
+	for(const auto& renderable : VulkanEngine::cinstance->_renderables)
 	{
 		auto blas = renderable_to_vulkan_geometry(renderable);
 		allBlas.push_back(blas);
@@ -166,11 +131,11 @@ void Renderer::create_bottom_level_acceleration_structure()
 void Renderer::create_top_level_acceleration_structure()
 {
 	std::vector<VkAccelerationStructureInstanceKHR> instances;
-	instances.reserve(_renderables.size());
+	instances.reserve(VulkanEngine::cinstance->_renderables.size());
 
-	for (int i = 0; i < _renderables.size(); i++)
+	for (int i = 0; i < VulkanEngine::cinstance->_renderables.size(); i++)
 	{
-		glm::mat4 model = glm::transpose(_renderables[i]._model);
+		glm::mat4 model = glm::transpose(VulkanEngine::cinstance->_renderables[i]._model);
 
 		VkTransformMatrixKHR transformMatrix = {
 			model[0].x, model[0].y, model[0].z, model[0].w,
@@ -405,19 +370,19 @@ void Renderer::create_raytracing_pipeline()
 	VkDescriptorSetLayoutBinding vertexBufferBinding{};
 	vertexBufferBinding.binding = 3;
 	vertexBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-	vertexBufferBinding.descriptorCount = _renderables.size();
+	vertexBufferBinding.descriptorCount = VulkanEngine::cinstance->_renderables.size();
 	vertexBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
 	VkDescriptorSetLayoutBinding indexBufferBinding{};
 	indexBufferBinding.binding = 4;
 	indexBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-	indexBufferBinding.descriptorCount = _renderables.size();
+	indexBufferBinding.descriptorCount = VulkanEngine::cinstance->_renderables.size();
 	indexBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
 	VkDescriptorSetLayoutBinding transformBufferBinding{};
 	transformBufferBinding.binding = 5;
 	transformBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-	transformBufferBinding.descriptorCount = _renderables.size();
+	transformBufferBinding.descriptorCount = VulkanEngine::cinstance->_renderables.size();
 	transformBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
 	std::vector<VkDescriptorSetLayoutBinding> bindings({
@@ -632,7 +597,7 @@ void Renderer::create_raytracing_descriptor_sets()
 	std::vector<VkDescriptorBufferInfo> indicesBufferInfos;
 	std::vector<VkDescriptorBufferInfo> transformBufferInfos;
 
-	std::vector<RenderObject>& renderables = _renderables;
+	std::vector<RenderObject>& renderables = VulkanEngine::cinstance->_renderables;
 
 	verticesBufferInfos.reserve(renderables.size());
 	indicesBufferInfos.reserve(renderables.size());
@@ -1060,17 +1025,15 @@ void Renderer::record_deferred_command_buffers(RenderObject* first, int count)
 
 	VK_CHECK(vkBeginCommandBuffer(_deferredCommandBuffer, &deferredCmdBeginInfo));
 
-	VkClearValue first_clearValue, position, normal;
-	first_clearValue.color = { {0.3f, 0.0f, 0.0f, 1.0f} };
-	position.color = { 0.0f, 0.3f, 0.0f, 1.0f };
-	normal.color = { 0.0f, 0.0f, 0.3f, 1.0f };
+	VkClearValue first_clearValue;
+	first_clearValue.color = { {0.0f, 0.0f, 0.0f, 1.0f} };
 
 	VkClearValue first_depthClear;
 	first_depthClear.depthStencil.depth = 1.0f;
 
 	VkRenderPassBeginInfo rpInfo = vkinit::renderpass_begin_info(re->_deferredRenderPass, re->_windowExtent, re->_offscreen_framebuffer);
 
-	std::array<VkClearValue, 4> first_clearValues = { position, normal, first_clearValue, first_depthClear };
+	std::array<VkClearValue, 4> first_clearValues = { first_clearValue, first_clearValue, first_clearValue, first_depthClear };
 
 	rpInfo.clearValueCount = static_cast<uint32_t>(first_clearValues.size());
 	rpInfo.pClearValues = first_clearValues.data();
@@ -1103,7 +1066,6 @@ void Renderer::record_deferred_command_buffers(RenderObject* first, int count)
 			vkCmdBindIndexBuffer(_deferredCommandBuffer, object._mesh->_indexBuffer._buffer, 0, VK_INDEX_TYPE_UINT32);
 		}
 
-		//vkCmdDraw(_deferredCommandBuffer, 3, 1, 0, 0);
 		vkCmdDrawIndexed(_deferredCommandBuffer, static_cast<uint32_t>(object._mesh->_indices.size()), 1, 0, 0, i);
 	}
 
@@ -1253,18 +1215,6 @@ void Renderer::update_descriptors_forward(RenderObject* first, size_t count)
 
 void Renderer::update_descriptors(RenderObject* first, size_t count)
 {
-	/*
-	//Update buffers info
-	glm::vec3 camPos = { 0.0f, -50.0f, -10.0f };
-	glm::mat4 view = glm::translate(glm::mat4(1.0f), camPos);
-	glm::mat4 projection = glm::perspective(glm::radians(70.0f), 1700.0f / 900.0f, 0.1f, 200.0f);
-	projection[1][1] *= -1;
-
-	GPUCameraData camData;
-	camData.projection = projection;
-	camData.view = VulkanEngine::cinstance->camera->getView();
-	camData.viewproj = projection * VulkanEngine::cinstance->camera->getView();
-	*/
 	glm::mat4 projection = glm::perspective(glm::radians(70.0f), 1700.0f / 900.0f, 0.1f, 200.0f);
 	projection[1][1] *= -1;
 
@@ -1299,7 +1249,7 @@ void Renderer::update_descriptors(RenderObject* first, size_t count)
 	vmaUnmapMemory(_allocator, _sceneParameterBuffer._allocation);
 
 	void* objectData;
-	vmaMapMemory(_allocator, get_current_frame().objectBuffer._allocation, &objectData);
+	vmaMapMemory(_allocator, _objectBuffer._allocation, &objectData);
 
 	GPUObjectData* objectSSBO = (GPUObjectData*)objectData;
 
@@ -1309,7 +1259,7 @@ void Renderer::update_descriptors(RenderObject* first, size_t count)
 		objectSSBO[i].modelMatrix = object._model;
 	}
 
-	vmaUnmapMemory(_allocator, get_current_frame().objectBuffer._allocation);
+	vmaUnmapMemory(_allocator, _objectBuffer._allocation);
 }
 
 int Renderer::get_current_frame_index()
@@ -1350,7 +1300,7 @@ void Renderer::render_forward()
 
 	vkCmdBeginRenderPass(cmd, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-	draw_forward(cmd, _renderables.data(), _renderables.size());
+	draw_forward(cmd, VulkanEngine::cinstance->_renderables.data(), VulkanEngine::cinstance->_renderables.size());
 
 	vkCmdEndRenderPass(cmd);
 
@@ -1398,7 +1348,7 @@ void Renderer::render_deferred()
 	int idx = get_current_frame_index();
 	VkCommandBuffer cmd = _frames[get_current_frame_index()]._mainCommandBuffer;
 
-	update_descriptors(_renderables.data(), _renderables.size());
+	update_descriptors(VulkanEngine::cinstance->_renderables.data(), VulkanEngine::cinstance->_renderables.size());
 
 	draw_deferred(cmd, swapchainImageIndex);
 

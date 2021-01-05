@@ -34,15 +34,14 @@ void VulkanEngine::init()
 	
 	_window = renderer->get_sdl_window();
 
-	//load_images();
+	load_images();
 
-	//load_meshes();
+	load_meshes();
 
-	/*
 	scene = new Scene();
 	scene->generate_sample_scene();
 	_renderables = scene->_renderables;
-	*/
+	
 	//init_imgui();
 
 	//everything went fine

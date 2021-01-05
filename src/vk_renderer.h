@@ -68,10 +68,7 @@ public:
 
 	void draw_scene();
 
-	std::vector<RenderObject> _renderables;
-
 	Mesh deferred_quad;
-	Mesh someMesh;
 
 	AllocatedBuffer _camBuffer;
 	AllocatedBuffer _objectBuffer;

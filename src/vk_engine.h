@@ -7,7 +7,7 @@
 #include "vk_renderer.h"
 #include "Camera.h"
 
-const glm::vec3 camera_default_position = { 0.0f, -10.0f, 2.5f };
+const glm::vec3 camera_default_position = { 0.0f, 0.0f, 2.5f };
 
 //constexpr unsigned int FRAME_OVERLAP = 2;
 
@@ -41,7 +41,7 @@ public:
 	Camera* camera;
 	bool mouse_locked = true;
 
-	//std::vector<RenderObject> _renderables;
+	std::vector<RenderObject> _renderables;
 
 	std::unordered_map<std::string, Material> _materials;
 	std::unordered_map<std::string, Mesh> _meshes;
