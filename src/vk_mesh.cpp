@@ -1,8 +1,9 @@
 #include "vk_mesh.h"
+#include "vk_utils.h"
 #define TINYOBJLOADER_IMPLEMENTATION
 #include <tiny_obj_loader.h>
 #include <iostream>
-#include "vk_engine.h"
+#include "vk_render_engine.h"
 
 VertexInputDescription Vertex::get_vertex_description()
 {
@@ -150,15 +151,15 @@ void Mesh::create_vertex_buffer()
 
     AllocatedBuffer stagingBuffer;
 
-    VK_CHECK(vmaCreateBuffer(VulkanEngine::cinstance->_allocator, &stagingBufferInfo, &vmaAllocInfo,
+    VK_CHECK(vmaCreateBuffer(RenderEngine::_allocator, &stagingBufferInfo, &vmaAllocInfo,
         &stagingBuffer._buffer,
         &stagingBuffer._allocation,
         nullptr));
 
     void* data;
-    vmaMapMemory(VulkanEngine::cinstance->_allocator, stagingBuffer._allocation, &data);
+    vmaMapMemory(RenderEngine::_allocator, stagingBuffer._allocation, &data);
     memcpy(data, _vertices.data(), _vertices.size() * sizeof(Vertex));
-    vmaUnmapMemory(VulkanEngine::cinstance->_allocator, stagingBuffer._allocation);
+    vmaUnmapMemory(RenderEngine::_allocator, stagingBuffer._allocation);
 
     VkBufferCreateInfo vertexBufferInfo = {};
     vertexBufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -170,12 +171,12 @@ void Mesh::create_vertex_buffer()
 
     vmaAllocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
 
-    VK_CHECK(vmaCreateBuffer(VulkanEngine::cinstance->_allocator, &vertexBufferInfo, &vmaAllocInfo,
+    VK_CHECK(vmaCreateBuffer(RenderEngine::_allocator, &vertexBufferInfo, &vmaAllocInfo,
         &_vertexBuffer._buffer,
         &_vertexBuffer._allocation,
         nullptr));
 
-    VulkanEngine::cinstance->immediate_submit([=](VkCommandBuffer cmd)
+    vkupload::immediate_submit([=](VkCommandBuffer cmd)
         {
             VkBufferCopy copy;
             copy.dstOffset = 0;
@@ -184,12 +185,12 @@ void Mesh::create_vertex_buffer()
 
             vkCmdCopyBuffer(cmd, stagingBuffer._buffer, _vertexBuffer._buffer, 1, &copy);
         });
-
-    VulkanEngine::cinstance->_mainDeletionQueue.push_function([=]() {
-        vmaDestroyBuffer(VulkanEngine::cinstance->_allocator, _vertexBuffer._buffer, _vertexBuffer._allocation);
+    
+    RenderEngine::_mainDeletionQueue.push_function([=]() {
+        vmaDestroyBuffer(RenderEngine::_allocator, _vertexBuffer._buffer, _vertexBuffer._allocation);
         });
-
-    vmaDestroyBuffer(VulkanEngine::cinstance->_allocator, stagingBuffer._buffer, stagingBuffer._allocation);
+        
+    vmaDestroyBuffer(RenderEngine::_allocator, stagingBuffer._buffer, stagingBuffer._allocation);
 }
 
 void Mesh::create_index_buffer()
@@ -207,15 +208,15 @@ void Mesh::create_index_buffer()
 
     AllocatedBuffer stagingBuffer;
 
-    VK_CHECK(vmaCreateBuffer(VulkanEngine::cinstance->_allocator, &stagingBufferInfo, &vmaAllocInfo,
+    VK_CHECK(vmaCreateBuffer(RenderEngine::_allocator, &stagingBufferInfo, &vmaAllocInfo,
         &stagingBuffer._buffer,
         &stagingBuffer._allocation,
         nullptr));
 
     void* data;
-    vmaMapMemory(VulkanEngine::cinstance->_allocator, stagingBuffer._allocation, &data);
+    vmaMapMemory(RenderEngine::_allocator, stagingBuffer._allocation, &data);
     memcpy(data, _indices.data(), _indices.size() * sizeof(uint32_t));
-    vmaUnmapMemory(VulkanEngine::cinstance->_allocator, stagingBuffer._allocation);
+    vmaUnmapMemory(RenderEngine::_allocator, stagingBuffer._allocation);
 
     VkBufferCreateInfo indexBufferInfo = {};
     indexBufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -227,12 +228,12 @@ void Mesh::create_index_buffer()
 
     vmaAllocInfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
 
-    VK_CHECK(vmaCreateBuffer(VulkanEngine::cinstance->_allocator, &indexBufferInfo, &vmaAllocInfo,
+    VK_CHECK(vmaCreateBuffer(RenderEngine::_allocator, &indexBufferInfo, &vmaAllocInfo,
         &_indexBuffer._buffer,
         &_indexBuffer._allocation,
         nullptr));
 
-    VulkanEngine::cinstance->immediate_submit([=](VkCommandBuffer cmd)
+    vkupload::immediate_submit([=](VkCommandBuffer cmd)
         {
             VkBufferCopy copy;
             copy.dstOffset = 0;
@@ -242,20 +243,20 @@ void Mesh::create_index_buffer()
             vkCmdCopyBuffer(cmd, stagingBuffer._buffer, _indexBuffer._buffer, 1, &copy);
         });
 
-    VulkanEngine::cinstance->_mainDeletionQueue.push_function([=]() {
-            vmaDestroyBuffer(VulkanEngine::cinstance->_allocator, _indexBuffer._buffer, _indexBuffer._allocation);
+    RenderEngine::_mainDeletionQueue.push_function([=]() {
+            vmaDestroyBuffer(RenderEngine::_allocator, _indexBuffer._buffer, _indexBuffer._allocation);
         });
 
-    vmaDestroyBuffer(VulkanEngine::cinstance->_allocator, stagingBuffer._buffer, stagingBuffer._allocation);
+    vmaDestroyBuffer(RenderEngine::_allocator, stagingBuffer._buffer, stagingBuffer._allocation);
 }
 
 void Mesh::destroy_buffers()
 {
-    vmaDestroyBuffer(VulkanEngine::cinstance->_allocator, _indexBuffer._buffer, _indexBuffer._allocation);
-    vmaDestroyBuffer(VulkanEngine::cinstance->_allocator, _vertexBuffer._buffer, _indexBuffer._allocation);
+    vmaDestroyBuffer(RenderEngine::_allocator, _indexBuffer._buffer, _indexBuffer._allocation);
+    vmaDestroyBuffer(RenderEngine::_allocator, _vertexBuffer._buffer, _indexBuffer._allocation);
 }
 
-void Mesh::create_quad()
+void Mesh::create_quad(int size)
 {
     _vertices.clear();
     _indices.clear();
@@ -264,10 +265,10 @@ void Mesh::create_quad()
     //Quad vertices
     _vertices.resize(4);
 
-    _vertices[0].position = { -1.0f, -1.0f, 0.0f };
-    _vertices[1].position = { 1.0f, -1.0f, 0.0f };
-    _vertices[2].position = { 1.0f, 1.0f, 0.0f };
-    _vertices[3].position = { -1.0f, 1.0f, 0.0f };
+    _vertices[0].position = { -size, -size, 0.0f };
+    _vertices[1].position = { size, -size, 0.0f };
+    _vertices[2].position = { size, size, 0.0f };
+    _vertices[3].position = { -size, size, 0.0f };
     
     _vertices[0].normal = { 0.0f, 0.0f, 1.0f };
     _vertices[1].normal = { 0.0f, 0.0f, 1.0f };

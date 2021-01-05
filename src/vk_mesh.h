@@ -68,6 +68,6 @@ public:
 
 	void destroy_buffers();
 
-	void create_quad();
+	void create_quad(int size);
 };
 

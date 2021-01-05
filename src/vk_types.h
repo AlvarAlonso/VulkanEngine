@@ -33,3 +33,25 @@ struct AllocatedImage {
 	VkImage _image;
 	VmaAllocation _allocation;
 };
+
+struct RayTracingScratchBuffer
+{
+	uint64_t _deviceAddress = 0;
+	VkBuffer _buffer = VK_NULL_HANDLE;
+	VkDeviceMemory _memory = VK_NULL_HANDLE;
+};
+
+struct AccelerationStructure
+{
+	VkAccelerationStructureKHR _handle;
+	uint64_t _deviceAddress = 0;
+	VkDeviceMemory _memory;
+	VkBuffer _buffer;
+};
+
+struct Image {
+	VkImageView _view;
+	VkImage _image;
+	VmaAllocation _allocation;
+	VkFormat _format;
+};

@@ -1,4 +1,5 @@
 #include "vk_utils.h"
+#include "vk_initializers.h"
 
 uint32_t vkutil::find_memory_type_index(VkPhysicalDevice physicalDevice, uint32_t allowedTypes, VkMemoryPropertyFlags properties)
 {
@@ -88,10 +89,41 @@ AllocatedBuffer vkutil::create_buffer(VmaAllocator allocator, size_t allocSize, 
 
 	AllocatedBuffer newBuffer;
 
+	VkResult result = vmaCreateBuffer(allocator, &bufferInfo, &vmaallocInfo,
+		&newBuffer._buffer,
+		&newBuffer._allocation,
+		nullptr);
+	/*
 	VK_CHECK(vmaCreateBuffer(allocator, &bufferInfo, &vmaallocInfo,
 		&newBuffer._buffer,
 		&newBuffer._allocation,
 		nullptr));
-
+		*/
 	return newBuffer;
+}
+
+void vkupload::immediate_submit(std::function<void(VkCommandBuffer cmd)>&& function)
+{
+	VkCommandBufferAllocateInfo cmdAllocInfo = vkinit::command_buffer_allocate_info(RenderEngine::_uploadContext._commandPool, 1);
+
+	VkCommandBuffer cmd;
+	VK_CHECK(vkAllocateCommandBuffers(RenderEngine::_device, &cmdAllocInfo, &cmd));
+
+	VkCommandBufferBeginInfo cmdBeginInfo = vkinit::command_buffer_begin_info(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
+
+	VK_CHECK(vkBeginCommandBuffer(cmd, &cmdBeginInfo));
+
+	function(cmd);
+
+	VK_CHECK(vkEndCommandBuffer(cmd));
+
+	VkSubmitInfo submit = vkinit::submit_info(&cmd);
+
+
+	VK_CHECK(vkQueueSubmit(RenderEngine::_graphicsQueue, 1, &submit, RenderEngine::_uploadContext._uploadFence));
+
+	vkWaitForFences(RenderEngine::_device, 1, &RenderEngine::_uploadContext._uploadFence, true, UINT64_MAX);
+	vkResetFences(RenderEngine::_device, 1, &RenderEngine::_uploadContext._uploadFence);
+
+	vkResetCommandPool(RenderEngine::_device, RenderEngine::_uploadContext._commandPool, 0);
 }

@@ -31,34 +31,34 @@ void Scene::generate_sample_scene()
 	VkDescriptorSetAllocateInfo allocInfo = {};
 	allocInfo.pNext = nullptr;
 	allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-	allocInfo.descriptorPool = VulkanEngine::cinstance->_descriptorPool;
+	allocInfo.descriptorPool = RenderEngine::_descriptorPool;
 	allocInfo.descriptorSetCount = 1;
-	allocInfo.pSetLayouts = &VulkanEngine::cinstance->_singleTextureSetLayout;
+	allocInfo.pSetLayouts = &RenderEngine::_singleTextureSetLayout;
 
-	vkAllocateDescriptorSets(VulkanEngine::cinstance->_device, &allocInfo, &texMaterial->albedoTexture);
+	vkAllocateDescriptorSets(RenderEngine::_device, &allocInfo, &texMaterial->albedoTexture);
 
 	VkDescriptorSetAllocateInfo allocInfo2 = {};
 	allocInfo2.pNext = nullptr;
 	allocInfo2.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-	allocInfo2.descriptorPool = VulkanEngine::cinstance->_descriptorPool;
+	allocInfo2.descriptorPool = RenderEngine::_descriptorPool;
 	allocInfo2.descriptorSetCount = 1;
-	allocInfo2.pSetLayouts = &VulkanEngine::cinstance->_singleTextureSetLayout;
+	allocInfo2.pSetLayouts = &RenderEngine::_singleTextureSetLayout;
 
-	vkAllocateDescriptorSets(VulkanEngine::cinstance->_device, &allocInfo, &untexMaterial->albedoTexture);
+	vkAllocateDescriptorSets(RenderEngine::_device, &allocInfo, &untexMaterial->albedoTexture);
 
 	//write to the descriptor set so that it points to our empire_diffuse texture
 	VkDescriptorImageInfo imageBufferInfo;
-	imageBufferInfo.sampler = VulkanEngine::cinstance->_defaultSampler;
+	imageBufferInfo.sampler = RenderEngine::_defaultSampler;
 	imageBufferInfo.imageView = VulkanEngine::cinstance->_loadedTextures["empire_diffuse"].imageView;
 	imageBufferInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
 	VkWriteDescriptorSet texture1 = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, texMaterial->albedoTexture, &imageBufferInfo, 0);
 
-	vkUpdateDescriptorSets(VulkanEngine::cinstance->_device, 1, &texture1, 0, nullptr);
+	vkUpdateDescriptorSets(RenderEngine::_device, 1, &texture1, 0, nullptr);
 
 	imageBufferInfo.imageView = VulkanEngine::cinstance->_loadedTextures["default"].imageView;
 
 	VkWriteDescriptorSet texture2 = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, untexMaterial->albedoTexture, &imageBufferInfo, 0);
 
-	vkUpdateDescriptorSets(VulkanEngine::cinstance->_device, 1, &texture2, 0, nullptr);
+	vkUpdateDescriptorSets(RenderEngine::_device, 1, &texture2, 0, nullptr);
 }
