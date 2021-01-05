@@ -89,11 +89,16 @@ AllocatedBuffer vkutil::create_buffer(VmaAllocator allocator, size_t allocSize, 
 
 	AllocatedBuffer newBuffer;
 
+	VkResult result = vmaCreateBuffer(allocator, &bufferInfo, &vmaallocInfo,
+		&newBuffer._buffer,
+		&newBuffer._allocation,
+		nullptr);
+	/*
 	VK_CHECK(vmaCreateBuffer(allocator, &bufferInfo, &vmaallocInfo,
 		&newBuffer._buffer,
 		&newBuffer._allocation,
 		nullptr));
-
+		*/
 	return newBuffer;
 }
 

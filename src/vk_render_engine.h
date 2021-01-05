@@ -13,6 +13,17 @@
 #include "vk_types.h"
 #include "vk_mesh.h"
 
+const int MAX_OBJECTS = 100;
+
+struct RenderObject;
+
+struct BlasInput {
+	VkAccelerationStructureGeometryKHR _accelerationStructureGeometry;
+	VkAccelerationStructureBuildGeometryInfoKHR _accelerationStructureBuildGeometryInfo;
+	VkAccelerationStructureBuildSizesInfoKHR _accelerationStructureBuildSizesInfo;
+	VkAccelerationStructureBuildRangeInfoKHR _accelerationStructureBuildRangeInfo;
+};
+
 struct MeshPushConstants {
 	glm::vec4 data;
 	glm::mat4 render_matrix;
@@ -21,13 +32,6 @@ struct MeshPushConstants {
 struct UploadContext {
 	VkFence _uploadFence;
 	VkCommandPool _commandPool;
-};
-
-struct Image {
-	VkImageView _view;
-	VkImage _image;
-	VmaAllocation _allocation;
-	VkFormat _format;
 };
 
 struct DeletionQueue
@@ -150,15 +154,70 @@ public:
 
 	void* deviceCreatepNextChain = nullptr;
 
+	//Pointers to functions
+	// - Raytracing function pointers
+	PFN_vkGetBufferDeviceAddressKHR vkGetBufferDeviceAddressKHR;
+	PFN_vkCreateAccelerationStructureKHR vkCreateAccelerationStructureKHR;
+	PFN_vkDestroyAccelerationStructureKHR vkDestroyAccelerationStructureKHR;
+	PFN_vkGetAccelerationStructureBuildSizesKHR vkGetAccelerationStructureBuildSizesKHR;
+	PFN_vkGetAccelerationStructureDeviceAddressKHR vkGetAccelerationStructureDeviceAddressKHR;
+	PFN_vkCmdBuildAccelerationStructuresKHR vkCmdBuildAccelerationStructuresKHR;
+	PFN_vkBuildAccelerationStructuresKHR vkBuildAccelerationStructuresKHR;
+	PFN_vkCmdTraceRaysKHR vkCmdTraceRaysKHR;
+	PFN_vkGetRayTracingShaderGroupHandlesKHR vkGetRayTracingShaderGroupHandlesKHR;
+	PFN_vkCreateRayTracingPipelinesKHR vkCreateRayTracingPipelinesKHR;
+
+	//Raytracing attributes
+	// - Acceleration Structures
+	AccelerationStructure _topLevelAS{};
+	std::vector<AccelerationStructure> _bottomLevelAS{};
+
+	//AllocatedBuffer _vertexBuffer;
+	//AllocatedBuffer _indexBuffer;
+	//std::vector<uint32_t> _indexCount;
+	std::vector<AllocatedBuffer> _transformBuffers; //for bottom AS
+	//std::vector<AllocatedBuffer> _modelBuffers;
+	std::vector<VkRayTracingShaderGroupCreateInfoKHR> _shaderGroups{};
+	//std::vector<AllocatedBuffer> _rtVertexBuffers;
+	AllocatedBuffer _raygenShaderBindingTable;
+	AllocatedBuffer _missShaderBindingTable;
+	AllocatedBuffer _hitShaderBindingTable;
+
+	VkPipeline _rayTracingPipeline;
+	VkPipelineLayout _rayTracingPipelineLayout;
+	VkDescriptorPool _rayTracingDescriptorPool;
+	VkDescriptorSetLayout _rayTracingSetLayout;
+
+
+	struct UniformData {
+		glm::mat4 viewInverse;
+		glm::mat4 projInverse;
+	} uniformData;
+
+	//storage image
+	VkImage _storageImage;
+	VkDeviceMemory _storageImageMemory;
+	VkImageView _storageImageView;
+
+
+	//init the render engine
 	void init();
 
 	//shuts down the engine
 	void cleanup();
 
+	//create acceleration structures for the current scene in the vulkan engine
+	void create_acceleration_structures();
+
 private:
+
+	//init vulkan core structures
+
 	void init_vulkan();
 
 	void init_swapchain();
+
+	//init sync and descriptor layouts
 
 	void init_command_pools();
 
@@ -167,6 +226,10 @@ private:
 	void init_descriptor_set_pool();
 
 	void init_descriptor_set_layouts();
+
+	//init raster structures
+
+	void init_raster_structures();
 
 	void init_depth_buffer();
 
@@ -180,7 +243,37 @@ private:
 
 	void init_gbuffer_descriptors();
 
+	//init ray tracing structures
+
+	void init_raytracing_structures();
+
+	void create_bottom_level_acceleration_structure();
+
+	void create_top_level_acceleration_structure();
+
+	void create_storage_image();
+
+	void create_raytracing_pipeline();
+
+	void create_shader_binding_table();
+
+	void create_raytracing_descriptor_pool();
+
+	RayTracingScratchBuffer create_scratch_buffer(VkDeviceSize size);
+
+	void delete_scratch_buffer(RayTracingScratchBuffer& scratchBuffer);
+
+	void create_acceleration_structure_buffer(AccelerationStructure& accelerationStructure, VkAccelerationStructureBuildSizesInfoKHR buildSizeInfo);
+
+	BlasInput renderable_to_vulkan_geometry(RenderObject renderable);
+
+	void build_blas(const std::vector<BlasInput>& input, VkBuildAccelerationStructureFlagsKHR flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR);
+
+	//pnext features
 	void get_enabled_features();
+
+	//imgui
+	void init_imgui();
 };
 
 class PipelineBuilder {
