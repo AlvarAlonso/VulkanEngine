@@ -948,6 +948,8 @@ void RenderEngine::init_raytracing_structures()
 	create_shader_binding_table();
 
 	create_raytracing_descriptor_pool();
+
+	create_pospo_structures();
 }
 
 void RenderEngine::create_bottom_level_acceleration_structure()
@@ -1312,6 +1314,122 @@ void RenderEngine::create_raytracing_pipeline()
 	raytracing_pipeline_info.layout = _rayTracingPipelineLayout;
 	
 	VK_CHECK(vkCreateRayTracingPipelinesKHR(_device, VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &raytracing_pipeline_info, nullptr, &_rayTracingPipeline));
+}
+
+void RenderEngine::create_pospo_structures()
+{
+	//Render pass creation
+
+	VkAttachmentDescription colorAttachment{};
+	colorAttachment.format = _swapchainImageFormat;
+	colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+	colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+	colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	colorAttachment.initialLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+	VkAttachmentReference colorReference{};
+	colorReference.attachment = 0;
+	colorReference.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+	VkSubpassDescription subpass = {};
+	subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+	subpass.colorAttachmentCount = 1;
+	subpass.pColorAttachments = &colorReference;
+
+	VkRenderPassCreateInfo render_pass_info = {};
+	render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+	render_pass_info.attachmentCount = 1;
+	render_pass_info.pAttachments = &colorAttachment;
+	render_pass_info.subpassCount = 1;
+	render_pass_info.pSubpasses = &subpass;
+	
+	VK_CHECK(vkCreateRenderPass(_device, &render_pass_info, nullptr, &pospo._renderPass));
+
+	_mainDeletionQueue.push_function([=]() {
+		vkDestroyRenderPass(_device, pospo._renderPass, nullptr);
+		});
+
+
+	//Pipeline creation
+	VkShaderModule pospoVertex;
+	if (!vkutil::load_shader_module(_device, "../shaders/light.vert.spv", &pospoVertex))
+	{
+		std::cout << "Error when building the deferred vertex shader" << std::endl;
+	}
+	else
+	{
+		std::cout << "Deferred vertex shader succesfully loaded" << endl;
+	}
+
+	VkShaderModule pospoFrag;
+	if (!vkutil::load_shader_module(_device, "../shaders/pospo.frag.spv", &pospoFrag))
+	{
+		std::cout << "Error when building the deferred frag shader" << std::endl;
+	}
+	else
+	{
+		std::cout << "Frag vertex shader succesfully loaded" << endl;
+	}
+
+	//Pospo Layout
+	VkPipelineLayoutCreateInfo pospo_pipeline_layout_info = vkinit::pipeline_layout_create_info();
+
+	pospo_pipeline_layout_info.setLayoutCount = 1;
+	pospo_pipeline_layout_info.pSetLayouts = &_singleTextureSetLayout;
+
+	VK_CHECK(vkCreatePipelineLayout(_device, &pospo_pipeline_layout_info, nullptr, &pospo._pipelineLayout));
+
+	PipelineBuilder pipelineBuilder;
+
+	//Pospo Vertex Info
+	pipelineBuilder._vertexInputInfo = vkinit::vertex_input_state_create_info();
+
+	VertexInputDescription vertexDescription = Vertex::get_vertex_description();
+	pipelineBuilder._vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertexDescription.attributes.size());
+	pipelineBuilder._vertexInputInfo.pVertexAttributeDescriptions = vertexDescription.attributes.data();
+	pipelineBuilder._vertexInputInfo.vertexBindingDescriptionCount = static_cast<uint32_t>(vertexDescription.bindings.size());
+	pipelineBuilder._vertexInputInfo.pVertexBindingDescriptions = vertexDescription.bindings.data();
+
+	//Pospo Assembly Info
+	pipelineBuilder._inputAssembly = vkinit::input_assembly_create_info(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+
+	//Viewport and Scissor
+	pipelineBuilder._viewport.x = 0.0f;
+	pipelineBuilder._viewport.y = 0.0f;
+	pipelineBuilder._viewport.width = (float)_windowExtent.width;
+	pipelineBuilder._viewport.height = (float)_windowExtent.height;
+	pipelineBuilder._viewport.minDepth = 0.0f;
+	pipelineBuilder._viewport.maxDepth = 1.0f;
+
+	pipelineBuilder._scissor.offset = { 0, 0 };
+	pipelineBuilder._scissor.extent = _windowExtent;
+
+	//Pospo Depth Stencil
+	pipelineBuilder._depthStencil = vkinit::depth_stencil_create_info(true, true, VK_COMPARE_OP_LESS_OR_EQUAL);
+
+	//Pospo Rasterizer
+	pipelineBuilder._rasterizer = vkinit::rasterization_state_create_info(VK_POLYGON_MODE_FILL);
+
+	//Pospo Multisampling
+	pipelineBuilder._multisampling = vkinit::multisampling_state_create_info();
+
+	//Pospo Color Blend Attachment
+	pipelineBuilder._colorBlendAttachment.push_back(vkinit::color_blend_attachment_state());
+	pipelineBuilder._colorBlendAttachment.push_back(vkinit::color_blend_attachment_state());
+	pipelineBuilder._colorBlendAttachment.push_back(vkinit::color_blend_attachment_state());
+
+	//Pospo Shaders
+	pipelineBuilder._shaderStages.push_back(
+		vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT, pospoVertex));
+	pipelineBuilder._shaderStages.push_back(
+		vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, pospoFrag));
+
+	//Pospo Layout
+	pipelineBuilder._pipelineLayout = pospo._pipelineLayout;
+
+	pospo._pipeline = pipelineBuilder.build_pipeline(_device, pospo._renderPass);
 }
 
 void RenderEngine::create_shader_binding_table()

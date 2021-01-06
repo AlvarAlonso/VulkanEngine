@@ -192,6 +192,7 @@
     <None Include="..\shaders\light.frag" />
     <None Include="..\shaders\light.vert" />
     <None Include="..\shaders\miss.rmiss" />
+    <None Include="..\shaders\pospo.frag" />
     <None Include="..\shaders\raygen.rgen" />
     <None Include="..\shaders\textured_lit.frag" />
     <None Include="..\shaders\tri_mesh.vert" />

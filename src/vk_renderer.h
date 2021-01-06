@@ -116,6 +116,8 @@ private:
 
 	void record_raytracing_command_buffer(VkCommandBuffer cmd, uint32_t swapchainImageIndex);
 
+	void record_pospo_command_buffer(VkCommandBuffer cmd, uint32_t swapchainImageIndex);
+
 	//create commands and sync structures
 
 	void init_commands();

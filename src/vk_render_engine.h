@@ -17,6 +17,13 @@ const int MAX_OBJECTS = 100;
 
 struct RenderObject;
 
+struct Pospo {
+	VkPipeline _pipeline;
+	VkPipelineLayout _pipelineLayout;
+	VkRenderPass _renderPass;
+	std::vector<VkFramebuffer> _framebuffers;
+};
+
 struct BlasInput {
 	VkAccelerationStructureGeometryKHR _accelerationStructureGeometry;
 	VkAccelerationStructureBuildGeometryInfoKHR _accelerationStructureBuildGeometryInfo;
@@ -183,6 +190,8 @@ public:
 	AllocatedBuffer _missShaderBindingTable;
 	AllocatedBuffer _hitShaderBindingTable;
 
+	Pospo pospo;
+
 	VkPipeline _rayTracingPipeline;
 	VkPipelineLayout _rayTracingPipelineLayout;
 	VkDescriptorPool _rayTracingDescriptorPool;
@@ -254,6 +263,8 @@ private:
 	void create_storage_image();
 
 	void create_raytracing_pipeline();
+
+	void create_pospo_structures();
 
 	void create_shader_binding_table();
 

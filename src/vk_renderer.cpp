@@ -413,6 +413,10 @@ void Renderer::record_raytracing_command_buffer(VkCommandBuffer cmd, uint32_t sw
 	VK_CHECK(vkEndCommandBuffer(cmd));
 }
 
+void Renderer::record_pospo_command_buffer(VkCommandBuffer cmd, uint32_t swapchainImageIndex)
+{
+}
+
 //raster
 
 void Renderer::init_commands()
@@ -829,7 +833,6 @@ void Renderer::render_deferred()
 
 	//request image from the swapchain
 	uint32_t swapchainImageIndex;
-	//VK_CHECK(vkAcquireNextImageKHR(_device, _swapchain, 0, get_current_frame()._presentSemaphore, nullptr, &swapchainImageIndex));
 	VkResult result = vkAcquireNextImageKHR(_device, re->_swapchain, 0, _frames[get_current_frame_index()]._presentSemaphore, nullptr, &swapchainImageIndex);
 
 	int idx = get_current_frame_index();
