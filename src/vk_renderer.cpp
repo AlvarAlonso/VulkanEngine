@@ -34,7 +34,8 @@ Renderer::Renderer()
 	_allocator = re->_allocator;
 	_graphicsQueue = re->_graphicsQueue;
 	_graphicsQueueFamily = re->_graphicsQueueFamily;
-	_renderMode = RENDER_MODE_DEFERRED;
+	_renderMode = RENDER_MODE_RAYTRACING;
+	re->reset_imgui(_renderMode);
 
 	init_renderer();
 }
@@ -49,6 +50,23 @@ SDL_Window* Renderer::get_sdl_window()
 	return re->_window;
 }
 
+void Renderer::switch_render_mode()
+{
+	if (_renderMode == RENDER_MODE_RAYTRACING)
+	{
+		re->reset_imgui(_renderMode);
+	}
+
+	_renderMode++;
+
+	if(_renderMode == RENDER_MODE_RAYTRACING)
+	{
+		re->reset_imgui(_renderMode);
+	}
+
+	//More things to add to optimize resources (only create structures related to the current render mode).
+}
+
 void Renderer::init_renderer()
 {
 	init_commands();
@@ -60,7 +78,7 @@ void Renderer::init_renderer()
 	update_uniform_buffers();
 	//create_raytracing_descriptor_sets();
 
-	deferred_quad.create_quad(1);
+	render_quad.create_quad(1);
 }
 
 void Renderer::draw_scene()
@@ -77,6 +95,7 @@ void Renderer::draw_scene()
 	{
 		re->create_acceleration_structures();
 		create_raytracing_descriptor_sets();
+		record_raytracing_command_buffer();
 		areAccelerationStructuresInit = true;
 	}
 	
@@ -225,11 +244,32 @@ void Renderer::create_raytracing_descriptor_sets()
 	};
 
 	vkUpdateDescriptorSets(_device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, VK_NULL_HANDLE);
+
+	//pospo descriptor
+	VkDescriptorSetAllocateInfo pospo_alloc_info = {};
+	pospo_alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	pospo_alloc_info.pNext = nullptr;
+	pospo_alloc_info.descriptorPool = re->_rayTracingDescriptorPool;
+	pospo_alloc_info.descriptorSetCount = 1;
+	pospo_alloc_info.pSetLayouts = &re->_singleTextureSetLayout;
+
+	VkResult result = vkAllocateDescriptorSets(_device, &pospo_alloc_info, &re->pospo._textureSet);
+
+	VkDescriptorImageInfo pospoImageInfo = {};
+	pospoImageInfo.sampler = re->_defaultSampler;
+	pospoImageInfo.imageView = re->_storageImageView;
+	pospoImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+	VkWriteDescriptorSet pospoWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, re->pospo._textureSet, &pospoImageInfo, 0);
+
+	vkUpdateDescriptorSets(_device, 1, &pospoWrite, 0, VK_NULL_HANDLE);
 }
 
-void Renderer::record_raytracing_command_buffer(VkCommandBuffer cmd, uint32_t swapchainImageIndex)
+void Renderer::record_raytracing_command_buffer()
 {
-	VkCommandBufferBeginInfo cmdBufInfo = vkinit::command_buffer_begin_info();
+	VkCommandBuffer cmd = _raytracingCommandBuffer;
+
+	VkCommandBufferBeginInfo cmdBufInfo = vkinit::command_buffer_begin_info(VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
 
 	VkImageSubresourceRange subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
 
@@ -295,36 +335,8 @@ void Renderer::record_raytracing_command_buffer(VkCommandBuffer cmd, uint32_t sw
 	{
 		VkImageMemoryBarrier barrier = {};
 		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-		barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		barrier.image = re->_swapchainImages[swapchainImageIndex];
-		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		barrier.subresourceRange.baseMipLevel = 0;
-		barrier.subresourceRange.levelCount = 1;
-		barrier.subresourceRange.baseArrayLayer = 0;
-		barrier.subresourceRange.layerCount = 1;
-
-		barrier.srcAccessMask = 0;
-		barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-
-		vkCmdPipelineBarrier(
-			cmd,
-			VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-			0,
-			0, nullptr,
-			0, nullptr,
-			1, &barrier
-		);
-	}
-
-	// Prepare ray tracing output image as transfer source
-	{
-		VkImageMemoryBarrier barrier = {};
-		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
 		barrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
-		barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+		barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 		barrier.image = re->_storageImage;
@@ -335,70 +347,7 @@ void Renderer::record_raytracing_command_buffer(VkCommandBuffer cmd, uint32_t sw
 		barrier.subresourceRange.layerCount = 1;
 
 		barrier.srcAccessMask = 0;
-		barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-
-		vkCmdPipelineBarrier(
-			cmd,
-			VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-			0,
-			0, nullptr,
-			0, nullptr,
-			1, &barrier
-		);
-	}
-
-	VkImageCopy copyRegion{};
-	copyRegion.srcSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
-	copyRegion.srcOffset = { 0, 0, 0 };
-	copyRegion.dstSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
-	copyRegion.dstOffset = { 0, 0, 0 };
-	copyRegion.extent = { re->_windowExtent.width, re->_windowExtent.height, 1 };
-	vkCmdCopyImage(cmd, re->_storageImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, re->_swapchainImages[swapchainImageIndex], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
-		
-	// Transition swap chain image back for presentation
-	{
-		VkImageMemoryBarrier barrier = {};
-		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-		barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-		barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		barrier.image = re->_swapchainImages[swapchainImageIndex];
-		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		barrier.subresourceRange.baseMipLevel = 0;
-		barrier.subresourceRange.levelCount = 1;
-		barrier.subresourceRange.baseArrayLayer = 0;
-		barrier.subresourceRange.layerCount = 1;
-
-		barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-		barrier.dstAccessMask = 0;
-
-		vkCmdPipelineBarrier(
-			cmd,
-			VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-			0,
-			0, nullptr,
-			0, nullptr,
-			1, &barrier
-		);
-	}
-	
-	// Transition ray tracing output image back to general layout
-	{
-		VkImageMemoryBarrier barrier = {};
-		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-		barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-		barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
-		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		barrier.image = re->_storageImage;
-		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		barrier.subresourceRange.baseMipLevel = 0;
-		barrier.subresourceRange.levelCount = 1;
-		barrier.subresourceRange.baseArrayLayer = 0;
-		barrier.subresourceRange.layerCount = 1;
-
-		barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+		barrier.dstAccessMask = VK_ACCESS_INPUT_ATTACHMENT_READ_BIT;
 
 		vkCmdPipelineBarrier(
 			cmd,
@@ -415,6 +364,58 @@ void Renderer::record_raytracing_command_buffer(VkCommandBuffer cmd, uint32_t sw
 
 void Renderer::record_pospo_command_buffer(VkCommandBuffer cmd, uint32_t swapchainImageIndex)
 {
+	VkCommandBufferBeginInfo cmdBeginInfo = vkinit::command_buffer_begin_info(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
+
+	VK_CHECK(vkBeginCommandBuffer(cmd, &cmdBeginInfo));
+
+	VkClearValue clearValue = {0.1f, 0.1f, 0.1f, 1.0f};
+
+	VkRenderPassBeginInfo pospo_begin_info = vkinit::renderpass_begin_info(re->pospo._renderPass, re->_windowExtent, re->pospo._framebuffers[swapchainImageIndex]);
+	pospo_begin_info.clearValueCount = 1;
+	pospo_begin_info.pClearValues = &clearValue;
+
+	vkCmdBeginRenderPass(cmd, &pospo_begin_info, VK_SUBPASS_CONTENTS_INLINE);
+
+	vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, re->pospo._pipeline);
+
+	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, re->pospo._pipelineLayout, 0, 1, &re->pospo._textureSet, 0, nullptr);
+
+	VkDeviceSize offset = 0;
+	vkCmdBindVertexBuffers(cmd, 0, 1, &render_quad._vertexBuffer._buffer, &offset);
+	vkCmdBindIndexBuffer(cmd, render_quad._indexBuffer._buffer, 0, VK_INDEX_TYPE_UINT32);
+
+	vkCmdDrawIndexed(cmd, static_cast<uint32_t>(render_quad._indices.size()), 1, 0, 0, 0);
+
+	ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
+
+	vkCmdEndRenderPass(cmd);
+
+	VkImageMemoryBarrier barrier = {};
+	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	barrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.image = re->_storageImage;
+	barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	barrier.subresourceRange.baseMipLevel = 0;
+	barrier.subresourceRange.levelCount = 1;
+	barrier.subresourceRange.baseArrayLayer = 0;
+	barrier.subresourceRange.layerCount = 1;
+
+	barrier.srcAccessMask = 0;
+	barrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+
+	vkCmdPipelineBarrier(
+		cmd,
+		VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+		0,
+		0, nullptr,
+		0, nullptr,
+		1, &barrier
+	);
+
+	VK_CHECK(vkEndCommandBuffer(cmd));
 }
 
 //raster
@@ -442,6 +443,9 @@ void Renderer::init_commands()
 
 	VkCommandBufferAllocateInfo cmdAllocInfo = vkinit::command_buffer_allocate_info(_deferredCommandPool, 1);
 	VK_CHECK(vkAllocateCommandBuffers(_device, &cmdAllocInfo, &_deferredCommandBuffer));
+
+	//raytracing command buffer
+	VK_CHECK(vkAllocateCommandBuffers(_device, &cmdAllocInfo, &_raytracingCommandBuffer));
 
 	re->_mainDeletionQueue.push_function([=]() {
 		vkDestroyCommandPool(_device, _deferredCommandPool, nullptr);
@@ -895,22 +899,36 @@ void Renderer::render_raytracing()
 
 	update_uniform_buffers();
 
-	VkCommandBuffer cmd = _frames[get_current_frame_index()]._mainCommandBuffer;
+	//VK_CHECK(vkResetCommandBuffer(_raytracingCommandBuffer, 0));
 
-	VK_CHECK(vkResetCommandBuffer(cmd, 0));
-
-	record_raytracing_command_buffer(cmd, swapchainImageIndex);
+	//record_raytracing_command_buffer();
 
 	VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
 
-	VkSubmitInfo submit_info = vkinit::submit_info(&cmd);
+	VkSubmitInfo submit_info = vkinit::submit_info(&_raytracingCommandBuffer);
 	submit_info.pWaitDstStageMask = waitStages;
 	submit_info.waitSemaphoreCount = 1;
 	submit_info.pWaitSemaphores = &_frames[get_current_frame_index()]._presentSemaphore;
 	submit_info.signalSemaphoreCount = 1;
-	submit_info.pSignalSemaphores = &_frames[get_current_frame_index()]._renderSemaphore;
+	submit_info.pSignalSemaphores = &_offscreenSemaphore;
 
-	VK_CHECK(vkQueueSubmit(_graphicsQueue, 1, &submit_info, _frames[get_current_frame_index()]._renderFence));
+	VK_CHECK(vkQueueSubmit(_graphicsQueue, 1, &submit_info, nullptr));
+
+	VkCommandBuffer cmd = _frames[get_current_frame_index()]._mainCommandBuffer;
+
+	record_pospo_command_buffer(cmd, swapchainImageIndex);
+
+	VkSubmitInfo pospo_submit_info = vkinit::submit_info(&cmd);
+
+	VkPipelineStageFlags pospoWaitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
+
+	pospo_submit_info.pWaitDstStageMask = pospoWaitStages;
+	pospo_submit_info.waitSemaphoreCount = 1;
+	pospo_submit_info.pWaitSemaphores = &_offscreenSemaphore;
+	pospo_submit_info.signalSemaphoreCount = 1;
+	pospo_submit_info.pSignalSemaphores = &_frames[get_current_frame_index()]._renderSemaphore;
+
+	VK_CHECK(vkQueueSubmit(_graphicsQueue, 1, &pospo_submit_info, _frames[get_current_frame_index()]._renderFence));
 
 	VkPresentInfoKHR presentInfo = {};
 	presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
@@ -1008,10 +1026,10 @@ void Renderer::draw_deferred(VkCommandBuffer cmd, int imageIndex)
 
 	//deferred quad
 	VkDeviceSize offset = 0;
-	vkCmdBindVertexBuffers(cmd, 0, 1, &deferred_quad._vertexBuffer._buffer, &offset);
-	vkCmdBindIndexBuffer(cmd, deferred_quad._indexBuffer._buffer, 0, VK_INDEX_TYPE_UINT32);
+	vkCmdBindVertexBuffers(cmd, 0, 1, &render_quad._vertexBuffer._buffer, &offset);
+	vkCmdBindIndexBuffer(cmd, render_quad._indexBuffer._buffer, 0, VK_INDEX_TYPE_UINT32);
 
-	vkCmdDrawIndexed(cmd, static_cast<uint32_t>(deferred_quad._indices.size()), 1, 0, 0, 0);
+	vkCmdDrawIndexed(cmd, static_cast<uint32_t>(render_quad._indices.size()), 1, 0, 0, 0);
 
 	ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
 

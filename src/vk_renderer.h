@@ -9,12 +9,6 @@ struct RenderEngine;
 
 constexpr unsigned int FRAME_OVERLAP = 2;
 
-enum RenderMode {
-	RENDER_MODE_FORWARD = 0,
-	RENDER_MODE_DEFERRED,
-	RENDER_MODE_RAYTRACING
-};
-
 RenderMode operator++(RenderMode& m, int);
 
 struct GPUObjectData {
@@ -49,9 +43,11 @@ public:
 
 	SDL_Window* get_sdl_window();
 
+	void switch_render_mode();
+
 	void draw_scene();
 
-	Mesh deferred_quad;
+	Mesh render_quad;
 
 	AllocatedBuffer _camBuffer;
 	AllocatedBuffer _objectBuffer;
@@ -63,6 +59,7 @@ public:
 	VkCommandPool _deferredCommandPool;
 
 	VkCommandBuffer _deferredCommandBuffer;
+	VkCommandBuffer _raytracingCommandBuffer;
 	VkSemaphore _offscreenSemaphore;
 
 	VkDescriptorSet _camDescriptorSet;
@@ -114,7 +111,7 @@ private:
 
 	void create_raytracing_descriptor_sets();
 
-	void record_raytracing_command_buffer(VkCommandBuffer cmd, uint32_t swapchainImageIndex);
+	void record_raytracing_command_buffer();
 
 	void record_pospo_command_buffer(VkCommandBuffer cmd, uint32_t swapchainImageIndex);
 

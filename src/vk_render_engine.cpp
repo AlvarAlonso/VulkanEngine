@@ -76,8 +76,6 @@ void RenderEngine::init()
 	init_raster_structures();
 	init_raytracing_structures();
 
-	init_imgui();
-
 	_isInitialized = true;
 }
 
@@ -1117,7 +1115,7 @@ void RenderEngine::create_storage_image()
 		1
 	};
 
-	VkImageCreateInfo image = vkinit::image_create_info(VK_FORMAT_B8G8R8A8_UNORM, VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_STORAGE_BIT, extent);
+	VkImageCreateInfo image = vkinit::image_create_info(VK_FORMAT_B8G8R8A8_UNORM, VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, extent);
 	image.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 	VK_CHECK(vkCreateImage(_device, &image, nullptr, &_storageImage));
 
@@ -1327,7 +1325,8 @@ void RenderEngine::create_pospo_structures()
 	colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 	colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 	colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-	colorAttachment.initialLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+	colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
 	VkAttachmentReference colorReference{};
 	colorReference.attachment = 0;
@@ -1417,8 +1416,6 @@ void RenderEngine::create_pospo_structures()
 
 	//Pospo Color Blend Attachment
 	pipelineBuilder._colorBlendAttachment.push_back(vkinit::color_blend_attachment_state());
-	pipelineBuilder._colorBlendAttachment.push_back(vkinit::color_blend_attachment_state());
-	pipelineBuilder._colorBlendAttachment.push_back(vkinit::color_blend_attachment_state());
 
 	//Pospo Shaders
 	pipelineBuilder._shaderStages.push_back(
@@ -1430,6 +1427,35 @@ void RenderEngine::create_pospo_structures()
 	pipelineBuilder._pipelineLayout = pospo._pipelineLayout;
 
 	pospo._pipeline = pipelineBuilder.build_pipeline(_device, pospo._renderPass);
+
+
+	//pospo framebuffers
+	VkFramebufferCreateInfo sc_fb_info = {};
+	sc_fb_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+	sc_fb_info.pNext = nullptr;
+
+	sc_fb_info.renderPass = pospo._renderPass;
+	sc_fb_info.attachmentCount = 1;
+	sc_fb_info.width = _windowExtent.width;
+	sc_fb_info.height = _windowExtent.height;
+	sc_fb_info.layers = 1;
+
+	const uint32_t swapchain_imagecount = _swapchainImages.size();
+	pospo._framebuffers = std::vector<VkFramebuffer>(swapchain_imagecount);
+
+	for (int i = 0; i < swapchain_imagecount; i++)
+	{
+		VkImageView attachment = _swapchainImageViews[i];
+
+		sc_fb_info.attachmentCount = 1;
+		sc_fb_info.pAttachments = &attachment;
+
+		VK_CHECK(vkCreateFramebuffer(_device, &sc_fb_info, nullptr, &pospo._framebuffers[i]));
+
+		_mainDeletionQueue.push_function([=]() {
+			vkDestroyFramebuffer(_device, _framebuffers[i], nullptr);
+			});
+	}
 }
 
 void RenderEngine::create_shader_binding_table()
@@ -1479,14 +1505,16 @@ void RenderEngine::create_raytracing_descriptor_pool()
 	{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1},
 	{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1},
 	{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1},
-	{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1}
+	{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1},
+	{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1},
+	{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1}
 	};
 
 	VkDescriptorPoolCreateInfo dp_info = {};
 	dp_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
 	dp_info.pNext = nullptr;
 	dp_info.flags = 0;
-	dp_info.maxSets = 1;
+	dp_info.maxSets = 2;
 	dp_info.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
 	dp_info.pPoolSizes = poolSizes.data();
 
@@ -1740,7 +1768,7 @@ void RenderEngine::get_enabled_features()
 	deviceCreatepNextChain = &_enabledAccelerationStructureFeatures;
 }
 
-void RenderEngine::init_imgui()
+void RenderEngine::init_imgui(VkRenderPass renderPass)
 {
 	//Create Descriptor Pool for IMGUI
 	VkDescriptorPoolSize pool_sizes[] =
@@ -1786,7 +1814,7 @@ void RenderEngine::init_imgui()
 	init_info.MinImageCount = 3;
 	init_info.ImageCount = 3;
 
-	ImGui_ImplVulkan_Init(&init_info, _defaultRenderPass);
+	ImGui_ImplVulkan_Init(&init_info, renderPass);
 
 	//execute a gpu command to upload imgui font textures
 	vkupload::immediate_submit([&](VkCommandBuffer cmd) {
@@ -1824,6 +1852,18 @@ void RenderEngine::create_acceleration_structures()
 {
 	create_bottom_level_acceleration_structure();
 	create_top_level_acceleration_structure();
+}
+
+void RenderEngine::reset_imgui(RenderMode renderMode)
+{
+	if(renderMode == RENDER_MODE_FORWARD || renderMode == RENDER_MODE_DEFERRED)
+	{
+		init_imgui(_defaultRenderPass);
+	}
+	else
+	{
+		init_imgui(pospo._renderPass);
+	}
 }
 
 VkPipeline PipelineBuilder::build_pipeline(VkDevice device, VkRenderPass pass)

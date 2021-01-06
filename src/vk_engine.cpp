@@ -83,7 +83,6 @@ void VulkanEngine::run()
 			{
 				if (e.key.keysym.sym == SDLK_SPACE)
 				{
-					renderer->_renderMode++;
 					_pipelineSelected++;
 					if (_pipelineSelected > 2)
 					{

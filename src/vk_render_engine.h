@@ -17,10 +17,17 @@ const int MAX_OBJECTS = 100;
 
 struct RenderObject;
 
+enum RenderMode {
+	RENDER_MODE_FORWARD = 0,
+	RENDER_MODE_DEFERRED,
+	RENDER_MODE_RAYTRACING
+};
+
 struct Pospo {
 	VkPipeline _pipeline;
 	VkPipelineLayout _pipelineLayout;
 	VkRenderPass _renderPass;
+	VkDescriptorSet _textureSet;
 	std::vector<VkFramebuffer> _framebuffers;
 };
 
@@ -218,6 +225,8 @@ public:
 	//create acceleration structures for the current scene in the vulkan engine
 	void create_acceleration_structures();
 
+	void reset_imgui(RenderMode renderMode);
+
 private:
 
 	//init vulkan core structures
@@ -284,7 +293,7 @@ private:
 	void get_enabled_features();
 
 	//imgui
-	void init_imgui();
+	void init_imgui(VkRenderPass renderPass);
 };
 
 class PipelineBuilder {
