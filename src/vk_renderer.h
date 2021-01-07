@@ -38,6 +38,8 @@ public:
 	RenderMode _renderMode;
 
 	Renderer();
+
+	Scene* currentScene;
 	
 	void cleanup();
 
@@ -51,6 +53,7 @@ public:
 
 	AllocatedBuffer _camBuffer;
 	AllocatedBuffer _objectBuffer;
+	AllocatedBuffer _sceneBuffer;
 
 	FrameData _frames[FRAME_OVERLAP];
 

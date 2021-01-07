@@ -10,6 +10,7 @@
 
 #include "vk_initializers.h"
 #include "vk_utils.h"
+#include "vk_scene.h"
 
 #include "VkBootstrap.h"
 
@@ -603,14 +604,6 @@ void RenderEngine::init_pipelines()
 		//mesh layout
 		VkPipelineLayoutCreateInfo mesh_pipeline_layout_info = vkinit::pipeline_layout_create_info();
 
-		VkPushConstantRange push_constant;
-		push_constant.offset = 0;
-		push_constant.size = sizeof(MeshPushConstants);
-		push_constant.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
-		mesh_pipeline_layout_info.pPushConstantRanges = &push_constant;
-		mesh_pipeline_layout_info.pushConstantRangeCount = 1;
-
 		std::array<VkDescriptorSetLayout, 3> setLayouts = {
 			_globalSetLayout,
 			_objectSetLayout,
@@ -950,15 +943,15 @@ void RenderEngine::init_raytracing_structures()
 	create_pospo_structures();
 }
 
-void RenderEngine::create_bottom_level_acceleration_structure()
+void RenderEngine::create_bottom_level_acceleration_structure(const Scene& scene)
 {
 	std::vector<BlasInput> allBlas;
-	allBlas.reserve(VulkanEngine::cinstance->_renderables.size());
+	allBlas.reserve(scene._renderables.size());
 
 	_bottomLevelAS.reserve(allBlas.size());
 	_transformBuffers.reserve(allBlas.size());
 
-	for (const auto& renderable : VulkanEngine::cinstance->_renderables)
+	for (const auto& renderable : scene._renderables)
 	{
 		auto blas = renderable_to_vulkan_geometry(renderable);
 		allBlas.push_back(blas);
@@ -967,14 +960,14 @@ void RenderEngine::create_bottom_level_acceleration_structure()
 	build_blas(allBlas);
 }
 
-void RenderEngine::create_top_level_acceleration_structure()
+void RenderEngine::create_top_level_acceleration_structure(const Scene& scene)
 {
 	std::vector<VkAccelerationStructureInstanceKHR> instances;
-	instances.reserve(VulkanEngine::cinstance->_renderables.size());
+	instances.reserve(scene._renderables.size());
 
-	for (int i = 0; i < VulkanEngine::cinstance->_renderables.size(); i++)
+	for (int i = 0; i < scene._renderables.size(); i++)
 	{
-		glm::mat4 model = glm::transpose(VulkanEngine::cinstance->_renderables[i]._model);
+		glm::mat4 model = glm::transpose(scene._renderables[i]._model);
 
 		VkTransformMatrixKHR transformMatrix = {
 			model[0].x, model[0].y, model[0].z, model[0].w,
@@ -1201,13 +1194,20 @@ void RenderEngine::create_raytracing_pipeline()
 	transformBufferBinding.descriptorCount = 2; //HARDCODED
 	transformBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
+	VkDescriptorSetLayoutBinding sceneBufferBinding{};
+	sceneBufferBinding.binding = 6;
+	sceneBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	sceneBufferBinding.descriptorCount = 1;
+	sceneBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
+
 	std::vector<VkDescriptorSetLayoutBinding> bindings({
 		accelerationStructureLayoutBinding,
 		resultImageLayoutBinding,
 		uniformBufferBinding,
 		vertexBufferBinding,
 		indexBufferBinding,
-		transformBufferBinding
+		transformBufferBinding,
+		sceneBufferBinding
 		});
 
 	VkDescriptorSetLayoutCreateInfo desc_set_layout_info{};
@@ -1499,6 +1499,7 @@ void RenderEngine::create_shader_binding_table()
 
 void RenderEngine::create_raytracing_descriptor_pool()
 {
+	//used by raytracing and also pospo
 	std::vector<VkDescriptorPoolSize> poolSizes = {
 	{VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1},
 	{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1},
@@ -1507,7 +1508,8 @@ void RenderEngine::create_raytracing_descriptor_pool()
 	{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1},
 	{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1},
 	{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1},
-	{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1}
+	{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1},
+	{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1}
 	};
 
 	VkDescriptorPoolCreateInfo dp_info = {};
@@ -1848,10 +1850,10 @@ void RenderEngine::cleanup()
 	}
 }
 
-void RenderEngine::create_acceleration_structures()
+void RenderEngine::create_acceleration_structures(const Scene& scene)
 {
-	create_bottom_level_acceleration_structure();
-	create_top_level_acceleration_structure();
+	create_bottom_level_acceleration_structure(scene);
+	create_top_level_acceleration_structure(scene);
 }
 
 void RenderEngine::reset_imgui(RenderMode renderMode)

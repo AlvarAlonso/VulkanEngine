@@ -40,7 +40,8 @@ void VulkanEngine::init()
 
 	scene = new Scene();
 	scene->generate_sample_scene();
-	_renderables = scene->_renderables;
+	renderer->currentScene = scene;
+	//_renderables = scene->_renderables;
 
 	//everything went fine
 	_isInitialized = true;

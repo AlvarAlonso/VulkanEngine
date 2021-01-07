@@ -38,7 +38,7 @@ public:
 	Camera* camera;
 	bool mouse_locked = true;
 
-	std::vector<RenderObject> _renderables;
+	//std::vector<RenderObject> _renderables;
 
 	std::unordered_map<std::string, Material> _materials;
 	std::unordered_map<std::string, Mesh> _meshes;

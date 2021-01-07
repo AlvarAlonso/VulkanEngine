@@ -76,24 +76,29 @@ void Renderer::init_renderer()
 
 	create_uniform_buffer();
 	update_uniform_buffers();
-	//create_raytracing_descriptor_sets();
 
 	render_quad.create_quad(1);
 }
 
 void Renderer::draw_scene()
 {
+	if(currentScene == nullptr)
+	{
+		std::cout << "ERROR: The current scene in the renderer is null. Set the scene from the engine before attempting to draw!" << std::endl;
+		std::abort();
+	}
+
 	ImGui::Render();
 
 	if(!isDeferredCommandInit)
 	{
-		record_deferred_command_buffers(VulkanEngine::cinstance->_renderables.data(), VulkanEngine::cinstance->_renderables.size());
+		record_deferred_command_buffers(currentScene->_renderables.data(), currentScene->_renderables.size());
 		isDeferredCommandInit = true;
 	}
 
 	if(_renderMode == RENDER_MODE_RAYTRACING && !areAccelerationStructuresInit)
 	{
-		re->create_acceleration_structures();
+		re->create_acceleration_structures(*currentScene);
 		create_raytracing_descriptor_sets();
 		record_raytracing_command_buffer();
 		areAccelerationStructuresInit = true;
@@ -138,7 +143,6 @@ void Renderer::update_uniform_buffers()
 
 void Renderer::create_raytracing_descriptor_sets()
 {
-	//es queda al renderer
 	VkDescriptorSetAllocateInfo alloc_info = {};
 	alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
 	alloc_info.pNext = nullptr;
@@ -175,7 +179,19 @@ void Renderer::create_raytracing_descriptor_sets()
 	std::vector<VkDescriptorBufferInfo> indicesBufferInfos;
 	std::vector<VkDescriptorBufferInfo> transformBufferInfos;
 
-	std::vector<RenderObject>& renderables = VulkanEngine::cinstance->_renderables;
+	_sceneBuffer = vkutil::create_buffer(_allocator, currentScene->_lights.size() * sizeof(Light), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+
+	VkDescriptorBufferInfo sceneBufferDescriptor{};
+	sceneBufferDescriptor.offset = 0;
+	sceneBufferDescriptor.buffer = _sceneBuffer._buffer;
+	sceneBufferDescriptor.range = currentScene->_lights.size() * sizeof(Light);
+
+	void* data;
+	vmaMapMemory(_allocator, _sceneBuffer._allocation, &data);
+	memcpy(data, currentScene->_lights.data(), currentScene->_lights.size() * sizeof(Light));
+	vmaUnmapMemory(_allocator, _sceneBuffer._allocation);
+
+	std::vector<RenderObject>& renderables = currentScene->_renderables;
 
 	verticesBufferInfos.reserve(renderables.size());
 	indicesBufferInfos.reserve(renderables.size());
@@ -233,6 +249,7 @@ void Renderer::create_raytracing_descriptor_sets()
 	VkWriteDescriptorSet vertexBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rayTracingDescriptorSet, verticesBufferInfos.data(), 3, renderables.size());
 	VkWriteDescriptorSet indexBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rayTracingDescriptorSet, indicesBufferInfos.data(), 4, renderables.size());
 	VkWriteDescriptorSet transformBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rayTracingDescriptorSet, transformBufferInfos.data(), 5, renderables.size());
+	VkWriteDescriptorSet sceneBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, _rayTracingDescriptorSet, &sceneBufferDescriptor, 6);
 
 	std::vector<VkWriteDescriptorSet> writeDescriptorSets = {
 		accelerationStructureWrite,
@@ -240,7 +257,8 @@ void Renderer::create_raytracing_descriptor_sets()
 		uniformBufferWrite,
 		vertexBufferWrite,
 		indexBufferWrite,
-		transformBufferWrite
+		transformBufferWrite,
+		sceneBufferWrite
 	};
 
 	vkUpdateDescriptorSets(_device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, VK_NULL_HANDLE);
@@ -795,7 +813,7 @@ void Renderer::render_forward()
 
 	vkCmdBeginRenderPass(cmd, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-	draw_forward(cmd, VulkanEngine::cinstance->_renderables.data(), VulkanEngine::cinstance->_renderables.size());
+	draw_forward(cmd, currentScene->_renderables.data(), currentScene->_renderables.size());
 
 	vkCmdEndRenderPass(cmd);
 
@@ -842,7 +860,7 @@ void Renderer::render_deferred()
 	int idx = get_current_frame_index();
 	VkCommandBuffer cmd = _frames[get_current_frame_index()]._mainCommandBuffer;
 
-	update_descriptors(VulkanEngine::cinstance->_renderables.data(), VulkanEngine::cinstance->_renderables.size());
+	update_descriptors(currentScene->_renderables.data(), currentScene->_renderables.size());
 
 	draw_deferred(cmd, swapchainImageIndex);
 

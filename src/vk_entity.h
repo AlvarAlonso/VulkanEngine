@@ -25,11 +25,11 @@ public:
 	Material* _material;
 };
 
-class Light : public Entity
+class Light
 {
 public:
 	Light();
 
-	float _intensity;
-	float _maxDist;
+	glm::vec4 _position;
+	glm::vec4 _color;
 };

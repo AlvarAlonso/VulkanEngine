@@ -16,6 +16,7 @@
 const int MAX_OBJECTS = 100;
 
 struct RenderObject;
+class Scene;
 
 enum RenderMode {
 	RENDER_MODE_FORWARD = 0,
@@ -36,11 +37,6 @@ struct BlasInput {
 	VkAccelerationStructureBuildGeometryInfoKHR _accelerationStructureBuildGeometryInfo;
 	VkAccelerationStructureBuildSizesInfoKHR _accelerationStructureBuildSizesInfo;
 	VkAccelerationStructureBuildRangeInfoKHR _accelerationStructureBuildRangeInfo;
-};
-
-struct MeshPushConstants {
-	glm::vec4 data;
-	glm::mat4 render_matrix;
 };
 
 struct UploadContext {
@@ -223,7 +219,7 @@ public:
 	void cleanup();
 
 	//create acceleration structures for the current scene in the vulkan engine
-	void create_acceleration_structures();
+	void create_acceleration_structures(const Scene& scene);
 
 	void reset_imgui(RenderMode renderMode);
 
@@ -265,9 +261,9 @@ private:
 
 	void init_raytracing_structures();
 
-	void create_bottom_level_acceleration_structure();
+	void create_bottom_level_acceleration_structure(const Scene& scene);
 
-	void create_top_level_acceleration_structure();
+	void create_top_level_acceleration_structure(const Scene& scene);
 
 	void create_storage_image();
 

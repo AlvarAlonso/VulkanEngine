@@ -11,8 +11,8 @@ RenderObject::RenderObject() : Entity()
 	_material = nullptr;
 }
 
-Light::Light() : Entity()
+Light::Light()
 {
-	_intensity = 1.0f;
-	_maxDist = 5.0f;
+	_position = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
+	_color = glm::vec4(1.0f, 1.0f, 1.0f, 10.0f);
 }

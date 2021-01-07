@@ -9,19 +9,26 @@ Scene::Scene()
 
 void Scene::generate_sample_scene()
 {
+	/*
 	RenderObject map;
 	map._mesh = VulkanEngine::cinstance->get_mesh("empire");
 	map._material = VulkanEngine::cinstance->get_material("texturedmesh");
 	map._model = glm::translate(glm::vec3{ 5, -10, 0 });
 
 	_renderables.push_back(map);
-
+	*/
 	RenderObject monkey;
 	monkey._mesh = VulkanEngine::cinstance->get_mesh("monkey");
 	monkey._material = VulkanEngine::cinstance->get_material("untexturedmesh");
 	monkey._model = glm::mat4(1.0f);
 
 	_renderables.push_back(monkey);
+
+	Light point_light;
+	point_light._position = glm::vec4(0.0f, 10.0f, 0.0f, 1.0f);
+	point_light._color = glm::vec4(1.0f, 0.0f, 0.0f, 30.0f);
+
+	_lights.push_back(point_light);
 
 
 	Material* texMaterial = VulkanEngine::cinstance->get_material("texturedmesh");
