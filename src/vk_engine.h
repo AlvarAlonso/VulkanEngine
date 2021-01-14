@@ -6,14 +6,9 @@
 #include "vk_renderer.h"
 #include "Camera.h"
 
-const glm::vec3 camera_default_position = { 0.0f, 0.0f, 2.5f };
+const glm::vec3 camera_default_position = { 5.0f, 30.0f, 5.0f };
 
 //constexpr unsigned int FRAME_OVERLAP = 2;
-
-struct Texture {
-	AllocatedImage image;
-	VkImageView imageView;
-};
 
 struct GPUCameraData {
 	glm::mat4 view;
@@ -40,7 +35,7 @@ public:
 
 	//std::vector<RenderObject> _renderables;
 
-	std::unordered_map<std::string, Material> _materials;
+	std::vector<Material> _materials;
 	std::unordered_map<std::string, Mesh> _meshes;
 
 	//Assets
@@ -56,10 +51,15 @@ public:
 	
 	void load_images();
 
-	Material* create_material(const std::string& name);
-	Material* get_material(const std::string& name);
+	Material* create_material(const glm::vec4& color, const glm::vec4& properties);
 
 	Mesh* get_mesh(const std::string& name);
 
 	void load_meshes();
+
+private:
+
+	void render_imgui();
+
+	void create_materials();
 };

@@ -38,9 +38,13 @@ void VulkanEngine::init()
 
 	load_meshes();
 
+	create_materials();
+
 	scene = new Scene();
 	scene->generate_sample_scene();
+
 	renderer->currentScene = scene;
+
 	//_renderables = scene->_renderables;
 
 	//everything went fine
@@ -164,7 +168,6 @@ void VulkanEngine::run()
 			xMouseOld = center_x;
 			yMouseOld = center_y;
 		}
-
 		
 		//imgui new frame
 		ImGui_ImplVulkan_NewFrame();
@@ -173,11 +176,57 @@ void VulkanEngine::run()
 		ImGui::NewFrame();
 
 		//imgui commands
-		ImGui::ShowDemoWindow();
+		//ImGui::ShowDemoWindow();
+		render_imgui();
 		
 		//draw();
 		renderer->draw_scene();
 	}
+}
+
+void VulkanEngine::render_imgui()
+{
+	ImGui::Text("MAIN IMGUI DEBUG WINDOW:");
+	ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+	static bool check = true;
+	ImGui::Checkbox("checkbox", &check);
+
+	glm::mat4 model = glm::transpose(scene->_renderables[0]._model);
+
+	static float &x = model[0].w;
+	ImGui::InputFloat("input float", &x, 1.0f, 1.0f, "%.3f");
+
+	static float &y = model[1].w;
+	ImGui::InputFloat("input float", &y, 1.0f, 1.0f, "%.3f");
+
+	static float &z = model[2].w;
+	ImGui::InputFloat("input float", &z, 1.0f, 1.0f, "%.3f");
+
+	scene->_renderables[0]._model = glm::transpose(model);
+	
+	/*
+	static float x = scene->_lights[0]._position.x;
+	ImGui::InputFloat("input float", &x, 1.0f, 1.0f, "%.3f");
+	scene->_lights[0]._position.x = x;
+
+	static float y = scene->_lights[0]._position.y;
+	ImGui::InputFloat("input float", &y, 1.0f, 1.0f, "%.3f");
+	scene->_lights[0]._position.y = y;
+
+	static float z = scene->_lights[0]._position.z;
+	ImGui::InputFloat("input float", &z, 1.0f, 1.0f, "%.3f");
+	scene->_lights[0]._position.z = z;
+	*/
+}
+
+void VulkanEngine::create_materials()
+{
+	//diffuse
+	create_material({ 0.65f, 0.2f, 0.0f, 1.0f }, { 0.0f, 0.0f, 0.0f, 1.0f }); //brown
+	create_material({ 1.0f, 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f, 1.0f });
+	
+	//specular
+	create_material({ 1.0f, 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 1.0f, 1.0f });
 }
 
 void VulkanEngine::load_meshes()
@@ -190,25 +239,13 @@ void VulkanEngine::load_meshes()
 	_meshes["empire"] = lostEmpire;
 }
 
-Material* VulkanEngine::create_material(const std::string& name)
+Material* VulkanEngine::create_material(const glm::vec4& color, const glm::vec4& properties)
 {
 	Material mat;
-	mat.albedoTexture = VK_NULL_HANDLE;
-	_materials[name] = mat;
-	return &_materials[name];
-}
-
-Material* VulkanEngine::get_material(const std::string& name)
-{
-	auto it = _materials.find(name);
-	if(it == _materials.end())
-	{
-		return nullptr;
-	}
-	else
-	{
-		return &(*it).second;
-	}
+	mat.color = color;
+	mat.properties = properties;
+	_materials.push_back(mat);
+	return &_materials[_materials.size() - 1];
 }
 
 Mesh* VulkanEngine::get_mesh(const std::string& name)

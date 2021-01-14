@@ -75,9 +75,9 @@ void Renderer::init_renderer()
 	init_descriptors();
 
 	create_uniform_buffer();
-	update_uniform_buffers();
+	//update_uniform_buffers();
 
-	render_quad.create_quad(1);
+	render_quad.create_quad();
 }
 
 void Renderer::draw_scene()
@@ -123,13 +123,12 @@ void Renderer::create_uniform_buffer()
 	_ubo = vkutil::create_buffer(_allocator, sizeof(uniformData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
 		VMA_MEMORY_USAGE_CPU_TO_GPU);
 
-	update_uniform_buffers();
+	//update_uniform_buffers();
 }
 
-void Renderer::update_uniform_buffers()
+void Renderer::update_uniform_buffers(RenderObject* first, size_t count)
 {
-	//glm::vec3 camPos = { 0.0f, 0.0f, -2.5f };
-	//glm::mat4 view = glm::translate(glm::mat4(1.0f), camPos);
+	//Camera Update
 	glm::mat4 projection = glm::perspective(glm::radians(60.0f), 1700.0f / 900.0f, 0.1f, 512.0f);
 	projection[1][1] *= -1;
 
@@ -139,10 +138,28 @@ void Renderer::update_uniform_buffers()
 	uniformData.viewInverse = glm::inverse(VulkanEngine::cinstance->camera->getView());
 	memcpy(data, &uniformData, sizeof(uniformData));
 	vmaUnmapMemory(_allocator, _ubo._allocation);
+
+	//models update
+	void* objectData;
+	vmaMapMemory(_allocator, _objectBuffer._allocation, &objectData);
+
+	GPUObjectData* objectSSBO = (GPUObjectData*)objectData;
+
+	for (int i = 0; i < count; i++)
+	{
+		RenderObject& object = first[i];
+		objectSSBO[i].modelMatrix = object._model;
+	}
+
+	vmaUnmapMemory(_allocator, _objectBuffer._allocation);
+
+	re->create_top_level_acceleration_structure(*currentScene, true);
 }
 
 void Renderer::create_raytracing_descriptor_sets()
 {
+	std::vector<RenderObject>& renderables = currentScene->_renderables;
+
 	VkDescriptorSetAllocateInfo alloc_info = {};
 	alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
 	alloc_info.pNext = nullptr;
@@ -175,10 +192,6 @@ void Renderer::create_raytracing_descriptor_sets()
 	uboBufferDescriptor.buffer = _ubo._buffer;
 	uboBufferDescriptor.range = sizeof(uniformData);
 
-	std::vector<VkDescriptorBufferInfo> verticesBufferInfos;
-	std::vector<VkDescriptorBufferInfo> indicesBufferInfos;
-	std::vector<VkDescriptorBufferInfo> transformBufferInfos;
-
 	_sceneBuffer = vkutil::create_buffer(_allocator, currentScene->_lights.size() * sizeof(Light), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 
 	VkDescriptorBufferInfo sceneBufferDescriptor{};
@@ -186,12 +199,39 @@ void Renderer::create_raytracing_descriptor_sets()
 	sceneBufferDescriptor.buffer = _sceneBuffer._buffer;
 	sceneBufferDescriptor.range = currentScene->_lights.size() * sizeof(Light);
 
-	void* data;
-	vmaMapMemory(_allocator, _sceneBuffer._allocation, &data);
-	memcpy(data, currentScene->_lights.data(), currentScene->_lights.size() * sizeof(Light));
+	void* sceneData;
+	vmaMapMemory(_allocator, _sceneBuffer._allocation, &sceneData);
+	memcpy(sceneData, currentScene->_lights.data(), currentScene->_lights.size() * sizeof(Light));
 	vmaUnmapMemory(_allocator, _sceneBuffer._allocation);
 
-	std::vector<RenderObject>& renderables = currentScene->_renderables;
+
+	_materialBuffer = vkutil::create_buffer(_allocator, VulkanEngine::cinstance->_materials.size() * sizeof(Material), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+	
+	VkDescriptorBufferInfo materialBufferDescriptor{};
+	materialBufferDescriptor.offset = 0;
+	materialBufferDescriptor.buffer = _materialBuffer._buffer;
+	materialBufferDescriptor.range = VulkanEngine::cinstance->_materials.size() * sizeof(Material);
+
+	void* materialData;
+	vmaMapMemory(_allocator, _materialBuffer._allocation, &materialData);
+	memcpy(materialData, VulkanEngine::cinstance->_materials.data(), VulkanEngine::cinstance->_materials.size() * sizeof(Material));
+	vmaUnmapMemory(_allocator, _materialBuffer._allocation);
+
+	_materialIndicesBuffer = vkutil::create_buffer(_allocator, currentScene->_matIndices.size() * sizeof(int), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+
+	VkDescriptorBufferInfo materialIndicesBufferDescriptor{};
+	materialIndicesBufferDescriptor.offset = 0;
+	materialIndicesBufferDescriptor.buffer = _materialIndicesBuffer._buffer;
+	materialIndicesBufferDescriptor.range = currentScene->_matIndices.size() * sizeof(int);
+
+	void* matIdxData;
+	vmaMapMemory(_allocator, _materialIndicesBuffer._allocation, &matIdxData);
+	memcpy(matIdxData, currentScene->_matIndices.data(), currentScene->_matIndices.size() * sizeof(int));
+	vmaUnmapMemory(_allocator, _materialIndicesBuffer._allocation);
+
+	std::vector<VkDescriptorBufferInfo> verticesBufferInfos;
+	std::vector<VkDescriptorBufferInfo> indicesBufferInfos;
+	std::vector<VkDescriptorBufferInfo> transformBufferInfos;
 
 	verticesBufferInfos.reserve(renderables.size());
 	indicesBufferInfos.reserve(renderables.size());
@@ -244,12 +284,15 @@ void Renderer::create_raytracing_descriptor_sets()
 		vmaUnmapMemory(_allocator, transformBuffer._allocation);
 	}
 
+	//Descriptor Writes
 	VkWriteDescriptorSet resultImageWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, _rayTracingDescriptorSet, &storageImageDescriptor, 1);
 	VkWriteDescriptorSet uniformBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, _rayTracingDescriptorSet, &uboBufferDescriptor, 2);
 	VkWriteDescriptorSet vertexBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rayTracingDescriptorSet, verticesBufferInfos.data(), 3, renderables.size());
 	VkWriteDescriptorSet indexBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rayTracingDescriptorSet, indicesBufferInfos.data(), 4, renderables.size());
 	VkWriteDescriptorSet transformBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rayTracingDescriptorSet, transformBufferInfos.data(), 5, renderables.size());
 	VkWriteDescriptorSet sceneBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, _rayTracingDescriptorSet, &sceneBufferDescriptor, 6);
+	VkWriteDescriptorSet materialBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rayTracingDescriptorSet, &materialBufferDescriptor, 7);
+	VkWriteDescriptorSet materialIndicesBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rayTracingDescriptorSet, &materialIndicesBufferDescriptor, 8);
 
 	std::vector<VkWriteDescriptorSet> writeDescriptorSets = {
 		accelerationStructureWrite,
@@ -258,7 +301,9 @@ void Renderer::create_raytracing_descriptor_sets()
 		vertexBufferWrite,
 		indexBufferWrite,
 		transformBufferWrite,
-		sceneBufferWrite
+		sceneBufferWrite,
+		materialBufferWrite,
+		materialIndicesBufferWrite
 	};
 
 	vkUpdateDescriptorSets(_device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, VK_NULL_HANDLE);
@@ -564,14 +609,12 @@ void Renderer::record_deferred_command_buffers(RenderObject* first, int count)
 
 		vkCmdBindDescriptorSets(_deferredCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_deferredPipelineLayout, 1, 1, &_objectDescriptorSet, 0, nullptr);
 
-		if (object._material != nullptr)
-		{
-			if(object._material->albedoTexture != VK_NULL_HANDLE)
-			{
-				vkCmdBindDescriptorSets(_deferredCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_deferredPipelineLayout, 2, 1, &object._material->albedoTexture, 0, nullptr);
-			}
-		}
 
+		if(object._albedoTexture->descriptorSet != VK_NULL_HANDLE)
+		{
+			vkCmdBindDescriptorSets(_deferredCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_deferredPipelineLayout, 2, 1, &object._albedoTexture->descriptorSet, 0, nullptr);
+		}
+		
 		if (object._mesh != lastMesh)
 		{
 			VkDeviceSize offset = 0;
@@ -915,7 +958,7 @@ void Renderer::render_raytracing()
 	uint32_t swapchainImageIndex;
 	VK_CHECK(vkAcquireNextImageKHR(_device, re->_swapchain, 0, _frames[get_current_frame_index()]._presentSemaphore, nullptr, &swapchainImageIndex));
 
-	update_uniform_buffers();
+	update_uniform_buffers(currentScene->_renderables.data(), currentScene->_renderables.size());
 
 	//VK_CHECK(vkResetCommandBuffer(_raytracingCommandBuffer, 0));
 
@@ -986,10 +1029,10 @@ void Renderer::draw_forward(VkCommandBuffer cmd, RenderObject* first, int count)
 
 			vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_forwardPipelineLayout, 1, 1, &_frames[get_current_frame_index()].objectDescriptor, 0, nullptr);
 
-			if (object._material->albedoTexture != VK_NULL_HANDLE)
+			if (object._albedoTexture->descriptorSet != VK_NULL_HANDLE)
 			{
 				vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_texPipeline);
-				vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_forwardPipelineLayout, 2, 1, &object._material->albedoTexture, 0, nullptr);
+				vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_forwardPipelineLayout, 2, 1, &object._albedoTexture->descriptorSet, 0, nullptr);
 			}
 			else
 			{

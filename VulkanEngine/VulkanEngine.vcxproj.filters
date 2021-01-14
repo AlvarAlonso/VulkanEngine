@@ -145,5 +145,8 @@
     <None Include="..\shaders\pospo.frag">
       <Filter>Shaders</Filter>
     </None>
+    <None Include="..\shaders\raytraceShadow.rmiss">
+      <Filter>Shaders</Filter>
+    </None>
   </ItemGroup>
 </Project>

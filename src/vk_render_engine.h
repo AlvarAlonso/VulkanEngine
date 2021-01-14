@@ -221,6 +221,8 @@ public:
 	//create acceleration structures for the current scene in the vulkan engine
 	void create_acceleration_structures(const Scene& scene);
 
+	void create_top_level_acceleration_structure(const Scene& scene, bool recreated);
+
 	void reset_imgui(RenderMode renderMode);
 
 private:
@@ -262,8 +264,6 @@ private:
 	void init_raytracing_structures();
 
 	void create_bottom_level_acceleration_structure(const Scene& scene);
-
-	void create_top_level_acceleration_structure(const Scene& scene);
 
 	void create_storage_image();
 

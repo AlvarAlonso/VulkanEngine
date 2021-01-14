@@ -5,7 +5,8 @@
 #include "vk_mesh.h"
 
 struct Material {
-	VkDescriptorSet albedoTexture;
+	glm::vec4 color;
+	glm::vec4 properties; //metalness = x, roughness = y, shininess = z, fresnel = w
 };
 
 class Entity
@@ -22,6 +23,7 @@ public:
 	RenderObject();
 
 	Mesh* _mesh;
+	Texture* _albedoTexture;
 	Material* _material;
 };
 

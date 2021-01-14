@@ -51,9 +51,11 @@ public:
 
 	Mesh render_quad;
 
-	AllocatedBuffer _camBuffer;
-	AllocatedBuffer _objectBuffer;
-	AllocatedBuffer _sceneBuffer;
+	AllocatedBuffer _camBuffer; //cam parameters
+	AllocatedBuffer _objectBuffer; //models
+	AllocatedBuffer _sceneBuffer; //lights
+	AllocatedBuffer _materialBuffer;
+	AllocatedBuffer _materialIndicesBuffer;
 
 	FrameData _frames[FRAME_OVERLAP];
 
@@ -110,7 +112,7 @@ private:
 
 	void create_uniform_buffer();
 
-	void update_uniform_buffers();
+	void update_uniform_buffers(RenderObject* first, size_t count);
 
 	void create_raytracing_descriptor_sets();
 

@@ -21,6 +21,7 @@ public:
 
 	std::vector<RenderObject> _renderables;
 	std::vector<Light> _lights;
+	std::vector<int> _matIndices;
 
 	GPUSceneData _sceneData;
 

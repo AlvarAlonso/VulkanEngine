@@ -8,6 +8,12 @@
 #include <glm/vec2.hpp>
 #include <unordered_map>
 
+struct Texture {
+	AllocatedImage image;
+	VkImageView imageView;
+	VkDescriptorSet descriptorSet;
+};
+
 struct VertexInputDescription {
 	std::vector<VkVertexInputBindingDescription> bindings;
 	std::vector<VkVertexInputAttributeDescription> attributes;
@@ -68,6 +74,8 @@ public:
 
 	void destroy_buffers();
 
-	void create_quad(int size);
+	void create_quad();
+
+	void create_cube();
 };
 

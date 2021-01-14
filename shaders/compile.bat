@@ -10,6 +10,6 @@ C:\Tools\glslang\bin\glslangValidator.exe pospo.frag -o pospo.frag.spv --target-
 C:\Tools\glslang\bin\glslangValidator.exe raygen.rgen -o raygen.rgen.spv --target-env vulkan1.2
 C:\Tools\glslang\bin\glslangValidator.exe closestHit.rchit -o closestHit.rchit.spv --target-env vulkan1.2
 C:\Tools\glslang\bin\glslangValidator.exe miss.rmiss -o miss.rmiss.spv --target-env vulkan1.2
-
+C:\Tools\glslang\bin\glslangValidator.exe raytraceShadow.rmiss -o raytraceShadow.rmiss.spv --target-env vulkan1.2
 
 pause

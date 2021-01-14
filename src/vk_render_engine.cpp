@@ -660,9 +660,7 @@ void RenderEngine::init_pipelines()
 		//build the mesh pipeline
 		_forwardPipeline = pipelineBuilder.build_pipeline(_device, _defaultRenderPass);
 
-		VulkanEngine::cinstance->create_material("untexturedmesh");
-
-
+		
 		//texture pipeline
 
 		pipelineBuilder._shaderStages.clear();
@@ -673,7 +671,6 @@ void RenderEngine::init_pipelines()
 			vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, texturedMeshShader));
 
 		_texPipeline = pipelineBuilder.build_pipeline(_device, _defaultRenderPass);
-		VulkanEngine::cinstance->create_material("texturedmesh");
 
 		//deleting all of the vulkan shaders
 		vkDestroyShaderModule(_device, texturedMeshShader, nullptr);
@@ -960,10 +957,10 @@ void RenderEngine::create_bottom_level_acceleration_structure(const Scene& scene
 	build_blas(allBlas);
 }
 
-void RenderEngine::create_top_level_acceleration_structure(const Scene& scene)
+void RenderEngine::create_top_level_acceleration_structure(const Scene& scene, bool recreated)
 {
 	std::vector<VkAccelerationStructureInstanceKHR> instances;
-	instances.reserve(scene._renderables.size());
+	instances.resize(scene._renderables.size());
 
 	for (int i = 0; i < scene._renderables.size(); i++)
 	{
@@ -982,8 +979,8 @@ void RenderEngine::create_top_level_acceleration_structure(const Scene& scene)
 		instance.instanceShaderBindingTableRecordOffset = 0;
 		instance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
 		instance.accelerationStructureReference = _bottomLevelAS[i]._deviceAddress;
-
-		instances.push_back(instance);
+		
+		instances[i] = instance;
 	}
 
 	// Buffer for instance data
@@ -1017,7 +1014,7 @@ void RenderEngine::create_top_level_acceleration_structure(const Scene& scene)
 	VkAccelerationStructureBuildGeometryInfoKHR accelerationStructureBuildGeometryInfo{};
 	accelerationStructureBuildGeometryInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
 	accelerationStructureBuildGeometryInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
-	accelerationStructureBuildGeometryInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
+	accelerationStructureBuildGeometryInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
 	accelerationStructureBuildGeometryInfo.geometryCount = 1;
 	accelerationStructureBuildGeometryInfo.pGeometries = &accelerationStructureGeometry;
 
@@ -1031,16 +1028,22 @@ void RenderEngine::create_top_level_acceleration_structure(const Scene& scene)
 		&accelerationStructureBuildGeometryInfo,
 		&primitive_count,
 		&accelerationStructureBuildSizesInfo);
-
-	create_acceleration_structure_buffer(_topLevelAS, accelerationStructureBuildSizesInfo);
-
+	
+	if(!recreated)
+	{
+		create_acceleration_structure_buffer(_topLevelAS, accelerationStructureBuildSizesInfo);
+	}
+	
 	VkAccelerationStructureCreateInfoKHR accelerationStructureCreateInfo{};
 	accelerationStructureCreateInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
 	accelerationStructureCreateInfo.buffer = _topLevelAS._buffer;
 	accelerationStructureCreateInfo.size = accelerationStructureBuildSizesInfo.accelerationStructureSize;
 	accelerationStructureCreateInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
 
-	vkCreateAccelerationStructureKHR(_device, &accelerationStructureCreateInfo, nullptr, &_topLevelAS._handle);
+	if(!recreated)
+	{
+		vkCreateAccelerationStructureKHR(_device, &accelerationStructureCreateInfo, nullptr, &_topLevelAS._handle);
+	}
 
 	// Create a small scratch buffer used during build of the top level acceleration structure
 	RayTracingScratchBuffer scratchBuffer = create_scratch_buffer(accelerationStructureBuildSizesInfo.buildScratchSize);
@@ -1048,8 +1051,9 @@ void RenderEngine::create_top_level_acceleration_structure(const Scene& scene)
 	VkAccelerationStructureBuildGeometryInfoKHR accelerationBuildGeometryInfo{};
 	accelerationBuildGeometryInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
 	accelerationBuildGeometryInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
-	accelerationBuildGeometryInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
-	accelerationBuildGeometryInfo.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
+	accelerationBuildGeometryInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
+	accelerationBuildGeometryInfo.mode = recreated ? VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE_KHR : VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
+	accelerationBuildGeometryInfo.srcAccelerationStructure = recreated ? _topLevelAS._handle : VK_NULL_HANDLE;
 	accelerationBuildGeometryInfo.dstAccelerationStructure = _topLevelAS._handle;
 	accelerationBuildGeometryInfo.geometryCount = 1;
 	accelerationBuildGeometryInfo.pGeometries = &accelerationStructureGeometry;
@@ -1090,9 +1094,12 @@ void RenderEngine::create_top_level_acceleration_structure(const Scene& scene)
 	accelerationDeviceAddressInfo.accelerationStructure = _topLevelAS._handle;
 	_topLevelAS._deviceAddress = vkGetAccelerationStructureDeviceAddressKHR(_device, &accelerationDeviceAddressInfo);
 
-	_mainDeletionQueue.push_function([=]() {
-		vkDestroyAccelerationStructureKHR(_device, _topLevelAS._handle, nullptr);
-		});
+	if(!recreated)
+	{
+		_mainDeletionQueue.push_function([=]() {
+			vkDestroyAccelerationStructureKHR(_device, _topLevelAS._handle, nullptr);
+			});
+	}
 
 	delete_scratch_buffer(scratchBuffer);
 
@@ -1162,7 +1169,7 @@ void RenderEngine::create_raytracing_pipeline()
 	accelerationStructureLayoutBinding.binding = 0;
 	accelerationStructureLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
 	accelerationStructureLayoutBinding.descriptorCount = 1;
-	accelerationStructureLayoutBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
+	accelerationStructureLayoutBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
 	VkDescriptorSetLayoutBinding resultImageLayoutBinding{};
 	resultImageLayoutBinding.binding = 1;
@@ -1179,19 +1186,19 @@ void RenderEngine::create_raytracing_pipeline()
 	VkDescriptorSetLayoutBinding vertexBufferBinding{};
 	vertexBufferBinding.binding = 3;
 	vertexBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-	vertexBufferBinding.descriptorCount = 2; //HARDCODED
+	vertexBufferBinding.descriptorCount = 3; //HARDCODED
 	vertexBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
 	VkDescriptorSetLayoutBinding indexBufferBinding{};
 	indexBufferBinding.binding = 4;
 	indexBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-	indexBufferBinding.descriptorCount = 2; //HARDCODED
+	indexBufferBinding.descriptorCount = 3; //HARDCODED
 	indexBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
 	VkDescriptorSetLayoutBinding transformBufferBinding{};
 	transformBufferBinding.binding = 5;
 	transformBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-	transformBufferBinding.descriptorCount = 2; //HARDCODED
+	transformBufferBinding.descriptorCount = 3; //HARDCODED
 	transformBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
 	VkDescriptorSetLayoutBinding sceneBufferBinding{};
@@ -1200,6 +1207,18 @@ void RenderEngine::create_raytracing_pipeline()
 	sceneBufferBinding.descriptorCount = 1;
 	sceneBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
+	VkDescriptorSetLayoutBinding materialBufferBinding{};
+	materialBufferBinding.binding = 7;
+	materialBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	materialBufferBinding.descriptorCount = 1;
+	materialBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
+
+	VkDescriptorSetLayoutBinding materialIndexBufferBinding{};
+	materialIndexBufferBinding.binding = 8;
+	materialIndexBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	materialIndexBufferBinding.descriptorCount = 1;
+	materialIndexBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
+
 	std::vector<VkDescriptorSetLayoutBinding> bindings({
 		accelerationStructureLayoutBinding,
 		resultImageLayoutBinding,
@@ -1207,7 +1226,9 @@ void RenderEngine::create_raytracing_pipeline()
 		vertexBufferBinding,
 		indexBufferBinding,
 		transformBufferBinding,
-		sceneBufferBinding
+		sceneBufferBinding,
+		materialBufferBinding,
+		materialIndexBufferBinding
 		});
 
 	VkDescriptorSetLayoutCreateInfo desc_set_layout_info{};
@@ -1275,6 +1296,29 @@ void RenderEngine::create_raytracing_pipeline()
 		_shaderGroups.push_back(shaderGroup);
 	}
 
+	//Shadow miss group
+	{
+		VkShaderModule shadowMissShader;
+		if (!vkutil::load_shader_module(_device, "../shaders/raytraceShadow.rmiss.spv", &shadowMissShader))
+		{
+			std::cout << "Error when building the shadow miss shader module" << std::endl;
+		}
+		else {
+			std::cout << "Shadw miss shader succesfully loaded" << std::endl;
+		}
+		VkPipelineShaderStageCreateInfo shader_stage_info = vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_MISS_BIT_KHR, shadowMissShader);
+
+		shaderStages.push_back(shader_stage_info);
+		VkRayTracingShaderGroupCreateInfoKHR shaderGroup{};
+		shaderGroup.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
+		shaderGroup.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
+		shaderGroup.generalShader = static_cast<uint32_t>(shaderStages.size()) - 1;
+		shaderGroup.closestHitShader = VK_SHADER_UNUSED_KHR;
+		shaderGroup.anyHitShader = VK_SHADER_UNUSED_KHR;
+		shaderGroup.intersectionShader = VK_SHADER_UNUSED_KHR;
+		_shaderGroups.push_back(shaderGroup);
+	}
+
 	// Closest hit group
 	{
 		VkShaderModule closestHitShader;
@@ -1308,7 +1352,7 @@ void RenderEngine::create_raytracing_pipeline()
 	raytracing_pipeline_info.pStages = shaderStages.data();
 	raytracing_pipeline_info.groupCount = static_cast<uint32_t>(_shaderGroups.size());
 	raytracing_pipeline_info.pGroups = _shaderGroups.data();
-	raytracing_pipeline_info.maxPipelineRayRecursionDepth = 1;
+	raytracing_pipeline_info.maxPipelineRayRecursionDepth = 2;
 	raytracing_pipeline_info.layout = _rayTracingPipelineLayout;
 	
 	VK_CHECK(vkCreateRayTracingPipelinesKHR(_device, VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &raytracing_pipeline_info, nullptr, &_rayTracingPipeline));
@@ -1475,7 +1519,7 @@ void RenderEngine::create_shader_binding_table()
 		_allocator, handleSize, bufferUsageFlags, memoryUsageFlags);
 
 	_missShaderBindingTable = vkutil::create_buffer(
-		_allocator, handleSize, bufferUsageFlags, memoryUsageFlags);
+		_allocator, handleSize*2, bufferUsageFlags, memoryUsageFlags);
 
 	_hitShaderBindingTable = vkutil::create_buffer(
 		_allocator, handleSize, bufferUsageFlags, memoryUsageFlags);
@@ -1488,12 +1532,12 @@ void RenderEngine::create_shader_binding_table()
 
 	void* miss_data;
 	vmaMapMemory(_allocator, _missShaderBindingTable._allocation, &miss_data);
-	memcpy(miss_data, shaderHandleStorage.data() + handleSizeAligned, handleSize);
+	memcpy(miss_data, shaderHandleStorage.data() + handleSizeAligned, handleSize*2);
 	vmaUnmapMemory(_allocator, _missShaderBindingTable._allocation);
 
 	void* hit_data;
 	vmaMapMemory(_allocator, _hitShaderBindingTable._allocation, &hit_data);
-	memcpy(hit_data, shaderHandleStorage.data() + handleSizeAligned * 2, handleSize);
+	memcpy(hit_data, shaderHandleStorage.data() + handleSizeAligned * 3, handleSize);
 	vmaUnmapMemory(_allocator, _hitShaderBindingTable._allocation);
 }
 
@@ -1509,7 +1553,9 @@ void RenderEngine::create_raytracing_descriptor_pool()
 	{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1},
 	{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1},
 	{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1},
-	{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1}
+	{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1},
+	{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1},
+	{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1}
 	};
 
 	VkDescriptorPoolCreateInfo dp_info = {};
@@ -1853,7 +1899,7 @@ void RenderEngine::cleanup()
 void RenderEngine::create_acceleration_structures(const Scene& scene)
 {
 	create_bottom_level_acceleration_structure(scene);
-	create_top_level_acceleration_structure(scene);
+	create_top_level_acceleration_structure(scene, false);
 }
 
 void RenderEngine::reset_imgui(RenderMode renderMode)
