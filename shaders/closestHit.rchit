@@ -4,10 +4,9 @@
 #extension GL_EXT_scalar_block_layout : enable
 
 struct RayPayload {
-	vec3 color;
-	float distance;
-	vec3 normal;
-	float reflector;
+	vec4 color_dist;
+	vec4 direction;
+	vec3 origin;
 };
 
 layout(location = 0) rayPayloadInEXT RayPayload rayPayload;
@@ -30,7 +29,7 @@ struct Light {
 
 struct Material {
 	vec4 color;
-	vec4 properties; //metalness = x, roughness = y, shininess = z, fresnel = w
+	vec4 properties; //metalness = x, roughness = y, index of refraction = z, material type = w
 };
 
 layout(binding = 3, set = 0, scalar) buffer Vertices { Vertex v[]; } vertices[];
@@ -39,6 +38,8 @@ layout(binding = 5, set = 0) buffer Transforms { mat4 t; } transforms[];
 layout(binding = 6, set = 0) uniform Lights { Light l[3]; } lights;
 layout(binding = 7, set = 0) buffer Materials { Material m[]; } materials;
 layout(binding = 8, set = 0) buffer MatIdx { uint i[]; } matIndices;
+layout(binding = 9, set = 0) uniform sampler2D textures[]; //image2D ?
+layout(binding = 10, set = 0) buffer TexIdx { uint i[]; } texIndices;
 
 float computeAttenuation( in float distanceToLight, in float maxDist )
 {
@@ -66,12 +67,12 @@ void main()
 	// Transforming the normal to world space
 	normal = normalize(vec3(transforms[gl_InstanceCustomIndexEXT].t * vec4(normal, 0.0)));
 
-	//hitValue = vec3(0.9f, 0.9f, 0.9f);
-
 	  // Computing the coordinates of the hit position
 	  vec3 worldPos = vec3(v0.position * barycentrics.x + v1.position * barycentrics.y + v2.position * barycentrics.z);
 	  // Transforming the position to world space
 	  worldPos = vec3(transforms[gl_InstanceCustomIndexEXT].t * vec4(worldPos, 1.0));
+
+	  vec2 uv = vec2(v0.uv.xy * barycentrics.x + v1.uv.xy * barycentrics.y + v2.uv.xy * barycentrics.z);
 
 	  vec3 totalLight = vec3(0);
 
@@ -126,8 +127,43 @@ void main()
 
 	totalLight /= 3;
 	
-	rayPayload.color = totalLight * vec3(materials.m[matIndices.i[gl_InstanceCustomIndexEXT]].color);
-	rayPayload.distance = gl_RayTmaxEXT;
-	rayPayload.normal = normal;
-	rayPayload.reflector = materials.m[matIndices.i[gl_InstanceCustomIndexEXT]].properties.z;
+	float materialType = materials.m[matIndices.i[gl_InstanceCustomIndexEXT]].properties.w;
+
+	vec3 color = totalLight * texture(textures[texIndices.i[gl_InstanceCustomIndexEXT]], uv).xyz; //vec3(materials.m[matIndices.i[gl_InstanceCustomIndexEXT]].color);
+
+	if(materialType < 0.001)
+	{
+		rayPayload.color_dist = vec4(color, gl_RayTmaxEXT);
+		rayPayload.direction = vec4(0.0, 0.0, 0.0, -1.0);
+		rayPayload.origin = worldPos;
+	}
+	else if(materialType == 1.0)
+	{
+		vec3 I = normalize(gl_WorldRayDirectionEXT);
+		vec3 N = normalize(normal);
+
+		vec3 direction = reflect(I, N);
+
+		rayPayload.color_dist = vec4(color, gl_RayTmaxEXT);
+		rayPayload.direction = vec4(direction, 1.0);
+		rayPayload.origin = worldPos;
+	}
+	else if(materialType == 2.0)
+	{
+		color = vec3(0.0);
+		vec3 N = normalize(normal);
+		vec3 D = normalize(gl_WorldRayDirectionEXT);
+		
+		float NdotD = dot(N, D); 
+			
+		vec3 refractedN = NdotD > 0.0 ? -N : N;
+		float ior = materials.m[matIndices.i[gl_InstanceCustomIndexEXT]].properties.z;
+		float eta = NdotD > 0.0 ? 1.0 / ior : ior;
+
+		vec3 direction = refract(D, refractedN, eta);
+
+		rayPayload.color_dist = vec4(color, gl_RayTmaxEXT);
+		rayPayload.direction = vec4(direction.xyz,  1.0);
+		rayPayload.origin = worldPos;
+	}
 }

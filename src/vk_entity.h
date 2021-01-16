@@ -6,7 +6,7 @@
 
 struct Material {
 	glm::vec4 color;
-	glm::vec4 properties; //metalness = x, roughness = y, shininess = z, fresnel = w
+	glm::vec4 properties; //metalness = x, roughness = y, index of refraction = z, material type = w (0 diffuse, 1 reflector, 2 refraction)
 };
 
 class Entity

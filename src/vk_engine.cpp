@@ -29,6 +29,7 @@ void VulkanEngine::init()
 	cinstance = this;
 
 	camera = new Camera(camera_default_position);
+	camera->_speed = 0.006f;
 
 	renderer = new Renderer();
 	
@@ -222,11 +223,13 @@ void VulkanEngine::render_imgui()
 void VulkanEngine::create_materials()
 {
 	//diffuse
-	create_material({ 0.65f, 0.2f, 0.0f, 1.0f }, { 0.0f, 0.0f, 0.0f, 1.0f }); //brown
-	create_material({ 1.0f, 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f, 1.0f });
+	create_material({ 0.65f, 0.2f, 0.0f, 1.0f }, { 0.0f, 0.0f, 0.0f, 0.0f });
+
+	//refractive
+	create_material({ 1.0f, 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 1.1f, 2.0f });
 	
 	//specular
-	create_material({ 1.0f, 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 1.0f, 1.0f });
+	create_material({ 1.0f, 1.0f, 1.0f, 1.0f }, { 1.0f, 0.0f, 0.0f, 1.0f });
 }
 
 void VulkanEngine::load_meshes()
@@ -235,8 +238,11 @@ void VulkanEngine::load_meshes()
 
 	Mesh lostEmpire("../assets/lost_empire.obj");
 
+	Mesh sphere("../assets/sphere.obj");
+
 	_meshes["monkey"] = monkeyMesh;
 	_meshes["empire"] = lostEmpire;
+	_meshes["sphere"] = sphere;
 }
 
 Material* VulkanEngine::create_material(const glm::vec4& color, const glm::vec4& properties)
@@ -266,11 +272,11 @@ void VulkanEngine::load_images()
 	Texture lostEmpire;
 
 	vkutil::load_image_from_file(*this, "../assets/lost_empire-RGBA.png", lostEmpire.image);
-	
+
 	VkImageViewCreateInfo imageinfo = vkinit::imageview_create_info(VK_FORMAT_R8G8B8A8_UNORM, lostEmpire.image._image, VK_IMAGE_ASPECT_COLOR_BIT);
 	vkCreateImageView(RenderEngine::_device, &imageinfo, nullptr, &lostEmpire.imageView);
 
-	_loadedTextures["empire_diffuse"] = lostEmpire;
+	_loadedTextures.push_back(lostEmpire);
 
 
 	Texture defaultTexture;
@@ -280,5 +286,5 @@ void VulkanEngine::load_images()
 	VkImageViewCreateInfo imageinfo2 = vkinit::imageview_create_info(VK_FORMAT_R8G8B8A8_UNORM, defaultTexture.image._image, VK_IMAGE_ASPECT_COLOR_BIT);
 	vkCreateImageView(RenderEngine::_device, &imageinfo2, nullptr, &defaultTexture.imageView);
 
-	_loadedTextures["default"] = defaultTexture;
+	_loadedTextures.push_back(defaultTexture);
 }

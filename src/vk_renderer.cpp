@@ -9,6 +9,7 @@
 #include <imgui_impl_vulkan.h>
 
 #include <array>
+#include <unordered_map>
 
 RenderMode operator++(RenderMode& m, int) {
 
@@ -153,7 +154,7 @@ void Renderer::update_uniform_buffers(RenderObject* first, size_t count)
 
 	vmaUnmapMemory(_allocator, _objectBuffer._allocation);
 
-	re->create_top_level_acceleration_structure(*currentScene, true);
+	//re->create_top_level_acceleration_structure(*currentScene, true);
 }
 
 void Renderer::create_raytracing_descriptor_sets()
@@ -229,6 +230,32 @@ void Renderer::create_raytracing_descriptor_sets()
 	memcpy(matIdxData, currentScene->_matIndices.data(), currentScene->_matIndices.size() * sizeof(int));
 	vmaUnmapMemory(_allocator, _materialIndicesBuffer._allocation);
 
+	_textureIndicesBuffer = vkutil::create_buffer(_allocator, currentScene->_texIndices.size() * sizeof(int), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+
+	VkDescriptorBufferInfo textureIndicesInfo{};
+	textureIndicesInfo.offset = 0;
+	textureIndicesInfo.buffer = _textureIndicesBuffer._buffer;
+	textureIndicesInfo.range = currentScene->_texIndices.size() * sizeof(int);
+
+	void* texIdxData;
+	vmaMapMemory(_allocator, _textureIndicesBuffer._allocation, &texIdxData);
+	memcpy(texIdxData, currentScene->_texIndices.data(), currentScene->_texIndices.size() * sizeof(int));
+	vmaUnmapMemory(_allocator, _textureIndicesBuffer._allocation);
+
+	std::vector<VkDescriptorImageInfo> textureImageInfos;
+	int texCount = VulkanEngine::cinstance->_loadedTextures.size();
+	textureImageInfos.reserve(texCount);
+
+	for (int i = 0; i < texCount; i++)
+	{
+		VkDescriptorImageInfo textureImageDescriptor{};
+		textureImageDescriptor.sampler = re->_defaultSampler;
+		textureImageDescriptor.imageView = VulkanEngine::cinstance->_loadedTextures[i].imageView;
+		textureImageDescriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+		textureImageInfos.push_back(textureImageDescriptor);
+	}
+
 	std::vector<VkDescriptorBufferInfo> verticesBufferInfos;
 	std::vector<VkDescriptorBufferInfo> indicesBufferInfos;
 	std::vector<VkDescriptorBufferInfo> transformBufferInfos;
@@ -293,6 +320,8 @@ void Renderer::create_raytracing_descriptor_sets()
 	VkWriteDescriptorSet sceneBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, _rayTracingDescriptorSet, &sceneBufferDescriptor, 6);
 	VkWriteDescriptorSet materialBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rayTracingDescriptorSet, &materialBufferDescriptor, 7);
 	VkWriteDescriptorSet materialIndicesBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rayTracingDescriptorSet, &materialIndicesBufferDescriptor, 8);
+	VkWriteDescriptorSet textureImagesWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, _rayTracingDescriptorSet, textureImageInfos.data(), 9, textureImageInfos.size());
+	VkWriteDescriptorSet textureIndicesImageWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rayTracingDescriptorSet, &textureIndicesInfo, 10);
 
 	std::vector<VkWriteDescriptorSet> writeDescriptorSets = {
 		accelerationStructureWrite,
@@ -303,7 +332,9 @@ void Renderer::create_raytracing_descriptor_sets()
 		transformBufferWrite,
 		sceneBufferWrite,
 		materialBufferWrite,
-		materialIndicesBufferWrite
+		materialIndicesBufferWrite,
+		textureImagesWrite,
+		textureIndicesImageWrite
 	};
 
 	vkUpdateDescriptorSets(_device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, VK_NULL_HANDLE);

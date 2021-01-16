@@ -29,8 +29,6 @@ struct FrameData {
 	VkDescriptorSet objectDescriptor;
 };
 
-
-
 class Renderer
 {
 public:
@@ -56,6 +54,8 @@ public:
 	AllocatedBuffer _sceneBuffer; //lights
 	AllocatedBuffer _materialBuffer;
 	AllocatedBuffer _materialIndicesBuffer;
+	AllocatedBuffer _texturesBuffer;
+	AllocatedBuffer _textureIndicesBuffer;
 
 	FrameData _frames[FRAME_OVERLAP];
 

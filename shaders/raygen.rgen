@@ -10,10 +10,9 @@ layout(binding = 2, set = 0) uniform CameraProperties
 } cam;
 
 struct RayPayload {
-	vec3 color;
-	float distance;
-	vec3 normal;
-	float reflector;
+	vec4 color_dist;
+	vec4 direction;
+	vec3 origin;
 };
 
 layout(location = 0) rayPayloadEXT RayPayload rayPayload;
@@ -38,22 +37,20 @@ void main()
 	for(int i = 0; i < MAX_RECURSION; i++)
 	{
 	    traceRayEXT(topLevelAS, gl_RayFlagsOpaqueEXT, 0xff, 0, 0, 0, origin.xyz, tmin, direction.xyz, tmax, 0);
-		vec3 hitColor = rayPayload.color;
 
-		if (rayPayload.distance < 0.0f) {
-			finalColor = hitColor;
+		const vec3 hitColor = rayPayload.color_dist.xyz;
+		const float dist = rayPayload.color_dist.w;
+		const bool bounce = rayPayload.direction.w > 0;
+
+		if (dist < 0.0f || !bounce) { //miss
+			finalColor += hitColor;
 			break;
-		}
-		else if(rayPayload.reflector == 1.0)
-		{
-			const vec4 hitPos = origin + direction * rayPayload.distance;
-			origin.xyz = hitPos.xyz + rayPayload.normal * 0.001f;
-			direction.xyz = reflect(direction.xyz, rayPayload.normal);
 		}
 		else
 		{
-			finalColor = hitColor;
-			break;
+			origin.xyz = rayPayload.origin;
+			direction.xyz = rayPayload.direction.xyz;
+			finalColor += hitColor;
 		}
 	}
 

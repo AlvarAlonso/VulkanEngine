@@ -39,7 +39,7 @@ public:
 	std::unordered_map<std::string, Mesh> _meshes;
 
 	//Assets
-	std::unordered_map<std::string, Texture> _loadedTextures;
+	std::vector<Texture> _loadedTextures;
 
 	//initializes everything in the engine
 	void init();

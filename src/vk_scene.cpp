@@ -9,8 +9,8 @@ Scene::Scene()
 
 void Scene::generate_sample_scene()
 {
-	Texture* map_texture = &VulkanEngine::cinstance->_loadedTextures["empire_diffuse"];
-	Texture* default_texture = &VulkanEngine::cinstance->_loadedTextures["default"];
+	Texture* map_texture = &VulkanEngine::cinstance->_loadedTextures[0];
+	Texture* default_texture = &VulkanEngine::cinstance->_loadedTextures[1];
 
 	RenderObject map;
 	map._mesh = VulkanEngine::cinstance->get_mesh("empire");
@@ -26,6 +26,12 @@ void Scene::generate_sample_scene()
 	cube._albedoTexture = default_texture;
 	cube._material = &VulkanEngine::cinstance->_materials[1];
 	cube._model = glm::translate(glm::vec3{ 8, 30, 0 });
+
+	RenderObject sphere;
+	sphere._mesh = VulkanEngine::cinstance->get_mesh("sphere");
+	sphere._albedoTexture = default_texture;
+	sphere._material = &VulkanEngine::cinstance->_materials[1];
+	sphere._model = glm::translate(glm::vec3{ 5, 30, 0 });
 
 	RenderObject monkey;
 	monkey._mesh = VulkanEngine::cinstance->get_mesh("monkey");
@@ -81,11 +87,17 @@ void Scene::generate_sample_scene()
 
 	_renderables.push_back(map);
 	_renderables.push_back(cube);
-	_renderables.push_back(monkey);
+	_renderables.push_back(sphere);
+	//_renderables.push_back(monkey);
 
 	//renderables assigned to default material
 	_matIndices.resize(_renderables.size());
 	_matIndices[0] = 0;
-	_matIndices[1] = 1;
-	_matIndices[2] = 2;
+	_matIndices[1] = 2;
+	_matIndices[2] = 1;
+
+	_texIndices.resize(_renderables.size());
+	_texIndices[0] = 0;
+	_texIndices[1] = 0;
+	_texIndices[2] = 0;
 }

@@ -1219,6 +1219,18 @@ void RenderEngine::create_raytracing_pipeline()
 	materialIndexBufferBinding.descriptorCount = 1;
 	materialIndexBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
+	VkDescriptorSetLayoutBinding textureBufferBinding{};
+	textureBufferBinding.binding = 9;
+	textureBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	textureBufferBinding.descriptorCount = 2;
+	textureBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
+	
+	VkDescriptorSetLayoutBinding textureIndexBufferBinding{};
+	textureIndexBufferBinding.binding = 10;
+	textureIndexBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	textureIndexBufferBinding.descriptorCount = 1;
+	textureIndexBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
+
 	std::vector<VkDescriptorSetLayoutBinding> bindings({
 		accelerationStructureLayoutBinding,
 		resultImageLayoutBinding,
@@ -1228,7 +1240,9 @@ void RenderEngine::create_raytracing_pipeline()
 		transformBufferBinding,
 		sceneBufferBinding,
 		materialBufferBinding,
-		materialIndexBufferBinding
+		materialIndexBufferBinding,
+		textureBufferBinding,
+		textureIndexBufferBinding
 		});
 
 	VkDescriptorSetLayoutCreateInfo desc_set_layout_info{};
@@ -1352,7 +1366,7 @@ void RenderEngine::create_raytracing_pipeline()
 	raytracing_pipeline_info.pStages = shaderStages.data();
 	raytracing_pipeline_info.groupCount = static_cast<uint32_t>(_shaderGroups.size());
 	raytracing_pipeline_info.pGroups = _shaderGroups.data();
-	raytracing_pipeline_info.maxPipelineRayRecursionDepth = 2;
+	raytracing_pipeline_info.maxPipelineRayRecursionDepth = 10;
 	raytracing_pipeline_info.layout = _rayTracingPipelineLayout;
 	
 	VK_CHECK(vkCreateRayTracingPipelinesKHR(_device, VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &raytracing_pipeline_info, nullptr, &_rayTracingPipeline));
@@ -1555,7 +1569,8 @@ void RenderEngine::create_raytracing_descriptor_pool()
 	{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1},
 	{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1},
 	{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1},
-	{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1}
+	{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 10},
+	{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 3},
 	};
 
 	VkDescriptorPoolCreateInfo dp_info = {};
