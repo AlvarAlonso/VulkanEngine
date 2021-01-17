@@ -137,6 +137,7 @@ void Renderer::update_uniform_buffers(RenderObject* first, size_t count)
 	vmaMapMemory(_allocator, _ubo._allocation, &data);
 	uniformData.projInverse = glm::inverse(projection);
 	uniformData.viewInverse = glm::inverse(VulkanEngine::cinstance->camera->getView());
+	uniformData.position = glm::vec4(VulkanEngine::cinstance->camera->_position, 1.0);
 	memcpy(data, &uniformData, sizeof(uniformData));
 	vmaUnmapMemory(_allocator, _ubo._allocation);
 

@@ -81,6 +81,7 @@ public:
 	struct UniformData {
 		glm::mat4 viewInverse;
 		glm::mat4 projInverse;
+		glm::vec4 position;
 	} uniformData;
 
 private:

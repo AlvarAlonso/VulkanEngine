@@ -223,13 +223,17 @@ void VulkanEngine::render_imgui()
 void VulkanEngine::create_materials()
 {
 	//diffuse
-	create_material({ 0.65f, 0.2f, 0.0f, 1.0f }, { 0.0f, 0.0f, 0.0f, 0.0f });
+	create_material({ 0.65f, 0.2f, 0.0f, 1.0f }, { 0.0f, 1.0f, 0.0f, 0.0f });
 
-	//refractive
-	create_material({ 1.0f, 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 1.1f, 2.0f });
+	create_material({ 0.5f, 0.0f, 0.0f, 1.0f }, { 0.0f, 1.0f, 0.0f, 0.0f });
+
+	create_material({ 0.5f, 0.0f, 0.0f, 1.0f }, { 1.0f, 0.5f, 0.0f, 0.0f });
 	
 	//specular
 	create_material({ 1.0f, 1.0f, 1.0f, 1.0f }, { 1.0f, 0.0f, 0.0f, 1.0f });
+	
+	//refractive
+	create_material({ 1.0f, 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 1.1f, 2.0f });
 }
 
 void VulkanEngine::load_meshes()

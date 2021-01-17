@@ -1181,24 +1181,24 @@ void RenderEngine::create_raytracing_pipeline()
 	uniformBufferBinding.binding = 2;
 	uniformBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 	uniformBufferBinding.descriptorCount = 1;
-	uniformBufferBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
+	uniformBufferBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
 	VkDescriptorSetLayoutBinding vertexBufferBinding{};
 	vertexBufferBinding.binding = 3;
 	vertexBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-	vertexBufferBinding.descriptorCount = 3; //HARDCODED
+	vertexBufferBinding.descriptorCount = 6; //HARDCODED
 	vertexBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
 	VkDescriptorSetLayoutBinding indexBufferBinding{};
 	indexBufferBinding.binding = 4;
 	indexBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-	indexBufferBinding.descriptorCount = 3; //HARDCODED
+	indexBufferBinding.descriptorCount = 6; //HARDCODED
 	indexBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
 	VkDescriptorSetLayoutBinding transformBufferBinding{};
 	transformBufferBinding.binding = 5;
 	transformBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-	transformBufferBinding.descriptorCount = 3; //HARDCODED
+	transformBufferBinding.descriptorCount = 6; //HARDCODED
 	transformBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
 	VkDescriptorSetLayoutBinding sceneBufferBinding{};
