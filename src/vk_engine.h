@@ -6,7 +6,7 @@
 #include "vk_renderer.h"
 #include "Camera.h"
 
-const glm::vec3 camera_default_position = { 5.0f, 30.0f, 5.0f };
+const glm::vec3 camera_default_position = { 0.0f, 10.0f, 5.0f };
 
 //constexpr unsigned int FRAME_OVERLAP = 2;
 

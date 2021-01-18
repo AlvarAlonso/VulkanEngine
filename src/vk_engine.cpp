@@ -29,7 +29,7 @@ void VulkanEngine::init()
 	cinstance = this;
 
 	camera = new Camera(camera_default_position);
-	camera->_speed = 0.006f;
+	camera->_speed = 0.1f;
 
 	renderer = new Renderer();
 	
@@ -221,32 +221,44 @@ void VulkanEngine::render_imgui()
 }
 
 void VulkanEngine::create_materials()
-{
-	//diffuse
-	create_material({ 0.65f, 0.2f, 0.0f, 1.0f }, { 0.0f, 1.0f, 0.0f, 0.0f });
-
-	create_material({ 0.5f, 0.0f, 0.0f, 1.0f }, { 0.0f, 1.0f, 0.0f, 0.0f });
-
-	create_material({ 0.5f, 0.0f, 0.0f, 1.0f }, { 1.0f, 0.5f, 0.0f, 0.0f });
-	
+{	
 	//specular
 	create_material({ 1.0f, 1.0f, 1.0f, 1.0f }, { 1.0f, 0.0f, 0.0f, 1.0f });
 	
 	//refractive
 	create_material({ 1.0f, 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 1.1f, 2.0f });
+
+	//diffuse
+	create_material({ 1.0f, 1.0f, 1.0f, 1.0f }, { 0.0f, 1.0f, 0.0f, 0.0f }); //white
+
+	create_material({ 0.5f, 0.0f, 0.0f, 1.0f }, { 0.0f, 1.0f, 0.0f, 0.0f }); //red
+
+	create_material({ 0.5f, 0.0f, 0.0f, 1.0f }, { 1.0f, 0.5f, 0.0f, 0.0f }); //metal red
+
+	create_material({ 0.5f, 0.0f, 0.0f, 1.0f }, { 1.0f, 0.5f, 0.0f, 0.0f }); //blue
+
+	create_material({ 0.5f, 0.0f, 0.0f, 1.0f }, { 0.7f, 0.8f, 0.0f, 0.0f }); //metal blue
 }
 
 void VulkanEngine::load_meshes()
 {
-	Mesh monkeyMesh("../assets/monkey_smooth.obj");
+	//Mesh monkeyMesh("../assets/monkey_smooth.obj");
 
-	Mesh lostEmpire("../assets/lost_empire.obj");
+	//Mesh lostEmpire("../assets/lost_empire.obj");
 
-	Mesh sphere("../assets/sphere.obj");
+	//Mesh sphere("../assets/sphere.obj");
 
-	_meshes["monkey"] = monkeyMesh;
-	_meshes["empire"] = lostEmpire;
-	_meshes["sphere"] = sphere;
+	//_meshes["monkey"] = monkeyMesh;
+	//_meshes["empire"] = lostEmpire;
+	//_meshes["sphere"] = sphere;
+
+	Mesh tree("../assets/MapleTree.obj");
+	Mesh tree_leaves("../assets/MapleTreeLeaves.obj");
+	Mesh tree_stem("../assets/MapleTreeStem.obj");
+
+	_meshes["tree"] = tree;
+	_meshes["tree_leaves"] = tree_leaves;
+	_meshes["tree_stem"] = tree_stem;
 }
 
 Material* VulkanEngine::create_material(const glm::vec4& color, const glm::vec4& properties)
@@ -273,6 +285,25 @@ Mesh* VulkanEngine::get_mesh(const std::string& name)
 
 void VulkanEngine::load_images()
 {
+	Texture defaultTexture;
+
+	vkutil::load_image_from_file(*this, "../assets/plain.jpg", defaultTexture.image);
+
+	VkImageViewCreateInfo imageinfo = vkinit::imageview_create_info(VK_FORMAT_R8G8B8A8_UNORM, defaultTexture.image._image, VK_IMAGE_ASPECT_COLOR_BIT);
+	vkCreateImageView(RenderEngine::_device, &imageinfo, nullptr, &defaultTexture.imageView);
+
+	_loadedTextures.push_back(defaultTexture);
+
+	Texture grassTexture;
+
+	vkutil::load_image_from_file(*this, "../assets/grass.jpg", grassTexture.image);
+
+	VkImageViewCreateInfo imageinfo2 = vkinit::imageview_create_info(VK_FORMAT_R8G8B8A8_UNORM, grassTexture.image._image, VK_IMAGE_ASPECT_COLOR_BIT);
+	vkCreateImageView(RenderEngine::_device, &imageinfo2, nullptr, &grassTexture.imageView);
+
+	_loadedTextures.push_back(grassTexture);
+
+	/*
 	Texture lostEmpire;
 
 	vkutil::load_image_from_file(*this, "../assets/lost_empire-RGBA.png", lostEmpire.image);
@@ -281,14 +312,5 @@ void VulkanEngine::load_images()
 	vkCreateImageView(RenderEngine::_device, &imageinfo, nullptr, &lostEmpire.imageView);
 
 	_loadedTextures.push_back(lostEmpire);
-
-
-	Texture defaultTexture;
-
-	vkutil::load_image_from_file(*this, "../assets/plain.jpg", defaultTexture.image);
-
-	VkImageViewCreateInfo imageinfo2 = vkinit::imageview_create_info(VK_FORMAT_R8G8B8A8_UNORM, defaultTexture.image._image, VK_IMAGE_ASPECT_COLOR_BIT);
-	vkCreateImageView(RenderEngine::_device, &imageinfo2, nullptr, &defaultTexture.imageView);
-
-	_loadedTextures.push_back(defaultTexture);
+	*/
 }

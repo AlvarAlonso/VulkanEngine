@@ -4,7 +4,7 @@
 struct RayPayload {
 	vec4 color_dist;
 	vec4 direction;
-	vec3 origin;
+	vec4 origin;
 };
 
 layout(location = 0) rayPayloadInEXT RayPayload rayPayload;
@@ -18,6 +18,4 @@ void main()
 	float t = 0.5 * (unitDir.y + 1.0);
 	vec3 color = (1.0-t) * gradientStart + t * gradientEnd;
 	rayPayload.color_dist = vec4(color, -1.0);
-
-    //rayPayload.color_dist = vec4(0.0, 0.0, 0.2, -1.0);
 }

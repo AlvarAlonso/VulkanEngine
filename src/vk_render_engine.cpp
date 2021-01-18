@@ -1186,19 +1186,19 @@ void RenderEngine::create_raytracing_pipeline()
 	VkDescriptorSetLayoutBinding vertexBufferBinding{};
 	vertexBufferBinding.binding = 3;
 	vertexBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-	vertexBufferBinding.descriptorCount = 6; //HARDCODED
+	vertexBufferBinding.descriptorCount = 4; //HARDCODED
 	vertexBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
 	VkDescriptorSetLayoutBinding indexBufferBinding{};
 	indexBufferBinding.binding = 4;
 	indexBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-	indexBufferBinding.descriptorCount = 6; //HARDCODED
+	indexBufferBinding.descriptorCount = 4; //HARDCODED
 	indexBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
 	VkDescriptorSetLayoutBinding transformBufferBinding{};
 	transformBufferBinding.binding = 5;
 	transformBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-	transformBufferBinding.descriptorCount = 6; //HARDCODED
+	transformBufferBinding.descriptorCount = 4; //HARDCODED
 	transformBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
 	VkDescriptorSetLayoutBinding sceneBufferBinding{};

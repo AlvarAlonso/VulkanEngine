@@ -6,7 +6,7 @@
 struct RayPayload {
 	vec4 color_dist;
 	vec4 direction;
-	vec3 origin;
+	vec4 origin;
 };
 
 layout(location = 0) rayPayloadInEXT RayPayload rayPayload;
@@ -43,7 +43,7 @@ layout(binding = 2, set = 0) uniform CameraProperties
 layout(binding = 3, set = 0, scalar) buffer Vertices { Vertex v[]; } vertices[];
 layout(binding = 4, set = 0) buffer Indices { uint i[]; } indices[];
 layout(binding = 5, set = 0) buffer Transforms { mat4 t; } transforms[];
-layout(binding = 6, set = 0) uniform Lights { Light l[3]; } lights;
+layout(binding = 6, set = 0) uniform Lights { Light l[5]; } lights;
 layout(binding = 7, set = 0) buffer Materials { Material m[]; } materials;
 layout(binding = 8, set = 0) buffer MatIdx { uint i[]; } matIndices;
 layout(binding = 9, set = 0) uniform sampler2D textures[]; //image2D ?
@@ -90,11 +90,13 @@ void main()
 	worldPos = vec3(transforms[gl_InstanceCustomIndexEXT].t * vec4(worldPos, 1.0));
 
 	vec2 uv = vec2(v0.uv.xy * barycentrics.x + v1.uv.xy * barycentrics.y + v2.uv.xy * barycentrics.z);
+	uv *= 10.0;
 
 	//MATERIAL INFO
 	float metal = materials.m[matIndices.i[gl_InstanceCustomIndexEXT]].properties.x;
 	float roughness = materials.m[matIndices.i[gl_InstanceCustomIndexEXT]].properties.y;
 	vec3 color_texture = texture(textures[texIndices.i[gl_InstanceCustomIndexEXT]], uv).xyz;
+	vec3 color_material = materials.m[matIndices.i[gl_InstanceCustomIndexEXT]].color.xyz;
 
 	//calculate f0 reflection based on the color and metalness
 	vec3 f0 = color_texture * metal + (vec3( 0.5 ) * ( 1.0 - metal ));
@@ -102,7 +104,7 @@ void main()
 	//COMPUTE LIGHT
 	vec3 totalLight = vec3(0);
 
-  for(int i = 0; i < 3; i++)
+  for(int i = 0; i < 5; i++)
   {
 	  float lightIntensity = lights.l[i].color_intensity.w;
 	  float lightMaxDist  = lights.l[i].position_maxDist.w;
@@ -150,7 +152,7 @@ void main()
 	  }
 		
 	  //calulate the specular and diffuse
-	  vec3 diffuse = ( 1.0 - metal ) * color_texture;	//the most metalness the less diffuse color
+	  vec3 diffuse = ( 1.0 - metal ) * color_texture * color_material;	//the more metalness the less diffuse color
 	  vec3 ks = specularBRDF( roughness, f0, NdotH, NdotV, NdotL, LdotH );
 	  vec3 kd = diffuse * NdotL;
 	  vec3 direct = kd + ks;
@@ -158,32 +160,42 @@ void main()
 	  totalLight += direct * lights.l[i].color_intensity.xyz * lightIntensity * attenuation;
 	}
 
-	//totalLight /= 3;
-
-	vec3 color = materials.m[matIndices.i[gl_InstanceCustomIndexEXT]].color.xyz;
-
-	vec3 finalColor = totalLight; // * color;
+	vec3 finalColor = totalLight;
 
 	//PAYLOAD INFORMATION
 	float materialType = materials.m[matIndices.i[gl_InstanceCustomIndexEXT]].properties.w;
 
 	if(materialType < 0.001)
 	{
-		//cast rays to compute global ilumination and update color
 		rayPayload.color_dist = vec4(finalColor, gl_RayTmaxEXT);
-		rayPayload.direction = vec4(0.0, 0.0, 0.0, -1.0);
-		rayPayload.origin = worldPos;
+
+		if(rayPayload.origin.w < 0.001)
+		{
+			rayPayload.direction.xyz = N;
+		}
+
+		rayPayload.direction.w = -1.0;
+
+		rayPayload.origin.w += 1;
+		rayPayload.origin.xyz = worldPos;
 	}
 	else if(materialType == 1.0)
 	{
 		vec3 I = normalize(gl_WorldRayDirectionEXT);
-		//vec3 N = normalize(normal);
 
 		vec3 direction = reflect(I, N);
 
 		rayPayload.color_dist = vec4(finalColor, gl_RayTmaxEXT);
 		rayPayload.direction = vec4(direction, 1.0);
-		rayPayload.origin = worldPos;
+
+		if(rayPayload.origin.w == 1.0)
+		{
+			rayPayload.origin = vec4(worldPos, 2.0);
+		}
+		else
+		{
+			rayPayload.origin = vec4(worldPos, 0.0);
+		}
 	}
 	else if(materialType == 2.0)
 	{
@@ -201,7 +213,15 @@ void main()
 
 		rayPayload.color_dist = vec4(finalColor, gl_RayTmaxEXT);
 		rayPayload.direction = vec4(direction.xyz,  1.0);
-		rayPayload.origin = worldPos;
+
+		if(rayPayload.origin.w == 1.0)
+		{
+			rayPayload.origin = vec4(worldPos, 2.0);
+		}
+		else
+		{
+			rayPayload.origin = vec4(worldPos, 0.0);
+		}
 	}
 }
 
