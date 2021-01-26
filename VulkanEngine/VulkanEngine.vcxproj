@@ -163,12 +163,14 @@
     <ClCompile Include="..\src\vk_entity.cpp" />
     <ClCompile Include="..\src\vk_initializers.cpp" />
     <ClCompile Include="..\src\vk_mesh.cpp" />
+    <ClCompile Include="..\src\vk_prefab.cpp" />
     <ClCompile Include="..\src\vk_renderer.cpp" />
     <ClCompile Include="..\src\vk_render_engine.cpp" />
     <ClCompile Include="..\src\vk_scene.cpp" />
     <ClCompile Include="..\src\vk_textures.cpp" />
     <ClCompile Include="..\src\vk_utils.cpp" />
     <ClCompile Include="..\third_party\vkbootstrap\VkBootstrap.cpp" />
+    <ClCompile Include="vk_material.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\src\Camera.h" />
@@ -176,12 +178,14 @@
     <ClInclude Include="..\src\vk_entity.h" />
     <ClInclude Include="..\src\vk_initializers.h" />
     <ClInclude Include="..\src\vk_mesh.h" />
+    <ClInclude Include="..\src\vk_prefab.h" />
     <ClInclude Include="..\src\vk_renderer.h" />
     <ClInclude Include="..\src\vk_render_engine.h" />
     <ClInclude Include="..\src\vk_scene.h" />
     <ClInclude Include="..\src\vk_textures.h" />
     <ClInclude Include="..\src\vk_types.h" />
     <ClInclude Include="..\src\vk_utils.h" />
+    <ClInclude Include="vk_material.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="..\shaders\closestHit.rchit" />

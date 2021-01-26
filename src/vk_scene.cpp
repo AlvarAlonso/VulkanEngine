@@ -18,6 +18,18 @@ void Scene::generate_sample_scene()
 	tree._material = &VulkanEngine::cinstance->_materials[3];
 	tree._model = glm::translate(glm::vec3{ 0, 0, 0 });
 
+	RenderObject tree_leaves;
+	tree_leaves._mesh = VulkanEngine::cinstance->get_mesh("tree_leaves");
+	tree_leaves._albedoTexture = default_texture;
+	tree_leaves._material = &VulkanEngine::cinstance->_materials[3];
+	tree_leaves._model = glm::translate(glm::vec3{ 0, 0, 0 });
+
+	RenderObject tree_stem;
+	tree_stem._mesh = VulkanEngine::cinstance->get_mesh("tree_stem");
+	tree_stem._albedoTexture = default_texture;
+	tree_stem._material = &VulkanEngine::cinstance->_materials[3];
+	tree_stem._model = glm::translate(glm::vec3{ 0, 0, 0 });
+
 	Mesh* meshGround = new Mesh();
 	meshGround->create_quad();
 
@@ -63,15 +75,21 @@ void Scene::generate_sample_scene()
 
 	_lights.push_back(point_light1);
 
-	_renderables.push_back(tree);
+	//_renderables.push_back(tree);
+	_renderables.push_back(tree_leaves);
+	//_renderables.push_back(tree_stem);
 	_renderables.push_back(ground);
 
 	//renderables assigned to default material
 	_matIndices.resize(_renderables.size());
 	_matIndices[0] = 2;
 	_matIndices[1] = 2;
+	//_matIndices[2] = 2;
+	//_matIndices[3] = 2;
 
 	_texIndices.resize(_renderables.size());
 	_texIndices[0] = 0;
 	_texIndices[1] = 1;
-}
+	//_texIndices[2] = 1;
+	//_texIndices[3] = 1;
+}                                

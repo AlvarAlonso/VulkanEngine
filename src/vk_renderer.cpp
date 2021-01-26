@@ -99,7 +99,7 @@ void Renderer::draw_scene()
 
 	if(_renderMode == RENDER_MODE_RAYTRACING && !areAccelerationStructuresInit)
 	{
-		re->create_acceleration_structures(*currentScene);
+		re->create_scene_structures(*currentScene);
 		create_raytracing_descriptor_sets();
 		record_raytracing_command_buffer();
 		areAccelerationStructuresInit = true;

@@ -218,8 +218,8 @@ public:
 	//shuts down the engine
 	void cleanup();
 
-	//create acceleration structures for the current scene in the vulkan engine
-	void create_acceleration_structures(const Scene& scene);
+	//create pipeline and acceleration structures for the current scene
+	void create_scene_structures(const Scene& scene);
 
 	void create_top_level_acceleration_structure(const Scene& scene, bool recreated);
 
@@ -267,7 +267,7 @@ private:
 
 	void create_storage_image();
 
-	void create_raytracing_pipeline();
+	void create_raytracing_pipeline(const int& renderablesCount);
 
 	void create_pospo_structures();
 

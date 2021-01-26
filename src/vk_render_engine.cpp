@@ -1,6 +1,3 @@
-//#include "vk_render_engine.h"
-#include "vk_engine.h"
-
 #include <SDL.h>
 #include <SDL_vulkan.h>
 
@@ -931,10 +928,6 @@ void RenderEngine::init_raytracing_structures()
 
 	create_storage_image();
 
-	create_raytracing_pipeline();
-
-	create_shader_binding_table();
-
 	create_raytracing_descriptor_pool();
 
 	create_pospo_structures();
@@ -1163,7 +1156,7 @@ void RenderEngine::create_storage_image()
 		});
 }
 
-void RenderEngine::create_raytracing_pipeline()
+void RenderEngine::create_raytracing_pipeline(const int& renderablesCount)
 {
 	VkDescriptorSetLayoutBinding accelerationStructureLayoutBinding{};
 	accelerationStructureLayoutBinding.binding = 0;
@@ -1186,19 +1179,19 @@ void RenderEngine::create_raytracing_pipeline()
 	VkDescriptorSetLayoutBinding vertexBufferBinding{};
 	vertexBufferBinding.binding = 3;
 	vertexBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-	vertexBufferBinding.descriptorCount = 4; //HARDCODED
+	vertexBufferBinding.descriptorCount = renderablesCount;
 	vertexBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
 	VkDescriptorSetLayoutBinding indexBufferBinding{};
 	indexBufferBinding.binding = 4;
 	indexBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-	indexBufferBinding.descriptorCount = 4; //HARDCODED
+	indexBufferBinding.descriptorCount = renderablesCount;
 	indexBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
 	VkDescriptorSetLayoutBinding transformBufferBinding{};
 	transformBufferBinding.binding = 5;
 	transformBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-	transformBufferBinding.descriptorCount = 4; //HARDCODED
+	transformBufferBinding.descriptorCount = renderablesCount;
 	transformBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
 	VkDescriptorSetLayoutBinding sceneBufferBinding{};
@@ -1911,8 +1904,11 @@ void RenderEngine::cleanup()
 	}
 }
 
-void RenderEngine::create_acceleration_structures(const Scene& scene)
+void RenderEngine::create_scene_structures(const Scene& scene)
 {
+	create_raytracing_pipeline(scene._renderables.size()); 
+	create_shader_binding_table();
+
 	create_bottom_level_acceleration_structure(scene);
 	create_top_level_acceleration_structure(scene, false);
 }
