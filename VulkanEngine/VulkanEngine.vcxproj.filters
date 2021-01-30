@@ -78,7 +78,10 @@
     <ClCompile Include="..\src\vk_prefab.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="vk_material.cpp">
+    <ClCompile Include="..\src\vk_gltf_loader.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\vk_material.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -119,7 +122,10 @@
     <ClInclude Include="..\src\vk_prefab.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="vk_material.h">
+    <ClInclude Include="..\src\vk_gltf_loader.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\vk_material.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

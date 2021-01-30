@@ -4,9 +4,14 @@
 #include "vk_initializers.h"
 #include "vk_utils.h"
 
-#define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
 #include "vk_render_engine.h"
+#include <cassert>
+
+using namespace VKE;
+
+int textureCount = 0;
+std::map<std::string, VKE::Texture*> VKE::Texture::sTexturesLoaded;
 
 bool vkutil::load_image_from_file(VulkanEngine& engine, const char* file, AllocatedImage& outImage)
 {
@@ -108,4 +113,19 @@ bool vkutil::load_image_from_file(VulkanEngine& engine, const char* file, Alloca
     outImage = newImage;
 
     return true;
+}
+
+VKE::Texture* VKE::Texture::get(const char* name)
+{
+    assert(name);
+    std::map<std::string, VKE::Texture*>::iterator it = sTexturesLoaded.find(name);
+    if (it != sTexturesLoaded.end())
+        return it->second;
+    return nullptr;
+}
+
+void VKE::Texture::register_texture(std::string name)
+{
+    _name = name;
+    sTexturesLoaded[name] = this;
 }

@@ -39,14 +39,10 @@ void VulkanEngine::init()
 
 	load_meshes();
 
-	create_materials();
-
 	scene = new Scene();
 	scene->generate_sample_scene();
 
 	renderer->currentScene = scene;
-
-	//_renderables = scene->_renderables;
 
 	//everything went fine
 	_isInitialized = true;
@@ -220,97 +216,36 @@ void VulkanEngine::render_imgui()
 	*/
 }
 
-void VulkanEngine::create_materials()
-{	
-	//specular
-	create_material({ 1.0f, 1.0f, 1.0f, 1.0f }, { 1.0f, 0.0f, 0.0f, 1.0f });
-	
-	//refractive
-	create_material({ 1.0f, 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 1.1f, 2.0f });
-
-	//diffuse
-	create_material({ 1.0f, 1.0f, 1.0f, 1.0f }, { 0.0f, 1.0f, 0.0f, 0.0f }); //white
-
-	create_material({ 0.5f, 0.0f, 0.0f, 1.0f }, { 0.0f, 1.0f, 0.0f, 0.0f }); //red
-
-	create_material({ 0.5f, 0.0f, 0.0f, 1.0f }, { 1.0f, 0.5f, 0.0f, 0.0f }); //metal red
-
-	create_material({ 0.5f, 0.0f, 0.0f, 1.0f }, { 1.0f, 0.5f, 0.0f, 0.0f }); //blue
-
-	create_material({ 0.5f, 0.0f, 0.0f, 1.0f }, { 0.7f, 0.8f, 0.0f, 0.0f }); //metal blue
-}
-
 void VulkanEngine::load_meshes()
 {
-	//Mesh monkeyMesh("../assets/monkey_smooth.obj");
-
-	//Mesh lostEmpire("../assets/lost_empire.obj");
-
-	//Mesh sphere("../assets/sphere.obj");
-
-	//_meshes["monkey"] = monkeyMesh;
-	//_meshes["empire"] = lostEmpire;
-	//_meshes["sphere"] = sphere;
-
 	Mesh tree("../assets/MapleTree.obj");
 	Mesh tree_leaves("../assets/MapleTreeLeaves.obj");
 	Mesh tree_stem("../assets/MapleTreeStem.obj");
-
-	_meshes["tree"] = tree;
-	_meshes["tree_leaves"] = tree_leaves;
-	_meshes["tree_stem"] = tree_stem;
-}
-
-Material* VulkanEngine::create_material(const glm::vec4& color, const glm::vec4& properties)
-{
-	Material mat;
-	mat.color = color;
-	mat.properties = properties;
-	_materials.push_back(mat);
-	return &_materials[_materials.size() - 1];
-}
-
-Mesh* VulkanEngine::get_mesh(const std::string& name)
-{
-	auto it = _meshes.find(name);
-	if(it == _meshes.end())
-	{
-		return nullptr;
-	}
-	else
-	{
-		return &(*it).second;
-	}
 }
 
 void VulkanEngine::load_images()
 {
-	Texture defaultTexture;
+	VKE::Texture* defaultTexture = new VKE::Texture();
 
-	vkutil::load_image_from_file(*this, "../assets/plain.jpg", defaultTexture.image);
+	vkutil::load_image_from_file(*this, "../assets/plain.jpg", defaultTexture->_image);
 
-	VkImageViewCreateInfo imageinfo = vkinit::imageview_create_info(VK_FORMAT_R8G8B8A8_UNORM, defaultTexture.image._image, VK_IMAGE_ASPECT_COLOR_BIT);
-	vkCreateImageView(RenderEngine::_device, &imageinfo, nullptr, &defaultTexture.imageView);
+	VkImageViewCreateInfo imageinfo = vkinit::imageview_create_info(VK_FORMAT_R8G8B8A8_UNORM, defaultTexture->_image._image, VK_IMAGE_ASPECT_COLOR_BIT);
+	vkCreateImageView(RenderEngine::_device, &imageinfo, nullptr, &defaultTexture->_imageView);
 
-	_loadedTextures.push_back(defaultTexture);
+	defaultTexture->register_texture("default");
 
-	Texture grassTexture;
 
-	vkutil::load_image_from_file(*this, "../assets/grass.jpg", grassTexture.image);
+	VKE::Texture* grassTexture = new VKE::Texture();
 
-	VkImageViewCreateInfo imageinfo2 = vkinit::imageview_create_info(VK_FORMAT_R8G8B8A8_UNORM, grassTexture.image._image, VK_IMAGE_ASPECT_COLOR_BIT);
-	vkCreateImageView(RenderEngine::_device, &imageinfo2, nullptr, &grassTexture.imageView);
+	vkutil::load_image_from_file(*this, "../assets/grass.jpg", grassTexture->_image);
 
-	_loadedTextures.push_back(grassTexture);
+	VkImageViewCreateInfo imageinfo2 = vkinit::imageview_create_info(VK_FORMAT_R8G8B8A8_UNORM, grassTexture->_image._image, VK_IMAGE_ASPECT_COLOR_BIT);
+	vkCreateImageView(RenderEngine::_device, &imageinfo2, nullptr, &grassTexture->_imageView);
 
-	/*
-	Texture lostEmpire;
+	grassTexture->register_texture("grass");
 
-	vkutil::load_image_from_file(*this, "../assets/lost_empire-RGBA.png", lostEmpire.image);
-
-	VkImageViewCreateInfo imageinfo = vkinit::imageview_create_info(VK_FORMAT_R8G8B8A8_UNORM, lostEmpire.image._image, VK_IMAGE_ASPECT_COLOR_BIT);
-	vkCreateImageView(RenderEngine::_device, &imageinfo, nullptr, &lostEmpire.imageView);
-
-	_loadedTextures.push_back(lostEmpire);
-	*/
+	RenderEngine::_mainDeletionQueue.push_function([=]() {
+		vkDestroyImageView(RenderEngine::_device, defaultTexture->_imageView, nullptr);
+		vkDestroyImageView(RenderEngine::_device, grassTexture->_imageView, nullptr);
+		});
 }

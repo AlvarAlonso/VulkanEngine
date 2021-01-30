@@ -1683,8 +1683,8 @@ BlasInput RenderEngine::renderable_to_vulkan_geometry(RenderObject renderable)
 	VkDeviceOrHostAddressConstKHR indexBufferDeviceAddress{};
 	VkDeviceOrHostAddressConstKHR transformBufferDeviceAddress{};
 
-	vertexBufferDeviceAddress.deviceAddress = vkutil::get_buffer_device_address(_device, renderable._mesh->_vertexBuffer._buffer);
-	indexBufferDeviceAddress.deviceAddress = vkutil::get_buffer_device_address(_device, renderable._mesh->_indexBuffer._buffer);
+	vertexBufferDeviceAddress.deviceAddress = vkutil::get_buffer_device_address(_device, renderable._prefab->_vertices.vertexBuffer._buffer);
+	indexBufferDeviceAddress.deviceAddress = vkutil::get_buffer_device_address(_device, renderable._prefab->_indices.indexBuffer._buffer);
 	transformBufferDeviceAddress.deviceAddress = vkutil::get_buffer_device_address(_device, transformBuffer._buffer);
 
 	// Build
@@ -1695,7 +1695,7 @@ BlasInput RenderEngine::renderable_to_vulkan_geometry(RenderObject renderable)
 	accelerationStructureGeometry.geometry.triangles.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR;
 	accelerationStructureGeometry.geometry.triangles.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;
 	accelerationStructureGeometry.geometry.triangles.vertexData = vertexBufferDeviceAddress;
-	accelerationStructureGeometry.geometry.triangles.maxVertex = renderable._mesh->_vertices.size();
+	accelerationStructureGeometry.geometry.triangles.maxVertex = renderable._prefab->_vertices.count;
 	accelerationStructureGeometry.geometry.triangles.vertexStride = sizeof(Vertex);
 	accelerationStructureGeometry.geometry.triangles.indexType = VK_INDEX_TYPE_UINT32;
 	accelerationStructureGeometry.geometry.triangles.indexData = indexBufferDeviceAddress;
@@ -1711,7 +1711,7 @@ BlasInput RenderEngine::renderable_to_vulkan_geometry(RenderObject renderable)
 	accelerationStructureBuildGeometryInfo.geometryCount = 1;
 	accelerationStructureBuildGeometryInfo.pGeometries = &accelerationStructureGeometry;
 
-	const uint32_t numTriangles = renderable._mesh->_indices.size() / 3;
+	const uint32_t numTriangles = renderable._prefab->_indices.count / 3;
 	VkAccelerationStructureBuildSizesInfoKHR accelerationStructureBuildSizesInfo{};
 	accelerationStructureBuildSizesInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
 	vkGetAccelerationStructureBuildSizesKHR(

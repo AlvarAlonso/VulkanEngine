@@ -88,7 +88,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(SolutionDir)\src;C:\VulkanSDK\1.2.154.1\Include;$(SolutionDir)\third_party\glm;$(SolutionDir)\third_party\imgui;$(SolutionDir)\third_party\stb_image;$(SolutionDir)\third_party\tinyobjloader;$(SolutionDir)\third_party\vkbootstrap;$(SolutionDir)\third_party\vma;$(SolutionDir)\third_party\volk;C:\Program Files (x86)\Microsoft Visual Studio\2019\Libraries\SDL2-2.0.12\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)\src;C:\VulkanSDK\1.2.154.1\Include;$(SolutionDir)\third_party\glm;$(SolutionDir)\third_party\imgui;$(SolutionDir)\third_party\stb_image;$(SolutionDir)\third_party\tinyobjloader;$(SolutionDir)\third_party\vkbootstrap;$(SolutionDir)\third_party\vma;$(SolutionDir)\third_party\volk;C:\Program Files (x86)\Microsoft Visual Studio\2019\Libraries\SDL2-2.0.12\include;$(SolutionDir)\third_party\tinygltf_loader;$(SolutionDir)\third_party\cgltf;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -105,7 +105,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>WIN32;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(SolutionDir)\src;C:\VulkanSDK\1.2.154.1\Include;$(SolutionDir)\third_party\glm;$(SolutionDir)\third_party\imgui;$(SolutionDir)\third_party\stb_image;$(SolutionDir)\third_party\tinyobjloader;$(SolutionDir)\third_party\vkbootstrap;$(SolutionDir)\third_party\vma;$(SolutionDir)\third_party\volk;C:\Program Files (x86)\Microsoft Visual Studio\2019\Libraries\SDL2-2.0.12\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)\src;C:\VulkanSDK\1.2.154.1\Include;$(SolutionDir)\third_party\glm;$(SolutionDir)\third_party\imgui;$(SolutionDir)\third_party\stb_image;$(SolutionDir)\third_party\tinyobjloader;$(SolutionDir)\third_party\vkbootstrap;$(SolutionDir)\third_party\vma;$(SolutionDir)\third_party\volk;C:\Program Files (x86)\Microsoft Visual Studio\2019\Libraries\SDL2-2.0.12\include;$(SolutionDir)\third_party\tinygltf_loader;$(SolutionDir)\third_party\cgltf;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -122,7 +122,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(SolutionDir)\src;C:\VulkanSDK\1.2.154.1\Include;$(SolutionDir)\third_party\glm;$(SolutionDir)\third_party\imgui;$(SolutionDir)\third_party\stb_image;$(SolutionDir)\third_party\tinyobjloader;$(SolutionDir)\third_party\vkbootstrap;$(SolutionDir)\third_party\vma;$(SolutionDir)\third_party\volk;C:\Program Files (x86)\Microsoft Visual Studio\2019\Libraries\SDL2-2.0.12\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)\src;C:\VulkanSDK\1.2.154.1\Include;$(SolutionDir)\third_party\glm;$(SolutionDir)\third_party\imgui;$(SolutionDir)\third_party\stb_image;$(SolutionDir)\third_party\tinyobjloader;$(SolutionDir)\third_party\vkbootstrap;$(SolutionDir)\third_party\vma;$(SolutionDir)\third_party\volk;C:\Program Files (x86)\Microsoft Visual Studio\2019\Libraries\SDL2-2.0.12\include;$(SolutionDir)\third_party\tinygltf_loader;$(SolutionDir)\third_party\cgltf;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -139,7 +139,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(SolutionDir)\src;C:\VulkanSDK\1.2.154.1\Include;$(SolutionDir)\third_party\glm;$(SolutionDir)\third_party\imgui;$(SolutionDir)\third_party\stb_image;$(SolutionDir)\third_party\tinyobjloader;$(SolutionDir)\third_party\vkbootstrap;$(SolutionDir)\third_party\vma;$(SolutionDir)\third_party\volk;C:\Program Files (x86)\Microsoft Visual Studio\2019\Libraries\SDL2-2.0.12\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)\src;C:\VulkanSDK\1.2.154.1\Include;$(SolutionDir)\third_party\glm;$(SolutionDir)\third_party\imgui;$(SolutionDir)\third_party\stb_image;$(SolutionDir)\third_party\tinyobjloader;$(SolutionDir)\third_party\vkbootstrap;$(SolutionDir)\third_party\vma;$(SolutionDir)\third_party\volk;C:\Program Files (x86)\Microsoft Visual Studio\2019\Libraries\SDL2-2.0.12\include;$(SolutionDir)\third_party\tinygltf_loader;$(SolutionDir)\third_party\cgltf;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -161,7 +161,9 @@
     <ClCompile Include="..\src\main.cpp" />
     <ClCompile Include="..\src\vk_engine.cpp" />
     <ClCompile Include="..\src\vk_entity.cpp" />
+    <ClCompile Include="..\src\vk_gltf_loader.cpp" />
     <ClCompile Include="..\src\vk_initializers.cpp" />
+    <ClCompile Include="..\src\vk_material.cpp" />
     <ClCompile Include="..\src\vk_mesh.cpp" />
     <ClCompile Include="..\src\vk_prefab.cpp" />
     <ClCompile Include="..\src\vk_renderer.cpp" />
@@ -170,13 +172,14 @@
     <ClCompile Include="..\src\vk_textures.cpp" />
     <ClCompile Include="..\src\vk_utils.cpp" />
     <ClCompile Include="..\third_party\vkbootstrap\VkBootstrap.cpp" />
-    <ClCompile Include="vk_material.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\src\Camera.h" />
     <ClInclude Include="..\src\vk_engine.h" />
     <ClInclude Include="..\src\vk_entity.h" />
+    <ClInclude Include="..\src\vk_gltf_loader.h" />
     <ClInclude Include="..\src\vk_initializers.h" />
+    <ClInclude Include="..\src\vk_material.h" />
     <ClInclude Include="..\src\vk_mesh.h" />
     <ClInclude Include="..\src\vk_prefab.h" />
     <ClInclude Include="..\src\vk_renderer.h" />
@@ -185,7 +188,6 @@
     <ClInclude Include="..\src\vk_textures.h" />
     <ClInclude Include="..\src\vk_types.h" />
     <ClInclude Include="..\src\vk_utils.h" />
-    <ClInclude Include="vk_material.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="..\shaders\closestHit.rchit" />

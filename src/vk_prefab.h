@@ -18,9 +18,11 @@ namespace VKE
 		bool _visible;
 
 		Mesh* _mesh;
-		Material* _material;
 		glm::mat4 _model;
 		glm::mat4 _global_model;
+		glm::vec3 _translation;
+		glm::mat4 _rotation;
+		glm::vec3 _scale;
 
 		//info to create the tree
 		Node* _parent;
@@ -43,8 +45,20 @@ namespace VKE
 		std::string _name;
 		std::map<std::string, Node*> _nodes_by_name;
 
+		struct Vertices {
+			int count;
+			AllocatedBuffer vertexBuffer;
+		} _vertices;
+
+		struct Indices {
+			int count;
+			AllocatedBuffer indexBuffer;
+		} _indices;
+
 		Node _root;
 
+		Prefab();
+		Prefab(Mesh& mesh);
 		virtual ~Prefab();
 
 		//Manager to cache loaded prefabs

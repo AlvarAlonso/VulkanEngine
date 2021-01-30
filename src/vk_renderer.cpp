@@ -1,6 +1,8 @@
 #include "vk_renderer.h"
 #include "vk_initializers.h"
 #include "vk_engine.h"
+#include "vk_material.h"
+#include "vk_textures.h"
 #include "vk_utils.h"
 #include <iostream>
 
@@ -9,7 +11,8 @@
 #include <imgui_impl_vulkan.h>
 
 #include <array>
-#include <unordered_map>
+#include <map>
+#include <algorithm>
 
 RenderMode operator++(RenderMode& m, int) {
 
@@ -65,7 +68,7 @@ void Renderer::switch_render_mode()
 		re->reset_imgui(_renderMode);
 	}
 
-	//More things to add to optimize resources (only create structures related to the current render mode).
+	// TODO: More things to add to optimize resources (only create structures related to the current render mode).
 }
 
 void Renderer::init_renderer()
@@ -158,8 +161,10 @@ void Renderer::update_uniform_buffers(RenderObject* first, size_t count)
 	//re->create_top_level_acceleration_structure(*currentScene, true);
 }
 
+
 void Renderer::create_raytracing_descriptor_sets()
 {
+	/*
 	std::vector<RenderObject>& renderables = currentScene->_renderables;
 
 	VkDescriptorSetAllocateInfo alloc_info = {};
@@ -207,16 +212,20 @@ void Renderer::create_raytracing_descriptor_sets()
 	vmaUnmapMemory(_allocator, _sceneBuffer._allocation);
 
 
-	_materialBuffer = vkutil::create_buffer(_allocator, VulkanEngine::cinstance->_materials.size() * sizeof(Material), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+	_materialBuffer = vkutil::create_buffer(_allocator, VKE::Material::materialsCount * sizeof(Material), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 	
 	VkDescriptorBufferInfo materialBufferDescriptor{};
 	materialBufferDescriptor.offset = 0;
 	materialBufferDescriptor.buffer = _materialBuffer._buffer;
-	materialBufferDescriptor.range = VulkanEngine::cinstance->_materials.size() * sizeof(Material);
+	materialBufferDescriptor.range = VKE::Material::materialsCount * sizeof(Material);
+
 
 	void* materialData;
 	vmaMapMemory(_allocator, _materialBuffer._allocation, &materialData);
-	memcpy(materialData, VulkanEngine::cinstance->_materials.data(), VulkanEngine::cinstance->_materials.size() * sizeof(Material));
+	for(auto const& material : VKE::Material::sMaterials)
+	{
+		memcpy(materialData, material.second, sizeof(VKE::Material));
+	}
 	vmaUnmapMemory(_allocator, _materialBuffer._allocation);
 
 	_materialIndicesBuffer = vkutil::create_buffer(_allocator, currentScene->_matIndices.size() * sizeof(int), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
@@ -243,15 +252,26 @@ void Renderer::create_raytracing_descriptor_sets()
 	memcpy(texIdxData, currentScene->_texIndices.data(), currentScene->_texIndices.size() * sizeof(int));
 	vmaUnmapMemory(_allocator, _textureIndicesBuffer._allocation);
 
+	// Pass the texture data from a map to a vector, and order it by idx
 	std::vector<VkDescriptorImageInfo> textureImageInfos;
-	int texCount = VulkanEngine::cinstance->_loadedTextures.size();
+	int texCount = VKE::Texture::textureCount;
 	textureImageInfos.reserve(texCount);
 
-	for (int i = 0; i < texCount; i++)
+	std::vector<VKE::Texture*> orderedTexVec;
+
+	for (auto const& texture : VKE::Texture::sTexturesLoaded)
+	{
+		orderedTexVec.push_back(texture.second);
+	}
+
+	// Order tex idx vector
+	std::sort(orderedTexVec.begin(), orderedTexVec.end());
+
+	for (auto const& texture : orderedTexVec)
 	{
 		VkDescriptorImageInfo textureImageDescriptor{};
 		textureImageDescriptor.sampler = re->_defaultSampler;
-		textureImageDescriptor.imageView = VulkanEngine::cinstance->_loadedTextures[i].imageView;
+		textureImageDescriptor.imageView = texture->_imageView;
 		textureImageDescriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
 		textureImageInfos.push_back(textureImageDescriptor);
@@ -358,7 +378,9 @@ void Renderer::create_raytracing_descriptor_sets()
 	VkWriteDescriptorSet pospoWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, re->pospo._textureSet, &pospoImageInfo, 0);
 
 	vkUpdateDescriptorSets(_device, 1, &pospoWrite, 0, VK_NULL_HANDLE);
+	*/
 }
+
 
 void Renderer::record_raytracing_command_buffer()
 {
@@ -607,8 +629,10 @@ void Renderer::create_descriptor_buffers()
 	_objectBuffer = vkutil::create_buffer(_allocator, sizeof(GPUObjectData) * MAX_OBJECTS, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 }
 
+
 void Renderer::record_deferred_command_buffers(RenderObject* first, int count)
 {
+	/*
 	//FIRST PASS
 
 	VkCommandBufferBeginInfo deferredCmdBeginInfo = vkinit::command_buffer_begin_info(VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
@@ -660,6 +684,7 @@ void Renderer::record_deferred_command_buffers(RenderObject* first, int count)
 	vkCmdEndRenderPass(_deferredCommandBuffer);
 
 	VK_CHECK(vkEndCommandBuffer(_deferredCommandBuffer));
+	*/
 }
 
 void Renderer::init_descriptors()
@@ -855,8 +880,10 @@ int Renderer::get_current_frame_index()
 	return _frameNumber % FRAME_OVERLAP;
 }
 
+
 void Renderer::render_forward()
 {
+	/*
 	VK_CHECK(vkWaitForFences(_device, 1, &_frames[get_current_frame_index()]._renderFence, true, UINT64_MAX));
 	VK_CHECK(vkResetFences(_device, 1, &_frames[get_current_frame_index()]._renderFence));
 
@@ -921,6 +948,7 @@ void Renderer::render_forward()
 	VK_CHECK(vkQueuePresentKHR(_graphicsQueue, &presentInfo));
 
 	_frameNumber++;
+	*/
 }
 
 void Renderer::render_deferred()
@@ -1041,6 +1069,7 @@ void Renderer::render_raytracing()
 	_frameNumber++;
 }
 
+/*
 //more raster
 void Renderer::draw_forward(VkCommandBuffer cmd, RenderObject* first, int count)
 {
@@ -1082,6 +1111,7 @@ void Renderer::draw_forward(VkCommandBuffer cmd, RenderObject* first, int count)
 		vkCmdDrawIndexed(cmd, static_cast<uint32_t>(object._mesh->_indices.size()), 1, 0, 0, 0);
 	}
 }
+*/
 
 void Renderer::draw_deferred(VkCommandBuffer cmd, int imageIndex)
 {

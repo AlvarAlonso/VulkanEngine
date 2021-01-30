@@ -7,8 +7,7 @@ Entity::Entity()
 
 RenderObject::RenderObject() : Entity()
 {
-	_mesh = nullptr;
-	_material = nullptr;
+	_prefab = nullptr;
 }
 
 Light::Light()

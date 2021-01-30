@@ -21,10 +21,7 @@ class RenderObject : public Entity
 {
 public:
 	RenderObject();
-
-	Mesh* _mesh;
-	Texture* _albedoTexture;
-	Material* _material;
+	VKE::Prefab* _prefab;
 };
 
 class Light

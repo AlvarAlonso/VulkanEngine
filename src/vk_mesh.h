@@ -2,13 +2,13 @@
 
 #include <vk_types.h>
 #include <vector>
-#include <unordered_map>
+#include <map>
 
-struct Texture {
-	AllocatedImage image;
-	VkImageView imageView;
-	VkDescriptorSet descriptorSet;
-};
+// forward declarations
+namespace VKE
+{
+	struct Material;
+}
 
 struct VertexInputDescription {
 	std::vector<VkVertexInputBindingDescription> bindings;
@@ -48,9 +48,22 @@ namespace std {
 	};
 }
 
+struct Primitive {
+	uint32_t firstIndex;
+	uint32_t indexCount;
+	uint32_t vertexCount;
+	VKE::Material& material;
+	bool hasIndices;
+
+	Primitive(uint32_t firstIndex, uint32_t indexCount, uint32_t vertexCount, VKE::Material& material) : firstIndex(firstIndex), indexCount(indexCount), vertexCount(vertexCount), material(material) {
+		hasIndices = indexCount > 0;
+	};
+};
+
 class Mesh
 {
 public:
+	static std::map<std::string, Mesh*> sMeshesLoaded;
 	Mesh();
 
 	Mesh(const char* filename);
@@ -60,6 +73,8 @@ public:
 
 	AllocatedBuffer _vertexBuffer;
 	AllocatedBuffer _indexBuffer;
+
+	std::vector<Primitive*> _primitives;
 
 	void upload_to_gpu();
 
@@ -73,5 +88,9 @@ public:
 	void create_quad();
 
 	void create_cube();
+
+	//loader
+	static Mesh* get(const char* filename, bool skip_load = false);
+	void register_mesh(std::string name);
 };
 

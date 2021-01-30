@@ -1,10 +1,13 @@
 #include "vk_prefab.h"
+#include "vk_mesh.h"
+#include "vk_material.h"
+#include <glm/gtx/transform.hpp>
 
 using namespace VKE;
 
 std::map<std::string, Prefab*> Prefab::sPrefabsLoaded;
 
-Node::Node() : _parent(nullptr), _mesh(nullptr), _material(nullptr), _visible(true)
+Node::Node() : _parent(nullptr), _mesh(nullptr), _visible(true)
 {
 
 }
@@ -36,6 +39,25 @@ glm::mat4 Node::get_global_matrix(bool fast)
     else
         _global_model = _model;
     return _global_model;
+}
+
+Prefab::Prefab()
+{
+}
+
+Prefab::Prefab(Mesh& mesh)
+{
+    _vertices.count = mesh._vertices.size();
+    _vertices.vertexBuffer = mesh._vertexBuffer;
+    _indices.count = mesh._indices.size();
+    _indices.indexBuffer = mesh._indexBuffer;
+
+    Primitive* primitive = new Primitive(0, _indices.count, _vertices.count, *VKE::Material::sMaterials["default"]);
+
+    _root = Node();
+    _root._mesh = &mesh;
+    _root._mesh->_primitives.push_back(primitive);
+    _root._model = glm::translate(glm::vec3{ 0, 0, 0 });
 }
 
 Prefab::~Prefab()

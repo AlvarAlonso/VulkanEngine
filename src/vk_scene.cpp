@@ -3,40 +3,26 @@
 #include <glm/gtx/transform.hpp>
 #include <array>
 
+using namespace VKE;
+
 Scene::Scene()
 {
 }
 
 void Scene::generate_sample_scene()
-{
-	Texture* default_texture = &VulkanEngine::cinstance->_loadedTextures[0];
-	Texture* grass_texture = &VulkanEngine::cinstance->_loadedTextures[1];
-	
+{	
 	RenderObject tree;
-	tree._mesh = VulkanEngine::cinstance->get_mesh("tree");
-	tree._albedoTexture = default_texture;
-	tree._material = &VulkanEngine::cinstance->_materials[3];
+	tree._prefab = Prefab::get("../assets/MapleTree.obj");
 	tree._model = glm::translate(glm::vec3{ 0, 0, 0 });
-
-	RenderObject tree_leaves;
-	tree_leaves._mesh = VulkanEngine::cinstance->get_mesh("tree_leaves");
-	tree_leaves._albedoTexture = default_texture;
-	tree_leaves._material = &VulkanEngine::cinstance->_materials[3];
-	tree_leaves._model = glm::translate(glm::vec3{ 0, 0, 0 });
-
-	RenderObject tree_stem;
-	tree_stem._mesh = VulkanEngine::cinstance->get_mesh("tree_stem");
-	tree_stem._albedoTexture = default_texture;
-	tree_stem._material = &VulkanEngine::cinstance->_materials[3];
-	tree_stem._model = glm::translate(glm::vec3{ 0, 0, 0 });
 
 	Mesh* meshGround = new Mesh();
 	meshGround->create_quad();
 
+	Prefab* groundPrefab = new Prefab(*meshGround);
+	groundPrefab->register_prefab("ground");
+
 	RenderObject ground;
-	ground._mesh = meshGround;
-	ground._albedoTexture = grass_texture;
-	ground._material = &VulkanEngine::cinstance->_materials[3];
+	ground._prefab = Prefab::sPrefabsLoaded["ground"];
 	ground._model = glm::translate(glm::vec3{ 0, 0, 0 });
 	ground._model = glm::rotate(ground._model, glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
 	ground._model = glm::scale(ground._model, glm::vec3(100.0f, 100.0f, 1.0f));
@@ -45,6 +31,8 @@ void Scene::generate_sample_scene()
 	point_light1._position = glm::vec4(5.0f, 30.0f, 20.0f, 300.0f);
 	point_light1._color = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
 	
+	// TODO: Create texture descriptor sets while loading the gltf or textures from disk
+	/*
 	//allocate the descriptor set for single-texture to use on the material
 	VkDescriptorSetAllocateInfo allocInfo = {};
 	allocInfo.pNext = nullptr;
@@ -72,24 +60,12 @@ void Scene::generate_sample_scene()
 	VkWriteDescriptorSet texture2 = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, default_texture->descriptorSet, &imageBufferInfo, 0);
 
 	vkUpdateDescriptorSets(RenderEngine::_device, 1, &texture2, 0, nullptr);
-
+	*/
 	_lights.push_back(point_light1);
 
 	//_renderables.push_back(tree);
-	_renderables.push_back(tree_leaves);
+	//_renderables.push_back(tree_leaves);
 	//_renderables.push_back(tree_stem);
 	_renderables.push_back(ground);
-
-	//renderables assigned to default material
-	_matIndices.resize(_renderables.size());
-	_matIndices[0] = 2;
-	_matIndices[1] = 2;
-	//_matIndices[2] = 2;
-	//_matIndices[3] = 2;
-
-	_texIndices.resize(_renderables.size());
-	_texIndices[0] = 0;
-	_texIndices[1] = 1;
-	//_texIndices[2] = 1;
-	//_texIndices[3] = 1;
+	
 }                                

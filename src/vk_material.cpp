@@ -2,6 +2,7 @@
 
 using namespace VKE;
 
+int materialsCount = 0;
 std::map<std::string, Material*> Material::sMaterials;
 
 Material::Material() : _color{1.0f, 1.0f, 1.0f, 1.0f}, _roughness_factor(1), _metallic_factor(1)
@@ -9,7 +10,7 @@ Material::Material() : _color{1.0f, 1.0f, 1.0f, 1.0f}, _roughness_factor(1), _me
 	_color_texture = _emissive_texture = _metallic_roughness_texture = _occlusion_texture = _normal_texture = nullptr;
 }
 
-Material::Material(Texture* texture) : Material()
+Material::Material(VKE::Texture* texture) : Material()
 {
 	_color_texture = texture;
 }

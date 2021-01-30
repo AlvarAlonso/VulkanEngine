@@ -33,14 +33,6 @@ public:
 	Camera* camera;
 	bool mouse_locked = true;
 
-	//std::vector<RenderObject> _renderables;
-
-	std::vector<Material> _materials;
-	std::unordered_map<std::string, Mesh> _meshes;
-
-	//Assets
-	std::vector<Texture> _loadedTextures;
-
 	//initializes everything in the engine
 	void init();
 
@@ -50,8 +42,6 @@ public:
 	void run();
 	
 	void load_images();
-
-	Material* create_material(const glm::vec4& color, const glm::vec4& properties);
 
 	Mesh* get_mesh(const std::string& name);
 

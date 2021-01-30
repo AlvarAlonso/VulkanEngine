@@ -4,6 +4,7 @@
 #include <tiny_obj_loader.h>
 #include <iostream>
 #include "vk_render_engine.h"
+#include <unordered_map>
 
 VertexInputDescription Vertex::get_vertex_description()
 {
@@ -122,13 +123,13 @@ bool Mesh::load_from_obj(const char* filename)
             };
 
             vertex.color = { 1.0f, 1.0f, 1.0f };
-
+            
             if(uniqueVertices.count(vertex) == 0) 
             {
                 uniqueVertices[vertex] = static_cast<uint32_t>(_vertices.size());
                 _vertices.push_back(vertex);
             }
-
+            
             _indices.push_back(uniqueVertices[vertex]);
         }
     }

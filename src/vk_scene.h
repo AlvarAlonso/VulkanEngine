@@ -25,9 +25,5 @@ public:
 	std::vector<int> _texIndices;
 
 	GPUSceneData _sceneData;
-
-private:
-
-
 };
 
