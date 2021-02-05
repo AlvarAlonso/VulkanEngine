@@ -439,30 +439,32 @@ VKE::Prefab* load_glTF(std::string filename, float scale = 1.0f)
         memcpy(vertexData, vertexBuffer.data(), vertexBufferSize);
         vmaUnmapMemory(RenderEngine::_allocator, vertexStaging._allocation);
 
-        // Index data
-        indexStaging = vkutil::create_buffer(RenderEngine::_allocator, indexBufferSize,
-            VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-            VMA_MEMORY_USAGE_CPU_ONLY);
-
-        void* indexData;
-        vmaMapMemory(RenderEngine::_allocator, indexStaging._allocation, &indexData);
-        memcpy(indexData, indexBuffer.data(), indexBufferSize);
-        vmaUnmapMemory(RenderEngine::_allocator, indexStaging._allocation);
-
         // Create device local buffers
         // Vertex buffer
         prefab->_vertices.vertexBuffer = vkutil::create_buffer(RenderEngine::_allocator, vertexBufferSize,
             VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT |
             VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY);
-        
-        // Index buffer
-        prefab->_indices.indexBuffer = vkutil::create_buffer(RenderEngine::_allocator, indexBufferSize,
-            VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-            VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR
-            | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY);
 
+        if(indexBufferSize > 0)
+        {
+            // Index data
+            indexStaging = vkutil::create_buffer(RenderEngine::_allocator, indexBufferSize,
+                VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                VMA_MEMORY_USAGE_CPU_ONLY);
 
+            void* indexData;
+            vmaMapMemory(RenderEngine::_allocator, indexStaging._allocation, &indexData);
+            memcpy(indexData, indexBuffer.data(), indexBufferSize);
+            vmaUnmapMemory(RenderEngine::_allocator, indexStaging._allocation);
+
+            // Create device local buffers
+            // Index buffer
+            prefab->_indices.indexBuffer = vkutil::create_buffer(RenderEngine::_allocator, indexBufferSize,
+                VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+                VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR
+                | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY);
+        }
 
         vkupload::immediate_submit([=](VkCommandBuffer cmd)
             {
@@ -482,12 +484,18 @@ VKE::Prefab* load_glTF(std::string filename, float scale = 1.0f)
 
         RenderEngine::_mainDeletionQueue.push_function([=]() {
             vmaDestroyBuffer(RenderEngine::_allocator, prefab->_vertices.vertexBuffer._buffer, prefab->_vertices.vertexBuffer._allocation);
-            vmaDestroyBuffer(RenderEngine::_allocator, prefab->_indices.indexBuffer._buffer, prefab->_indices.indexBuffer._allocation);
+            if(indexBufferSize > 0)
+            {
+                vmaDestroyBuffer(RenderEngine::_allocator, prefab->_indices.indexBuffer._buffer, prefab->_indices.indexBuffer._allocation);
+            }
             });
 
         vmaDestroyBuffer(RenderEngine::_allocator, vertexStaging._buffer, vertexStaging._allocation);
-        vmaDestroyBuffer(RenderEngine::_allocator, indexStaging._buffer, indexStaging._allocation);
-    
+        if(indexBufferSize > 0)
+        {
+            vmaDestroyBuffer(RenderEngine::_allocator, indexStaging._buffer, indexStaging._allocation);
+        }
+  
         return prefab;
     }
 

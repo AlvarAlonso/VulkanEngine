@@ -40,7 +40,15 @@ void VKE::Node::draw(glm::mat4& model, VkCommandBuffer commandBuffer, VkPipeline
                 objectData.matIndex.x = primitive->material._id;
 
                 vkCmdPushConstants(commandBuffer, layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(GPUObjectData), &objectData); // TODO: Calculate somewhere the global model matrix
-                vkCmdDrawIndexed(commandBuffer, primitive->indexCount, 1, primitive->firstIndex, 0, 0);
+                
+                if(primitive->hasIndices)
+                {
+                    vkCmdDrawIndexed(commandBuffer, primitive->indexCount, 1, primitive->firstIndex, 0, 0);
+                }
+                else
+                {
+                    vkCmdDraw(commandBuffer, primitive->vertexCount, 1, 0, 0);
+                }
 
                 lastMaterial = &primitive->material;
             }

@@ -658,7 +658,10 @@ void Renderer::record_deferred_command_buffers(RenderObject* first, int count)
 		{
 			VkDeviceSize offset = 0;
 			vkCmdBindVertexBuffers(_deferredCommandBuffer, 0, 1, &object._prefab->_vertices.vertexBuffer._buffer, &offset);
-			vkCmdBindIndexBuffer(_deferredCommandBuffer, object._prefab->_indices.indexBuffer._buffer, 0, VK_INDEX_TYPE_UINT32);
+			if(object._prefab->_indices.count > 0)
+			{
+				vkCmdBindIndexBuffer(_deferredCommandBuffer, object._prefab->_indices.indexBuffer._buffer, 0, VK_INDEX_TYPE_UINT32);
+			}
 		}
 
 		object._prefab->draw(object._model, _deferredCommandBuffer, re->_deferredPipelineLayout);
