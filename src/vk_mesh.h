@@ -58,6 +58,8 @@ struct Primitive {
 	Primitive(uint32_t firstIndex, uint32_t indexCount, uint32_t vertexCount, VKE::Material& material) : firstIndex(firstIndex), indexCount(indexCount), vertexCount(vertexCount), material(material) {
 		hasIndices = indexCount > 0;
 	};
+
+	void draw(glm::mat4& model, VkCommandBuffer commandBuffer, VkPipelineLayout layout);
 };
 
 class Mesh

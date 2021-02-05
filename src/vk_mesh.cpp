@@ -342,3 +342,8 @@ void Mesh::create_cube()
 
     upload_to_gpu();
 }
+
+void Primitive::draw(glm::mat4& model, VkCommandBuffer commandBuffer, VkPipelineLayout layout)
+{
+
+}

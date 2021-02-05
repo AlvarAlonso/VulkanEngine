@@ -6,7 +6,7 @@
 #include "vk_renderer.h"
 #include "Camera.h"
 
-const glm::vec3 camera_default_position = { 0.0f, 10.0f, 5.0f };
+const glm::vec3 camera_default_position = { 0.0f, 0.0f, 5.0f };
 
 //constexpr unsigned int FRAME_OVERLAP = 2;
 
@@ -43,13 +43,9 @@ public:
 	
 	void load_images();
 
-	Mesh* get_mesh(const std::string& name);
-
 	void load_meshes();
 
 private:
 
 	void render_imgui();
-
-	void create_materials();
 };

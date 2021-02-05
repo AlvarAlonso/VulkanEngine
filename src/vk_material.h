@@ -15,9 +15,9 @@ namespace VKE
 	{
 	public:
 		std::string _name;
+		int _id;
 
 		//static manager to reuse materials
-		static int materialsCount;
 		static std::map<std::string, Material*> sMaterials;
 		static Material* get(const char* name);
 
@@ -39,6 +39,14 @@ namespace VKE
 		Material();
 		Material(Texture* texture);
 		void register_material(const char* name);
+	};
+
+	struct MaterialToShader
+	{
+		glm::vec4 _color;
+		glm::vec4 _emissive_factor;
+		glm::vec4 _roughness_metallic_tilling_color_factors; // Color is the index to the color texture
+		glm::ivec1 _emissive_metRough_occlusion_normal_indices; // Indices to material textures
 	};
 }
 

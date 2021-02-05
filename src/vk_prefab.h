@@ -8,6 +8,7 @@
 class Mesh;
 class Texture;
 class Material;
+struct rtVertex;
 
 namespace VKE
 {
@@ -32,6 +33,8 @@ namespace VKE
 
 		virtual ~Node();
 
+		void draw(glm::mat4& model, VkCommandBuffer commandBuffer, VkPipelineLayout layout);
+
 		//add node to children list
 		void add_child(Node* child);
 
@@ -44,6 +47,8 @@ namespace VKE
 
 		std::string _name;
 		std::map<std::string, Node*> _nodes_by_name;
+
+		std::vector<rtVertex> _rtvs;
 
 		struct Vertices {
 			int count;
@@ -60,6 +65,8 @@ namespace VKE
 		Prefab();
 		Prefab(Mesh& mesh);
 		virtual ~Prefab();
+
+		void draw(glm::mat4& model, VkCommandBuffer commandBuffer, VkPipelineLayout layout);
 
 		//Manager to cache loaded prefabs
 		static std::map<std::string, Prefab*> sPrefabsLoaded;

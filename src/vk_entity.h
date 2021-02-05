@@ -4,9 +4,9 @@
 
 #include "vk_prefab.h"
 
-struct Material {
-	glm::vec4 color;
-	glm::vec4 properties; //metalness = x, roughness = y, index of refraction = z, material type = w (0 diffuse, 1 reflector, 2 refraction)
+struct GPUObjectData {
+	glm::mat4 modelMatrix;
+	glm::ivec4 matIndex; // currently using only x component to pass the primitive material index
 };
 
 class Entity

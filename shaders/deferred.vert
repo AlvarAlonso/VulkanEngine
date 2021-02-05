@@ -16,16 +16,17 @@ layout(set = 0, binding = 0) uniform CameraBuffer {
 } cameraData;
 
 struct ObjectData {
-	mat4 model;
+	mat4 modelMatrix;
+	vec4 matIndex; // currently using only x component to pass the primitive material index
 };
 
-layout(std140, set = 1, binding = 0) readonly buffer ObjectBuffer {
-	ObjectData objects[];
-} objectBuffer;
+layout( push_constant ) uniform ModelMatrix {
+  ObjectData object;
+} objectPushConstant;
 
 void main() 
 {	
-	mat4 modelMatrix = objectBuffer.objects[gl_BaseInstance].model;
+	mat4 modelMatrix = objectPushConstant.object.modelMatrix;
 	mat4 transformMatrix = (cameraData.viewproj * modelMatrix);
 
 	gl_Position = transformMatrix * vec4(vPosition, 1.0f);

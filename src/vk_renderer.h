@@ -3,6 +3,11 @@
 #include "vk_render_engine.h"
 #include "vk_scene.h"
 
+namespace VKE
+{
+	struct MaterialToShader;
+}
+
 struct RenderObject;
 struct SDL_Window;
 struct RenderEngine;
@@ -10,10 +15,6 @@ struct RenderEngine;
 constexpr unsigned int FRAME_OVERLAP = 2;
 
 RenderMode operator++(RenderMode& m, int);
-
-struct GPUObjectData {
-	glm::mat4 modelMatrix;
-};
 
 struct FrameData {
 	VkSemaphore _presentSemaphore, _renderSemaphore;
@@ -57,6 +58,8 @@ public:
 	AllocatedBuffer _texturesBuffer;
 	AllocatedBuffer _textureIndicesBuffer;
 
+	std::vector<VKE::MaterialToShader> _materialInfos;
+
 	FrameData _frames[FRAME_OVERLAP];
 
 	//Commands
@@ -69,6 +72,7 @@ public:
 
 	VkDescriptorSet _camDescriptorSet;
 	VkDescriptorSet _objectDescriptorSet;
+	VkDescriptorSet _materialsDescriptorSet;
 
 	GPUSceneData _sceneParameters;
 	AllocatedBuffer _sceneParameterBuffer;

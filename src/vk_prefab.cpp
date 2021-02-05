@@ -1,6 +1,8 @@
 #include "vk_prefab.h"
+#include "vk_entity.h"
 #include "vk_mesh.h"
 #include "vk_material.h"
+#include "vk_gltf_loader.h"
 #include <glm/gtx/transform.hpp>
 
 using namespace VKE;
@@ -21,6 +23,33 @@ Node::~Node()
     {
         _children[i]->_parent = nullptr;
         delete _children[i];
+    }
+}
+
+void VKE::Node::draw(glm::mat4& model, VkCommandBuffer commandBuffer, VkPipelineLayout layout)
+{
+    if(_mesh != nullptr && _mesh->_primitives.size() > 0)
+    {
+        VKE::Material* lastMaterial = nullptr;
+        for(const auto& primitive : _mesh->_primitives)
+        {
+            if(&primitive->material != lastMaterial)
+            {
+                GPUObjectData objectData{};
+                objectData.modelMatrix = get_global_matrix();
+                objectData.matIndex.x = primitive->material._id;
+
+                vkCmdPushConstants(commandBuffer, layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(GPUObjectData), &objectData); // TODO: Calculate somewhere the global model matrix
+                vkCmdDrawIndexed(commandBuffer, primitive->indexCount, 1, primitive->firstIndex, 0, 0);
+
+                lastMaterial = &primitive->material;
+            }
+        }
+    }
+
+    for(const auto& child : _children)
+    {
+        child->draw(model, commandBuffer, layout);
     }
 }
 
@@ -70,6 +99,11 @@ Prefab::~Prefab()
     }
 }
 
+void VKE::Prefab::draw(glm::mat4& model, VkCommandBuffer commandBuffer, VkPipelineLayout layout)
+{
+    _root.draw(model, commandBuffer, layout);
+}
+
 Prefab* Prefab::get(const char* filename)
 {
     assert(filename);
@@ -77,8 +111,7 @@ Prefab* Prefab::get(const char* filename)
     if (it != sPrefabsLoaded.end())
         return it->second;
     
-    //TODO: load gltf!!!
-    Prefab* prefab = nullptr;
+    Prefab* prefab = load_glTF(std::string(filename), 1.0f);
     if(!prefab)
     {
         std::cout << "[ERROR]: Prefab not found" << std::endl;

@@ -23,6 +23,20 @@ struct sgltfData
     std::vector<VKE::Material*> materials;
 } loadedData;
 
+void update_texture_id(int* id)
+{
+    if (*id > VKE::Texture::sTexturesLoaded.size()) { return; }
+
+    *id = VKE::Texture::sTexturesLoaded.size();
+}
+
+void update_material_id(int* id)
+{
+    if (*id > VKE::Material::sMaterials.size()) { return; }
+
+    *id = VKE::Material::sMaterials.size();
+}
+
 void texture_from_glTF_image(tinygltf::Image& gltfimage)
 {
     VKE::Texture* texture = new VKE::Texture();
@@ -130,7 +144,7 @@ void texture_from_glTF_image(tinygltf::Image& gltfimage)
     VkImageViewCreateInfo image_view_info = vkinit::imageview_create_info(format, texture->_image._image, VK_IMAGE_ASPECT_COLOR_BIT);
     vkCreateImageView(RenderEngine::_device, &image_view_info, nullptr, &texture->_imageView);
 
-    texture->register_texture(gltfimage.name);
+    texture->_name = gltfimage.name;
     loadedData.textures.push_back(texture);
 
     RenderEngine::_mainDeletionQueue.push_function([=]() {
@@ -335,12 +349,11 @@ void load_materials(tinygltf::Model &gltfModel)
             material->_emissive_factor = glm::vec4(0.0f);
         }
 
-        material->register_material(mat.name.c_str());
+        material->_name = mat.name.c_str();
         loadedData.materials.push_back(material);
     }
-
+    // TODO: Handle default material in the Engine
     //Push default material if no material is assigned
-    loadedData.materials.push_back(&VKE::Material());
 }
 
 VKE::Prefab* load_glTF(std::string filename, float scale = 1.0f)
@@ -374,6 +387,18 @@ VKE::Prefab* load_glTF(std::string filename, float scale = 1.0f)
             const tinygltf::Node node = gltfModel.nodes[scene.nodes[i]];
             load_node(nullptr, node, scene.nodes[i], gltfModel, indexBuffer, vertexBuffer, scale);
         }
+
+        // Update textures and materials IDs to match the ones they should have in the engine list
+        for (VKE::Texture* texture : loadedData.textures)
+        {
+            update_texture_id(&texture->_id);
+            texture->register_texture(texture->_name.c_str());
+        }
+        for(VKE::Material* material : loadedData.materials)
+        {
+            update_material_id(&material->_id);
+            material->register_material(material->_name.c_str());
+        }
         
         if(loadedData.nodes.size() == 0)
         {
@@ -386,7 +411,12 @@ VKE::Prefab* load_glTF(std::string filename, float scale = 1.0f)
             return nullptr;
         }
             
-        prefab->_root = *loadedData.nodes[0];
+        prefab->_root = *loadedData.nodes[0]; //TODO: Handle more than one root node
+
+        // The pointers to the data are no longer needed
+        loadedData.textures.clear();
+        loadedData.materials.clear();
+        loadedData.nodes.clear();
         
         size_t vertexBufferSize = vertexBuffer.size() * sizeof(Vertex);
         size_t indexBufferSize = indexBuffer.size() * sizeof(uint32_t);

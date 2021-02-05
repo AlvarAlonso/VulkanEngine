@@ -38,7 +38,7 @@ Renderer::Renderer()
 	_allocator = re->_allocator;
 	_graphicsQueue = re->_graphicsQueue;
 	_graphicsQueueFamily = re->_graphicsQueueFamily;
-	_renderMode = RENDER_MODE_RAYTRACING;
+	_renderMode = RENDER_MODE_DEFERRED;
 	re->reset_imgui(_renderMode);
 
 	init_renderer();
@@ -76,10 +76,7 @@ void Renderer::init_renderer()
 	init_commands();
 	init_sync_structures();
 	create_descriptor_buffers();
-	init_descriptors();
-
 	create_uniform_buffer();
-	//update_uniform_buffers();
 
 	render_quad.create_quad();
 }
@@ -96,21 +93,25 @@ void Renderer::draw_scene()
 
 	if(!isDeferredCommandInit)
 	{
+		re->create_raster_scene_structures();
+		init_descriptors();
 		record_deferred_command_buffers(currentScene->_renderables.data(), currentScene->_renderables.size());
 		isDeferredCommandInit = true;
 	}
 
+	/*
 	if(_renderMode == RENDER_MODE_RAYTRACING && !areAccelerationStructuresInit)
 	{
-		re->create_scene_structures(*currentScene);
+		re->create_raytracing_scene_structures(*currentScene);
 		create_raytracing_descriptor_sets();
 		record_raytracing_command_buffer();
 		areAccelerationStructuresInit = true;
 	}
+	*/
 	
 	if(_renderMode == RENDER_MODE_FORWARD)
 	{
-		render_forward();
+		std::cout << "FORWARD RENDERING WAS REMOVED" << std::endl;
 	}
 	else if(_renderMode == RENDER_MODE_DEFERRED)
 	{
@@ -160,11 +161,10 @@ void Renderer::update_uniform_buffers(RenderObject* first, size_t count)
 
 	//re->create_top_level_acceleration_structure(*currentScene, true);
 }
-
+/*
 
 void Renderer::create_raytracing_descriptor_sets()
 {
-	/*
 	std::vector<RenderObject>& renderables = currentScene->_renderables;
 
 	VkDescriptorSetAllocateInfo alloc_info = {};
@@ -212,12 +212,12 @@ void Renderer::create_raytracing_descriptor_sets()
 	vmaUnmapMemory(_allocator, _sceneBuffer._allocation);
 
 
-	_materialBuffer = vkutil::create_buffer(_allocator, VKE::Material::materialsCount * sizeof(Material), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+	_materialBuffer = vkutil::create_buffer(_allocator, VKE::Material::sMaterials.size() * sizeof(VKE::Material), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 	
 	VkDescriptorBufferInfo materialBufferDescriptor{};
 	materialBufferDescriptor.offset = 0;
 	materialBufferDescriptor.buffer = _materialBuffer._buffer;
-	materialBufferDescriptor.range = VKE::Material::materialsCount * sizeof(Material);
+	materialBufferDescriptor.range = VKE::Material::sMaterials.size() * sizeof(VKE::Material);
 
 
 	void* materialData;
@@ -287,33 +287,24 @@ void Renderer::create_raytracing_descriptor_sets()
 
 	for(int i = 0; i < renderables.size(); i++)
 	{
-		std::vector<rtVertex> rtvs;
-		rtvs.reserve(renderables[i]._mesh->_vertices.size());
-
-		for(const auto& vertex : renderables[i]._mesh->_vertices)
-		{
-			rtVertex rtv = { {glm::vec4(vertex.position, 1.0f)}, {glm::vec4(vertex.normal, 1.0f)}, {glm::vec4(vertex.uv, 1.0f, 1.0f)} };
-			rtvs.push_back(rtv);
-		}
-
-		AllocatedBuffer rtVertexBuffer = vkutil::create_buffer(_allocator, rtvs.size() * sizeof(rtVertex), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+		AllocatedBuffer rtVertexBuffer = vkutil::create_buffer(_allocator, renderables[i]._prefab->_rtvs.size() * sizeof(rtVertex), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 
 		VkDescriptorBufferInfo vertexBufferInfo{};
 		vertexBufferInfo.offset = 0;
 		vertexBufferInfo.buffer = rtVertexBuffer._buffer;
-		vertexBufferInfo.range = sizeof(rtVertex) * rtvs.size();
+		vertexBufferInfo.range = renderables[i]._prefab->_rtvs.size() * sizeof(rtVertex);
 
 		void* vertexData;
 		vmaMapMemory(_allocator, rtVertexBuffer._allocation, &vertexData);
-		memcpy(vertexData, rtvs.data(), sizeof(rtVertex) * rtvs.size());
+		memcpy(vertexData, renderables[i]._prefab->_rtvs.data(), renderables[i]._prefab->_rtvs.size() * sizeof(rtVertex));
 		vmaUnmapMemory(_allocator, rtVertexBuffer._allocation);
 
 		verticesBufferInfos.push_back(vertexBufferInfo);
 
 		VkDescriptorBufferInfo indexBufferInfo{};
 		indexBufferInfo.offset = 0;
-		indexBufferInfo.buffer = renderables[i]._mesh->_indexBuffer._buffer;
-		indexBufferInfo.range = sizeof(uint32_t) * renderables[i]._mesh->_indices.size();
+		indexBufferInfo.buffer = renderables[i]._prefab->_indices.indexBuffer._buffer;
+		indexBufferInfo.range = renderables[i]._prefab->_indices.count * sizeof(uint32_t);
 
 		indicesBufferInfos.push_back(indexBufferInfo);
 
@@ -378,9 +369,8 @@ void Renderer::create_raytracing_descriptor_sets()
 	VkWriteDescriptorSet pospoWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, re->pospo._textureSet, &pospoImageInfo, 0);
 
 	vkUpdateDescriptorSets(_device, 1, &pospoWrite, 0, VK_NULL_HANDLE);
-	*/
 }
-
+*/
 
 void Renderer::record_raytracing_command_buffer()
 {
@@ -626,13 +616,12 @@ void Renderer::create_descriptor_buffers()
 	}
 
 	//deferred
-	_objectBuffer = vkutil::create_buffer(_allocator, sizeof(GPUObjectData) * MAX_OBJECTS, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+	_objectBuffer = vkutil::create_buffer(_allocator, sizeof(VKE::MaterialToShader) * 100, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 }
 
 
 void Renderer::record_deferred_command_buffers(RenderObject* first, int count)
 {
-	/*
 	//FIRST PASS
 
 	VkCommandBufferBeginInfo deferredCmdBeginInfo = vkinit::command_buffer_begin_info(VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
@@ -640,7 +629,7 @@ void Renderer::record_deferred_command_buffers(RenderObject* first, int count)
 	VK_CHECK(vkBeginCommandBuffer(_deferredCommandBuffer, &deferredCmdBeginInfo));
 
 	VkClearValue first_clearValue;
-	first_clearValue.color = { {0.0f, 0.0f, 0.0f, 1.0f} };
+	first_clearValue.color = { {0.2f, 0.2f, 0.2f, 1.0f} };
 
 	VkClearValue first_depthClear;
 	first_depthClear.depthStencil.depth = 1.0f;
@@ -656,35 +645,28 @@ void Renderer::record_deferred_command_buffers(RenderObject* first, int count)
 
 	vkCmdBindPipeline(_deferredCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_deferredPipeline);
 
-	Mesh* lastMesh = nullptr;
-	for (int i = 0; i < count; i++)
+	vkCmdBindDescriptorSets(_deferredCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_deferredPipelineLayout, 0, 1, &_camDescriptorSet, 0, nullptr);
+
+	vkCmdBindDescriptorSets(_deferredCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_deferredPipelineLayout, 1, 1, &_materialsDescriptorSet, 0, nullptr);
+
+	VKE::Prefab* lastPrefab = nullptr;
+	for(int i = 0; i < count; i++)
 	{
 		RenderObject& object = first[i];
 
-		vkCmdBindDescriptorSets(_deferredCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_deferredPipelineLayout, 0, 1, &_camDescriptorSet, 0, nullptr);
-
-		vkCmdBindDescriptorSets(_deferredCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_deferredPipelineLayout, 1, 1, &_objectDescriptorSet, 0, nullptr);
-
-
-		if(object._albedoTexture->descriptorSet != VK_NULL_HANDLE)
-		{
-			vkCmdBindDescriptorSets(_deferredCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_deferredPipelineLayout, 2, 1, &object._albedoTexture->descriptorSet, 0, nullptr);
-		}
-		
-		if (object._mesh != lastMesh)
+		if(object._prefab != lastPrefab)
 		{
 			VkDeviceSize offset = 0;
-			vkCmdBindVertexBuffers(_deferredCommandBuffer, 0, 1, &object._mesh->_vertexBuffer._buffer, &offset);
-			vkCmdBindIndexBuffer(_deferredCommandBuffer, object._mesh->_indexBuffer._buffer, 0, VK_INDEX_TYPE_UINT32);
+			vkCmdBindVertexBuffers(_deferredCommandBuffer, 0, 1, &object._prefab->_vertices.vertexBuffer._buffer, &offset);
+			vkCmdBindIndexBuffer(_deferredCommandBuffer, object._prefab->_indices.indexBuffer._buffer, 0, VK_INDEX_TYPE_UINT32);
 		}
 
-		vkCmdDrawIndexed(_deferredCommandBuffer, static_cast<uint32_t>(object._mesh->_indices.size()), 1, 0, 0, i);
+		object._prefab->draw(object._model, _deferredCommandBuffer, re->_deferredPipelineLayout);
 	}
 
 	vkCmdEndRenderPass(_deferredCommandBuffer);
 
 	VK_CHECK(vkEndCommandBuffer(_deferredCommandBuffer));
-	*/
 }
 
 void Renderer::init_descriptors()
@@ -736,25 +718,7 @@ void Renderer::init_descriptors()
 	}
 
 	//DEFERRED DESCRIPTORS
-
-	VkDescriptorSetAllocateInfo objectSetAlloc = {};
-	objectSetAlloc.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-	objectSetAlloc.pNext = nullptr;
-	objectSetAlloc.descriptorPool = re->_descriptorPool;
-	objectSetAlloc.descriptorSetCount = 1;
-	objectSetAlloc.pSetLayouts = &re->_objectSetLayout;
-
-	VkDescriptorBufferInfo objectBufferInfo;
-	objectBufferInfo.buffer = _objectBuffer._buffer;
-	objectBufferInfo.offset = 0;
-	objectBufferInfo.range = sizeof(GPUObjectData) * MAX_OBJECTS;
-
-	vkAllocateDescriptorSets(_device, &objectSetAlloc, &_objectDescriptorSet);
-
-	VkWriteDescriptorSet objectWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _objectDescriptorSet, &objectBufferInfo, 0);
-
-	vkUpdateDescriptorSets(_device, 1, &objectWrite, 0, nullptr);
-
+	// Camera
 	VkDescriptorSetAllocateInfo cameraSetAllocInfo = {};
 	cameraSetAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
 	cameraSetAllocInfo.pNext = nullptr;
@@ -769,63 +733,116 @@ void Renderer::init_descriptors()
 	camBufferInfo.offset = 0;
 	camBufferInfo.range = sizeof(GPUCameraData);
 
-	VkWriteDescriptorSet camWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, _camDescriptorSet, &camBufferInfo, 0);
+	// Object materials
+	VkDescriptorSetAllocateInfo objectSetAlloc = {};
+	objectSetAlloc.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	objectSetAlloc.pNext = nullptr;
+	objectSetAlloc.descriptorPool = re->_descriptorPool;
+	objectSetAlloc.descriptorSetCount = 1;
+	objectSetAlloc.pSetLayouts = &re->_materialsSetLayout;
 
-	vkUpdateDescriptorSets(_device, 1, &camWrite, 0, nullptr);
-}
+	vkAllocateDescriptorSets(_device, &objectSetAlloc, &_materialsDescriptorSet);
 
-void Renderer::update_descriptors_forward(RenderObject* first, size_t count)
-{
-	//Update buffers info
-	glm::vec3 camPos = { 0.0f, -50.0f, -10.0f };
-	glm::mat4 view = glm::translate(glm::mat4(1.0f), camPos);
-	glm::mat4 projection = glm::perspective(glm::radians(70.0f), 1700.0f / 900.0f, 0.1f, 200.0f);
-	projection[1][1] *= -1;
+	VkDescriptorBufferInfo materialBufferInfo;
+	materialBufferInfo.buffer = _objectBuffer._buffer;
+	materialBufferInfo.offset = 0;
+	materialBufferInfo.range = sizeof(VKE::MaterialToShader) * 100;
 
-	GPUCameraData camData;
-	camData.projection = projection;
-	camData.view = VulkanEngine::cinstance->camera->getView();
-	camData.viewproj = projection * VulkanEngine::cinstance->camera->getView();
+	// Pass the texture data from a map to a vector, and order it by idx
+	// Material Textures
+	std::vector<VkDescriptorImageInfo> textureImageInfos;
+	textureImageInfos.reserve(VKE::Texture::sTexturesLoaded.size());
 
-	void* data;
-	vmaMapMemory(_allocator, get_current_frame().cameraBuffer._allocation, &data);
-	memcpy(data, &camData, sizeof(GPUCameraData));
-	vmaUnmapMemory(_allocator, get_current_frame().cameraBuffer._allocation);
+	std::vector<VKE::Texture*> orderedTexVec;
+	orderedTexVec.reserve(VKE::Texture::sTexturesLoaded.size());
 
-	void* firstPassData;
-	vmaMapMemory(_allocator, _camBuffer._allocation, &firstPassData);
-	memcpy(firstPassData, &camData, sizeof(GPUCameraData));
-	vmaUnmapMemory(_allocator, _camBuffer._allocation);
-
-	float framed = { _frameNumber / 120.0f };
-
-	_sceneParameters.ambientColor = { sin(framed), 0, cos(framed), 1 };
-
-	char* sceneData;
-	vmaMapMemory(_allocator, _sceneParameterBuffer._allocation, (void**)&sceneData);
-
-	int frameIndex = _frameNumber % FRAME_OVERLAP;
-
-	sceneData += vkutil::get_aligned_size(sizeof(GPUSceneData), re->_gpuProperties.limits.minUniformBufferOffsetAlignment) * frameIndex;
-
-	memcpy(sceneData, &_sceneParameters, sizeof(GPUSceneData));
-
-	vmaUnmapMemory(_allocator, _sceneParameterBuffer._allocation);
-
-	void* objectData;
-	vmaMapMemory(_allocator, _objectBuffer._allocation, &objectData);
-
-	GPUObjectData* objectSSBO = (GPUObjectData*)objectData;
-
-	for (int i = 0; i < count; i++)
+	for (auto const& texture : VKE::Texture::sTexturesLoaded)
 	{
-		RenderObject& object = first[i];
-		objectSSBO[i].modelMatrix = object._model;
+		orderedTexVec.push_back(texture.second);
 	}
 
-	vmaUnmapMemory(_allocator, _objectBuffer._allocation);
+	// Order tex idx vector
+	std::sort(orderedTexVec.begin(), orderedTexVec.end());
+
+	for(const auto& texture : orderedTexVec)
+	{
+		VkDescriptorImageInfo textureImageDescriptor;
+		textureImageDescriptor.sampler = re->_defaultSampler;
+		textureImageDescriptor.imageView = texture->_imageView;
+		textureImageDescriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+		textureImageInfos.push_back(textureImageDescriptor);
+	}
+
+	VkWriteDescriptorSet camWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, _camDescriptorSet, &camBufferInfo, 0);
+	VkWriteDescriptorSet materialsWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _materialsDescriptorSet, &materialBufferInfo, 0);
+	VkWriteDescriptorSet texturesWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, _materialsDescriptorSet, textureImageInfos.data(), 1, static_cast<uint32_t>(textureImageInfos.size()));
+
+	std::vector<VkWriteDescriptorSet> deferredWrites = {
+		camWrite,
+		materialsWrite,
+		texturesWrite
+	};
+
+	vkUpdateDescriptorSets(_device, static_cast<uint32_t>(deferredWrites.size()), deferredWrites.data(), 0, nullptr);
+
+	// UPLOAD MATERIAL INFO TO GPU
+	// Create material infos vector
+	_materialInfos.resize(VKE::Material::sMaterials.size());
+
+	// Sort materials by their IDs
+	std::vector<VKE::Material*> materialsAux;
+	materialsAux.resize(VKE::Material::sMaterials.size());
+
+	int i = 0;
+	for(const auto& material : VKE::Material::sMaterials)
+	{
+		materialsAux[i] = material.second;
+	}
+
+	std::sort(materialsAux.begin(), materialsAux.end());
+
+	// Assign values to MaterialsToShader
+	i = 0;
+	for(const auto& material : materialsAux)
+	{
+		_materialInfos[i]._color = material->_color;
+		_materialInfos[i]._emissive_factor = material->_emissive_factor;
+
+		glm::vec4* factors = &glm::vec4{
+			material->_roughness_factor, material->_metallic_factor,
+			material->_tilling_factor, material->_color_texture->_id };
+		factors->z = 1;
+
+		_materialInfos[i]._roughness_metallic_tilling_color_factors = glm::vec4{
+			factors->x ? factors->x : 0, factors->y ? factors->y : 0,
+			factors->z ? factors->z : 1, factors->w ? factors->w : -1
+		};
+
+		_materialInfos[i]._emissive_metRough_occlusion_normal_indices = glm::vec4{ -1, -1, -1, -1 };
+
+		if(material->_emissive_texture)
+		{
+			_materialInfos[i]._emissive_metRough_occlusion_normal_indices.x = material->_emissive_texture->_id;
+		}
+		if (material->_metallic_roughness_texture)
+		{
+			_materialInfos[i]._emissive_metRough_occlusion_normal_indices.x = material->_metallic_roughness_texture->_id;
+		}
+		if (material->_occlusion_texture)
+		{
+			_materialInfos[i]._emissive_metRough_occlusion_normal_indices.x = material->_occlusion_texture->_id;
+		}
+		if (material->_normal_texture)
+		{
+			_materialInfos[i]._emissive_metRough_occlusion_normal_indices.x = material->_normal_texture->_id;
+		}
+
+		i++;
+	}
 }
 
+// Update descriptors for deferred
 void Renderer::update_descriptors(RenderObject* first, size_t count)
 {
 	glm::mat4 projection = glm::perspective(glm::radians(70.0f), 1700.0f / 900.0f, 0.1f, 200.0f);
@@ -864,12 +881,11 @@ void Renderer::update_descriptors(RenderObject* first, size_t count)
 	void* objectData;
 	vmaMapMemory(_allocator, _objectBuffer._allocation, &objectData);
 
-	GPUObjectData* objectSSBO = (GPUObjectData*)objectData;
+	VKE::MaterialToShader* objectSSBO = (VKE::MaterialToShader*)objectData;
 
-	for (int i = 0; i < count; i++)
+	for (int i = 0; i < _materialInfos.size(); i++)
 	{
-		RenderObject& object = first[i];
-		objectSSBO[i].modelMatrix = object._model;
+		objectSSBO[i] = _materialInfos[i];
 	}
 
 	vmaUnmapMemory(_allocator, _objectBuffer._allocation);
@@ -878,77 +894,6 @@ void Renderer::update_descriptors(RenderObject* first, size_t count)
 int Renderer::get_current_frame_index()
 {
 	return _frameNumber % FRAME_OVERLAP;
-}
-
-
-void Renderer::render_forward()
-{
-	/*
-	VK_CHECK(vkWaitForFences(_device, 1, &_frames[get_current_frame_index()]._renderFence, true, UINT64_MAX));
-	VK_CHECK(vkResetFences(_device, 1, &_frames[get_current_frame_index()]._renderFence));
-
-	//request image from the swapchain
-	uint32_t swapchainImageIndex;
-	VK_CHECK(vkAcquireNextImageKHR(_device, re->_swapchain, 0, _frames[get_current_frame_index()]._presentSemaphore, nullptr, &swapchainImageIndex));
-
-	VK_CHECK(vkResetCommandBuffer(_frames[get_current_frame_index()]._mainCommandBuffer, 0));
-
-	VkCommandBuffer cmd = _frames[get_current_frame_index()]._mainCommandBuffer;
-
-	VkCommandBufferBeginInfo cmdBeginInfo = vkinit::command_buffer_begin_info(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
-
-	VK_CHECK(vkBeginCommandBuffer(cmd, &cmdBeginInfo));
-
-	VkClearValue clearValue;
-	float flash = abs(sin(_frameNumber / 120.0f));
-	clearValue.color = { {0.0f, 0.0f, flash, 1.0f} };
-
-	VkClearValue depthClear;
-	depthClear.depthStencil.depth = 1.0f;
-
-	VkRenderPassBeginInfo rpInfo = vkinit::renderpass_begin_info(re->_defaultRenderPass, re->_windowExtent, re->_framebuffers[swapchainImageIndex]);
-
-	std::array<VkClearValue, 2> clearValues = { clearValue, depthClear };
-
-	rpInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
-	rpInfo.pClearValues = clearValues.data();
-
-	vkCmdBeginRenderPass(cmd, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-	draw_forward(cmd, currentScene->_renderables.data(), currentScene->_renderables.size());
-
-	vkCmdEndRenderPass(cmd);
-
-	VK_CHECK(vkEndCommandBuffer(cmd));
-
-	VkSubmitInfo submit = vkinit::submit_info(&cmd);
-
-	VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-
-	submit.pWaitDstStageMask = &waitStage;
-	submit.waitSemaphoreCount = 1;
-	submit.pWaitSemaphores = &_frames[get_current_frame_index()]._presentSemaphore;
-	submit.signalSemaphoreCount = 1;
-	submit.pSignalSemaphores = &_frames[get_current_frame_index()]._renderSemaphore;
-
-	VK_CHECK(vkQueueSubmit(_graphicsQueue, 1, &submit, _frames[get_current_frame_index()]._renderFence));
-
-	VkPresentInfoKHR presentInfo = {};
-	presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-	presentInfo.pNext = nullptr;
-
-	presentInfo.pSwapchains = &re->_swapchain;
-	presentInfo.swapchainCount = 1;
-
-	presentInfo.pWaitSemaphores = &_frames[get_current_frame_index()]._renderSemaphore;
-	presentInfo.waitSemaphoreCount = 1;
-
-	presentInfo.pImageIndices = &swapchainImageIndex;
-
-	VK_CHECK(vkQueuePresentKHR(_graphicsQueue, &presentInfo));
-
-	_frameNumber++;
-	*/
 }
 
 void Renderer::render_deferred()
@@ -1068,50 +1013,6 @@ void Renderer::render_raytracing()
 
 	_frameNumber++;
 }
-
-/*
-//more raster
-void Renderer::draw_forward(VkCommandBuffer cmd, RenderObject* first, int count)
-{
-	int frameIndex = _frameNumber % FRAME_OVERLAP;
-
-	Mesh* lastMesh = nullptr;
-	Material* lastMaterial = nullptr;
-	for (int i = 0; i < count; i++)
-	{
-		RenderObject& object = first[i];
-
-		if (object._material != lastMaterial)
-		{
-			lastMaterial = object._material;
-
-			uint32_t uniform_offset = vkutil::get_aligned_size(sizeof(GPUSceneData) * frameIndex, re->_gpuProperties.limits.minUniformBufferOffsetAlignment);
-			vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_forwardPipelineLayout, 0, 1, &_frames[get_current_frame_index()].globalDescriptor, 1, &uniform_offset);
-
-			vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_forwardPipelineLayout, 1, 1, &_frames[get_current_frame_index()].objectDescriptor, 0, nullptr);
-
-			if (object._albedoTexture->descriptorSet != VK_NULL_HANDLE)
-			{
-				vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_texPipeline);
-				vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_forwardPipelineLayout, 2, 1, &object._albedoTexture->descriptorSet, 0, nullptr);
-			}
-			else
-			{
-				vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_forwardPipeline);
-			}
-		}
-		
-		if (object._mesh != lastMesh)
-		{
-			VkDeviceSize offset = 0;
-			vkCmdBindVertexBuffers(cmd, 0, 1, &object._mesh->_vertexBuffer._buffer, &offset);
-			vkCmdBindIndexBuffer(cmd, object._mesh->_indexBuffer._buffer, 0, VK_INDEX_TYPE_UINT16);
-		}
-
-		vkCmdDrawIndexed(cmd, static_cast<uint32_t>(object._mesh->_indices.size()), 1, 0, 0, 0);
-	}
-}
-*/
 
 void Renderer::draw_deferred(VkCommandBuffer cmd, int imageIndex)
 {

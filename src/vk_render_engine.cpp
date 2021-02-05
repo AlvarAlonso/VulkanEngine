@@ -8,6 +8,7 @@
 #include "vk_initializers.h"
 #include "vk_utils.h"
 #include "vk_scene.h"
+#include "vk_textures.h"
 
 #include "VkBootstrap.h"
 
@@ -21,7 +22,7 @@ DeletionQueue RenderEngine::_mainDeletionQueue{};
 VmaAllocator RenderEngine::_allocator = nullptr;
 UploadContext RenderEngine::_uploadContext;
 VkDescriptorPool RenderEngine::_descriptorPool = VK_NULL_HANDLE;
-VkDescriptorSetLayout RenderEngine::_singleTextureSetLayout = VK_NULL_HANDLE;
+VkDescriptorSetLayout RenderEngine::_materialsSetLayout = VK_NULL_HANDLE;
 
 std::vector<const char*> required_device_extensions = {
 		VK_KHR_SWAPCHAIN_EXTENSION_NAME,
@@ -70,6 +71,18 @@ void RenderEngine::init()
 	init_swapchain();
 	init_command_pools();
 	init_sync_structures();
+
+	// Single Texture Set Layout
+	VkDescriptorSetLayoutBinding textureBind = vkinit::descriptorset_layout_binding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 0);
+
+	VkDescriptorSetLayoutCreateInfo set3Info = {};
+	set3Info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	set3Info.pNext = nullptr;
+	set3Info.bindingCount = 1;
+	set3Info.flags = 0;
+	set3Info.pBindings = &textureBind;
+
+	vkCreateDescriptorSetLayout(_device, &set3Info, nullptr, &_singleTextureSetLayout);
 
 	init_raster_structures();
 	init_raytracing_structures();
@@ -195,13 +208,14 @@ void RenderEngine::init_sync_structures()
 		});
 }
 
+#pragma region RASTER
 void RenderEngine::init_descriptor_set_pool()
 {
 	std::vector<VkDescriptorPoolSize> sizes = {
 	{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 10},
 	{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 10},
 	{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 10},
-	{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 10},
+	{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 50},
 	{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 10},
 	{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 10}
 	};
@@ -259,28 +273,31 @@ void RenderEngine::init_descriptor_set_layouts()
 
 	vkCreateDescriptorSetLayout(_device, &set2Info, nullptr, &_objectSetLayout);
 
-	VkDescriptorSetLayoutBinding textureBind = vkinit::descriptorset_layout_binding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 0);
+	VkDescriptorSetLayoutBinding materialsBind = vkinit::descriptorset_layout_binding(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT, 0);
+	VkDescriptorSetLayoutBinding matTexturesBind = vkinit::descriptorset_layout_binding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1);
+	matTexturesBind.descriptorCount = VKE::Texture::sTexturesLoaded.size();
 
-	VkDescriptorSetLayoutCreateInfo set3Info = {};
-	set3Info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-	set3Info.pNext = nullptr;
-	set3Info.bindingCount = 1;
-	set3Info.flags = 0;
-	set3Info.pBindings = &textureBind;
+	std::array<VkDescriptorSetLayoutBinding, 2> matBindings = { materialsBind, matTexturesBind };
 
-	vkCreateDescriptorSetLayout(_device, &set3Info, nullptr, &_singleTextureSetLayout);
+	VkDescriptorSetLayoutCreateInfo materialsSetInfo = {};
+	materialsSetInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	materialsSetInfo.pNext = nullptr;
+	materialsSetInfo.bindingCount = static_cast<uint32_t>(matBindings.size());
+	materialsSetInfo.flags = 0;
+	materialsSetInfo.pBindings = matBindings.data();
+
+	vkCreateDescriptorSetLayout(_device, &materialsSetInfo, nullptr, &_materialsSetLayout);
 }
 
 void RenderEngine::init_raster_structures()
 {
 	init_descriptor_set_pool();
-	init_descriptor_set_layouts();
 	init_depth_buffer();
 	init_deferred_attachments();
 	init_render_passes();
 	init_framebuffers();
 	init_gbuffer_descriptors();
-	init_pipelines();
+	
 }
 
 void RenderEngine::init_depth_buffer()
@@ -562,129 +579,8 @@ void RenderEngine::init_framebuffers()
 
 void RenderEngine::init_pipelines()
 {
+	//DEFERRED PIPELINES
 	{
-		//FORWARD PIPELINES
-		//default vertex shader for a mesh
-		VkShaderModule meshVertShader;
-		if (!vkutil::load_shader_module(_device, "../shaders/tri_mesh.vert.spv", &meshVertShader))
-		{
-			std::cout << "Error when building the triangle vertex shader module" << std::endl;
-		}
-		else {
-			std::cout << "Red Triangle vertex shader succesfully loaded" << std::endl;
-		}
-
-		//shader for default material
-		VkShaderModule colorMeshShader;
-		if (!vkutil::load_shader_module(_device, "../shaders/default_lit.frag.spv", &colorMeshShader))
-		{
-			std::cout << "Error when building the triangle fragment shader module" << std::endl;
-		}
-		else
-		{
-			std::cout << "Triangle fragment shader succesfully loaded" << std::endl;
-		}
-
-		//shader for textured material
-		VkShaderModule texturedMeshShader;
-		if (!vkutil::load_shader_module(_device, "../shaders/textured_lit.frag.spv", &texturedMeshShader))
-		{
-			std::cout << "Error when building the textured mesh shader" << std::endl;
-		}
-		else
-		{
-			std::cout << "Textured mesh shader succesfully loaded" << endl;
-		}
-
-		// Layouts
-
-		//mesh layout
-		VkPipelineLayoutCreateInfo mesh_pipeline_layout_info = vkinit::pipeline_layout_create_info();
-
-		std::array<VkDescriptorSetLayout, 3> setLayouts = {
-			_globalSetLayout,
-			_objectSetLayout,
-			_singleTextureSetLayout
-		};
-
-		mesh_pipeline_layout_info.setLayoutCount = static_cast<uint32_t>(setLayouts.size());
-		mesh_pipeline_layout_info.pSetLayouts = setLayouts.data();
-
-		VK_CHECK(vkCreatePipelineLayout(_device, &mesh_pipeline_layout_info, nullptr, &_forwardPipelineLayout));
-
-		//PIPELINES
-		PipelineBuilder pipelineBuilder;
-
-		//color mesh pipeline
-
-		pipelineBuilder._vertexInputInfo = vkinit::vertex_input_state_create_info();
-		//connect the pipeline builder vertex input info to the one we get from Vertex
-		VertexInputDescription vertexDescription = Vertex::get_vertex_description();
-		pipelineBuilder._vertexInputInfo.pVertexAttributeDescriptions = vertexDescription.attributes.data();
-		pipelineBuilder._vertexInputInfo.vertexAttributeDescriptionCount = vertexDescription.attributes.size();
-
-		pipelineBuilder._vertexInputInfo.pVertexBindingDescriptions = vertexDescription.bindings.data();
-		pipelineBuilder._vertexInputInfo.vertexBindingDescriptionCount = vertexDescription.bindings.size();
-
-
-		pipelineBuilder._inputAssembly = vkinit::input_assembly_create_info(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-
-		pipelineBuilder._viewport.x = 0.0f;
-		pipelineBuilder._viewport.y = 0.0f;
-		pipelineBuilder._viewport.width = (float)_windowExtent.width;
-		pipelineBuilder._viewport.height = (float)_windowExtent.height;
-		pipelineBuilder._viewport.minDepth = 0.0f;
-		pipelineBuilder._viewport.maxDepth = 1.0f;
-
-		pipelineBuilder._scissor.offset = { 0, 0 };
-		pipelineBuilder._scissor.extent = _windowExtent;
-
-		pipelineBuilder._depthStencil = vkinit::depth_stencil_create_info(true, true, VK_COMPARE_OP_LESS_OR_EQUAL);
-
-		pipelineBuilder._rasterizer = vkinit::rasterization_state_create_info(VK_POLYGON_MODE_FILL);
-		pipelineBuilder._multisampling = vkinit::multisampling_state_create_info();
-		pipelineBuilder._colorBlendAttachment.push_back(vkinit::color_blend_attachment_state());
-
-		//add shaders
-		pipelineBuilder._shaderStages.push_back(
-			vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT, meshVertShader));
-
-		pipelineBuilder._shaderStages.push_back(
-			vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, colorMeshShader));
-
-		pipelineBuilder._pipelineLayout = _forwardPipelineLayout;
-
-		//build the mesh pipeline
-		_forwardPipeline = pipelineBuilder.build_pipeline(_device, _defaultRenderPass);
-
-		
-		//texture pipeline
-
-		pipelineBuilder._shaderStages.clear();
-		pipelineBuilder._shaderStages.push_back(
-			vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT, meshVertShader));
-
-		pipelineBuilder._shaderStages.push_back(
-			vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, texturedMeshShader));
-
-		_texPipeline = pipelineBuilder.build_pipeline(_device, _defaultRenderPass);
-
-		//deleting all of the vulkan shaders
-		vkDestroyShaderModule(_device, texturedMeshShader, nullptr);
-		vkDestroyShaderModule(_device, colorMeshShader, nullptr);
-		vkDestroyShaderModule(_device, meshVertShader, nullptr);
-
-		//adding the pipelines to the deletion queue
-		_mainDeletionQueue.push_function([=]() {
-			vkDestroyPipeline(_device, _forwardPipeline, nullptr);
-			vkDestroyPipeline(_device, _texPipeline, nullptr);
-
-			vkDestroyPipelineLayout(_device, _forwardPipelineLayout, nullptr);
-			});
-	}
-
-	{
-		//DEFERRED PIPELINES
 		//SHADERS LOADING
 
 		VkShaderModule deferredVertex;
@@ -730,10 +626,15 @@ void RenderEngine::init_pipelines()
 		//LAYOUTS
 		VkPipelineLayoutCreateInfo layoutInfo = vkinit::pipeline_layout_create_info();
 
-		std::array<VkDescriptorSetLayout, 3> deferredSetLayouts = { _camSetLayout, _objectSetLayout, _singleTextureSetLayout };
+		std::array<VkDescriptorSetLayout, 2> deferredSetLayouts = { _camSetLayout, _materialsSetLayout };
 
-		layoutInfo.pushConstantRangeCount = 0;
-		layoutInfo.pPushConstantRanges = nullptr;
+		VkPushConstantRange pushConstant = {};
+		pushConstant.offset = 0;
+		pushConstant.size = sizeof(GPUObjectData);
+		pushConstant.stageFlags =  VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+
+		layoutInfo.pushConstantRangeCount = 1;
+		layoutInfo.pPushConstantRanges = &pushConstant;
 		layoutInfo.setLayoutCount = static_cast<uint32_t>(deferredSetLayouts.size());
 		layoutInfo.pSetLayouts = deferredSetLayouts.data();
 
@@ -898,7 +799,10 @@ void RenderEngine::init_gbuffer_descriptors()
 
 	vkUpdateDescriptorSets(_device, static_cast<uint32_t>(setWrites.size()), setWrites.data(), 0, nullptr);
 }
+#pragma endregion
 
+
+#pragma region RAYTRACING
 void RenderEngine::init_raytracing_structures()
 {
 	// Get the ray tracing and accelertion structure related function pointers required by this sample
@@ -972,7 +876,7 @@ void RenderEngine::create_top_level_acceleration_structure(const Scene& scene, b
 		instance.instanceShaderBindingTableRecordOffset = 0;
 		instance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
 		instance.accelerationStructureReference = _bottomLevelAS[i]._deviceAddress;
-		
+
 		instances[i] = instance;
 	}
 
@@ -1021,19 +925,19 @@ void RenderEngine::create_top_level_acceleration_structure(const Scene& scene, b
 		&accelerationStructureBuildGeometryInfo,
 		&primitive_count,
 		&accelerationStructureBuildSizesInfo);
-	
-	if(!recreated)
+
+	if (!recreated)
 	{
 		create_acceleration_structure_buffer(_topLevelAS, accelerationStructureBuildSizesInfo);
 	}
-	
+
 	VkAccelerationStructureCreateInfoKHR accelerationStructureCreateInfo{};
 	accelerationStructureCreateInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
 	accelerationStructureCreateInfo.buffer = _topLevelAS._buffer;
 	accelerationStructureCreateInfo.size = accelerationStructureBuildSizesInfo.accelerationStructureSize;
 	accelerationStructureCreateInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
 
-	if(!recreated)
+	if (!recreated)
 	{
 		vkCreateAccelerationStructureKHR(_device, &accelerationStructureCreateInfo, nullptr, &_topLevelAS._handle);
 	}
@@ -1087,7 +991,7 @@ void RenderEngine::create_top_level_acceleration_structure(const Scene& scene, b
 	accelerationDeviceAddressInfo.accelerationStructure = _topLevelAS._handle;
 	_topLevelAS._deviceAddress = vkGetAccelerationStructureDeviceAddressKHR(_device, &accelerationDeviceAddressInfo);
 
-	if(!recreated)
+	if (!recreated)
 	{
 		_mainDeletionQueue.push_function([=]() {
 			vkDestroyAccelerationStructureKHR(_device, _topLevelAS._handle, nullptr);
@@ -1217,7 +1121,7 @@ void RenderEngine::create_raytracing_pipeline(const int& renderablesCount)
 	textureBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 	textureBufferBinding.descriptorCount = 2;
 	textureBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
-	
+
 	VkDescriptorSetLayoutBinding textureIndexBufferBinding{};
 	textureIndexBufferBinding.binding = 10;
 	textureIndexBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
@@ -1361,7 +1265,7 @@ void RenderEngine::create_raytracing_pipeline(const int& renderablesCount)
 	raytracing_pipeline_info.pGroups = _shaderGroups.data();
 	raytracing_pipeline_info.maxPipelineRayRecursionDepth = 10;
 	raytracing_pipeline_info.layout = _rayTracingPipelineLayout;
-	
+
 	VK_CHECK(vkCreateRayTracingPipelinesKHR(_device, VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &raytracing_pipeline_info, nullptr, &_rayTracingPipeline));
 }
 
@@ -1394,7 +1298,7 @@ void RenderEngine::create_pospo_structures()
 	render_pass_info.pAttachments = &colorAttachment;
 	render_pass_info.subpassCount = 1;
 	render_pass_info.pSubpasses = &subpass;
-	
+
 	VK_CHECK(vkCreateRenderPass(_device, &render_pass_info, nullptr, &pospo._renderPass));
 
 	_mainDeletionQueue.push_function([=]() {
@@ -1526,7 +1430,7 @@ void RenderEngine::create_shader_binding_table()
 		_allocator, handleSize, bufferUsageFlags, memoryUsageFlags);
 
 	_missShaderBindingTable = vkutil::create_buffer(
-		_allocator, handleSize*2, bufferUsageFlags, memoryUsageFlags);
+		_allocator, handleSize * 2, bufferUsageFlags, memoryUsageFlags);
 
 	_hitShaderBindingTable = vkutil::create_buffer(
 		_allocator, handleSize, bufferUsageFlags, memoryUsageFlags);
@@ -1539,7 +1443,7 @@ void RenderEngine::create_shader_binding_table()
 
 	void* miss_data;
 	vmaMapMemory(_allocator, _missShaderBindingTable._allocation, &miss_data);
-	memcpy(miss_data, shaderHandleStorage.data() + handleSizeAligned, handleSize*2);
+	memcpy(miss_data, shaderHandleStorage.data() + handleSizeAligned, handleSize * 2);
 	vmaUnmapMemory(_allocator, _missShaderBindingTable._allocation);
 
 	void* hit_data;
@@ -1824,6 +1728,23 @@ void RenderEngine::get_enabled_features()
 	deviceCreatepNextChain = &_enabledAccelerationStructureFeatures;
 }
 
+void RenderEngine::create_raytracing_scene_structures(const Scene& scene)
+{
+	create_raytracing_pipeline(scene._renderables.size());
+	create_shader_binding_table();
+
+	create_bottom_level_acceleration_structure(scene);
+	create_top_level_acceleration_structure(scene, false);
+}
+
+void RenderEngine::create_raster_scene_structures()
+{
+	init_descriptor_set_layouts();
+	init_pipelines();
+}
+
+#pragma endregion
+
 void RenderEngine::init_imgui(VkRenderPass renderPass)
 {
 	//Create Descriptor Pool for IMGUI
@@ -1902,15 +1823,6 @@ void RenderEngine::cleanup()
 
 		SDL_DestroyWindow(_window);
 	}
-}
-
-void RenderEngine::create_scene_structures(const Scene& scene)
-{
-	create_raytracing_pipeline(scene._renderables.size()); 
-	create_shader_binding_table();
-
-	create_bottom_level_acceleration_structure(scene);
-	create_top_level_acceleration_structure(scene, false);
 }
 
 void RenderEngine::reset_imgui(RenderMode renderMode)

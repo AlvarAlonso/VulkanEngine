@@ -2,7 +2,6 @@
 
 using namespace VKE;
 
-int materialsCount = 0;
 std::map<std::string, Material*> Material::sMaterials;
 
 Material::Material() : _color{1.0f, 1.0f, 1.0f, 1.0f}, _roughness_factor(1), _metallic_factor(1)

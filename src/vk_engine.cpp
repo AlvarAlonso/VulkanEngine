@@ -232,6 +232,7 @@ void VulkanEngine::load_images()
 	VkImageViewCreateInfo imageinfo = vkinit::imageview_create_info(VK_FORMAT_R8G8B8A8_UNORM, defaultTexture->_image._image, VK_IMAGE_ASPECT_COLOR_BIT);
 	vkCreateImageView(RenderEngine::_device, &imageinfo, nullptr, &defaultTexture->_imageView);
 
+	defaultTexture->_id = VKE::Texture::sTexturesLoaded.size();
 	defaultTexture->register_texture("default");
 
 
@@ -242,6 +243,7 @@ void VulkanEngine::load_images()
 	VkImageViewCreateInfo imageinfo2 = vkinit::imageview_create_info(VK_FORMAT_R8G8B8A8_UNORM, grassTexture->_image._image, VK_IMAGE_ASPECT_COLOR_BIT);
 	vkCreateImageView(RenderEngine::_device, &imageinfo2, nullptr, &grassTexture->_imageView);
 
+	grassTexture->_id = VKE::Texture::sTexturesLoaded.size();
 	grassTexture->register_texture("grass");
 
 	RenderEngine::_mainDeletionQueue.push_function([=]() {

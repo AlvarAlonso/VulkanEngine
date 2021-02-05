@@ -19,7 +19,7 @@ namespace VKE
 		static int textureCount;
 		static std::map<std::string, Texture*> sTexturesLoaded;
 		static VKE::Texture* get(const char* filename);
-		void register_texture(std::string name);
+		void register_texture(const char* name);
 		/*
 		bool operator< (const VKE::Texture& i) { return this->_id < i._id; }
 		bool operator< (const VKE::Texture* i) { return this->_id < i->_id; }

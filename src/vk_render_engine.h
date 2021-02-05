@@ -114,7 +114,8 @@ public:
 	// - Descriptor Layouts
 	VkDescriptorSetLayout _globalSetLayout;
 	VkDescriptorSetLayout _objectSetLayout;
-	static VkDescriptorSetLayout _singleTextureSetLayout;
+	static VkDescriptorSetLayout _materialsSetLayout;
+	VkDescriptorSetLayout _singleTextureSetLayout;
 	VkDescriptorSetLayout _camSetLayout;
 
 	// - Pipeline Layouts
@@ -219,7 +220,9 @@ public:
 	void cleanup();
 
 	//create pipeline and acceleration structures for the current scene
-	void create_scene_structures(const Scene& scene);
+	void create_raytracing_scene_structures(const Scene& scene);
+
+	void create_raster_scene_structures();
 
 	void create_top_level_acceleration_structure(const Scene& scene, bool recreated);
 

@@ -10,7 +10,7 @@
 
 using namespace VKE;
 
-int textureCount = 0;
+int VKE::Texture::textureCount = 0;
 std::map<std::string, VKE::Texture*> VKE::Texture::sTexturesLoaded;
 
 bool vkutil::load_image_from_file(VulkanEngine& engine, const char* file, AllocatedImage& outImage)
@@ -124,7 +124,7 @@ VKE::Texture* VKE::Texture::get(const char* name)
     return nullptr;
 }
 
-void VKE::Texture::register_texture(std::string name)
+void VKE::Texture::register_texture(const char* name)
 {
     _name = name;
     sTexturesLoaded[name] = this;
