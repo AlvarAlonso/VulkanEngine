@@ -31,26 +31,26 @@ void VKE::Node::draw(glm::mat4& model, VkCommandBuffer commandBuffer, VkPipeline
     if(_mesh != nullptr && _mesh->_primitives.size() > 0)
     {
         VKE::Material* lastMaterial = nullptr;
+        GPUObjectData objectData{};
         for(const auto& primitive : _mesh->_primitives)
         {
+            objectData.modelMatrix = model * get_global_matrix();
+
             if(&primitive->material != lastMaterial)
             {
-                GPUObjectData objectData{};
-                objectData.modelMatrix = get_global_matrix();
                 objectData.matIndex.x = primitive->material._id;
-
-                vkCmdPushConstants(commandBuffer, layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(GPUObjectData), &objectData); // TODO: Calculate somewhere the global model matrix
-                
-                if(primitive->hasIndices)
-                {
-                    vkCmdDrawIndexed(commandBuffer, primitive->indexCount, 1, primitive->firstIndex, 0, 0);
-                }
-                else
-                {
-                    vkCmdDraw(commandBuffer, primitive->vertexCount, 1, 0, 0);
-                }
-
                 lastMaterial = &primitive->material;
+            }
+
+            vkCmdPushConstants(commandBuffer, layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(GPUObjectData), &objectData);
+                
+            if(primitive->hasIndices)
+            {
+                vkCmdDrawIndexed(commandBuffer, primitive->indexCount, 1, primitive->firstIndex, 0, 0);
+            }
+            else
+            {
+                vkCmdDraw(commandBuffer, primitive->vertexCount, 1, 0, 0);
             }
         }
     }
@@ -91,10 +91,11 @@ Prefab::Prefab(Mesh& mesh)
 
     Primitive* primitive = new Primitive(0, _indices.count, _vertices.count, *VKE::Material::sMaterials["default"]);
 
-    _root = Node();
-    _root._mesh = &mesh;
-    _root._mesh->_primitives.push_back(primitive);
-    _root._model = glm::translate(glm::vec3{ 0, 0, 0 });
+    Node* node = new Node();
+    node->_mesh = &mesh;
+    node->_mesh->_primitives.push_back(primitive);
+    node->_model = glm::translate(glm::vec3{ 0, 0, 0 });
+    _roots.push_back(node);
 }
 
 Prefab::~Prefab()
@@ -109,7 +110,10 @@ Prefab::~Prefab()
 
 void VKE::Prefab::draw(glm::mat4& model, VkCommandBuffer commandBuffer, VkPipelineLayout layout)
 {
-    _root.draw(model, commandBuffer, layout);
+    for(const auto& node : _roots)
+    {
+        node->draw(model, commandBuffer, layout);
+    }
 }
 
 Prefab* Prefab::get(const char* filename)

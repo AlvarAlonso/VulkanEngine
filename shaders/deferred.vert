@@ -15,18 +15,14 @@ layout(set = 0, binding = 0) uniform CameraBuffer {
 	mat4 viewproj;
 } cameraData;
 
-struct ObjectData {
+layout( push_constant, std140 ) uniform ModelMatrix {
 	mat4 modelMatrix;
-	vec4 matIndex; // currently using only x component to pass the primitive material index
-};
-
-layout( push_constant ) uniform ModelMatrix {
-  ObjectData object;
+  	vec4 matIndex; // currently using only x component to pass the primitive material index
 } objectPushConstant;
 
 void main() 
 {	
-	mat4 modelMatrix = objectPushConstant.object.modelMatrix;
+	mat4 modelMatrix = objectPushConstant.modelMatrix;
 	mat4 transformMatrix = (cameraData.viewproj * modelMatrix);
 
 	gl_Position = transformMatrix * vec4(vPosition, 1.0f);

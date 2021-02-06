@@ -50,6 +50,8 @@ VertexInputDescription Vertex::get_vertex_description()
     return description;
 }
 
+using namespace VKE;
+
 Mesh::Mesh()
 {
 }
@@ -281,10 +283,10 @@ void Mesh::create_quad()
     _vertices[2].color = { 1.0f, 1.0f, 1.0f };
     _vertices[3].color = { 1.0f, 1.0f, 1.0f };
 
-    _vertices[0].uv = { 1.0f, 0.0f };
-    _vertices[1].uv = { 0.0f, 0.0f };
-    _vertices[2].uv = { 0.0f, 1.0f };
-    _vertices[3].uv = { 1.0f, 1.0f };
+    _vertices[0].uv = { 0.0f, 0.0f };
+    _vertices[1].uv = { 1.0f, 0.0f };
+    _vertices[2].uv = { 1.0f, 1.0f };
+    _vertices[3].uv = { 0.0f, 1.0f };
 
     //Quad indices
     _indices = {0, 1, 2, 2, 3, 0};

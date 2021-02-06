@@ -20,12 +20,10 @@ namespace VKE
 		static std::map<std::string, Texture*> sTexturesLoaded;
 		static VKE::Texture* get(const char* filename);
 		void register_texture(const char* name);
-		/*
-		bool operator< (const VKE::Texture& i) { return this->_id < i._id; }
-		bool operator< (const VKE::Texture* i) { return this->_id < i->_id; }
-		bool operator() (const Texture& i, const Texture& j) { return (i._id < j._id); }
-		bool operator() (Texture* i, Texture* j) { return (i->_id < j->_id); }
-		*/
+
+		static bool ComparePtrToTexture(const VKE::Texture* l, const VKE::Texture* r) {	
+			return l->_id < r->_id;
+		}
 	};
 }
 

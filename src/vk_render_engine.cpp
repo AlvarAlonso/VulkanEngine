@@ -631,10 +631,12 @@ void RenderEngine::init_pipelines()
 		VkPushConstantRange pushConstant = {};
 		pushConstant.offset = 0;
 		pushConstant.size = sizeof(GPUObjectData);
-		pushConstant.stageFlags =  VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+		pushConstant.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
 
-		layoutInfo.pushConstantRangeCount = 1;
-		layoutInfo.pPushConstantRanges = &pushConstant;
+		std::vector<VkPushConstantRange> pushConstants = { pushConstant };
+
+		layoutInfo.pushConstantRangeCount = static_cast<uint32_t>(pushConstants.size());
+		layoutInfo.pPushConstantRanges = pushConstants.data();
 		layoutInfo.setLayoutCount = static_cast<uint32_t>(deferredSetLayouts.size());
 		layoutInfo.pSetLayouts = deferredSetLayouts.data();
 

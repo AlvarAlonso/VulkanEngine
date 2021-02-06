@@ -34,8 +34,8 @@ void Camera::rotate(float xoffset, float yoffset, bool constrainPitch)
     xoffset *= _sensitivity;
     yoffset *= _sensitivity;
 
-    _yaw -= xoffset;
-    _pitch += yoffset;
+    _yaw += xoffset;
+    _pitch -= yoffset;
 
     if (constrainPitch) {
         if (_pitch > 89.0f)

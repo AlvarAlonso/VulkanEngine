@@ -3,6 +3,7 @@
 
 #include "vk_engine.h"
 #include "vk_textures.h"
+#include "vk_material.h"
 
 #include <SDL.h>
 #include <SDL_vulkan.h>
@@ -38,6 +39,11 @@ void VulkanEngine::init()
 	load_images();
 
 	load_meshes();
+
+	VKE::Texture* texture = VKE::Texture::sTexturesLoaded["default"];
+	VKE::Material* defaultMaterial = new VKE::Material(texture);
+	defaultMaterial->_id = VKE::Material::sMaterials.size();
+	defaultMaterial->register_material("default");
 
 	scene = new Scene();
 	scene->generate_sample_scene();
@@ -153,7 +159,7 @@ void VulkanEngine::run()
 			int xMouseDiff = xMouse - xMouseOld;
 			int yMouseDiff = yMouse - yMouseOld;
 
-			camera->rotate(xMouseDiff, -yMouseDiff);
+			camera->rotate(xMouseDiff, yMouseDiff);
 
 			int window_width, window_height;
 			SDL_GetWindowSize(_window, &window_width, &window_height);
@@ -218,9 +224,9 @@ void VulkanEngine::render_imgui()
 
 void VulkanEngine::load_meshes()
 {
-	Mesh tree("../assets/MapleTree.obj");
-	Mesh tree_leaves("../assets/MapleTreeLeaves.obj");
-	Mesh tree_stem("../assets/MapleTreeStem.obj");
+	VKE::Mesh tree("../assets/MapleTree.obj");
+	VKE::Mesh tree_leaves("../assets/MapleTreeLeaves.obj");
+	VKE::Mesh tree_stem("../assets/MapleTreeStem.obj");
 }
 
 void VulkanEngine::load_images()

@@ -19,21 +19,31 @@ struct Material {
 	vec4 emissive_metRough_occlusion_normal; // Indices to material textures
 };
 
-layout( push_constant ) uniform ModelMatrix {
-  	mat4 modelMatrix;
+layout( push_constant, std140 ) uniform ObjectIndices {
+	mat4 modelMatrix;
 	vec4 matIndex; // currently using only x component to pass the primitive material index
 } objectPushConstant;
 
-layout(set = 1, binding = 0) readonly buffer Materials { Material m[]; } materials;
+layout(set = 1, binding = 0) buffer Materials { Material m[]; } materials;
 layout(set = 1, binding = 1) uniform sampler2D textures[];
 
 void main() 
 {	
 	int matIndex = int(objectPushConstant.matIndex.x);
 	int textureIndex = int(materials.m[matIndex].rh_met_ti_color.w);
-	vec3 color = texture(textures[textureIndex], texCoord).xyz;
+
+	vec3 color;
+
+	if(textureIndex < 0.001)
+	{
+		color = materials.m[matIndex].color.xyz;
+	}
+	else
+	{
+		color = texture(textures[textureIndex], texCoord).xyz;
+	}
+
 	outPosition = vec4(inPosition, 1.0);
 	outNormal = vec4(inNormal, 1.0);
 	outFragColor = vec4(color, 1.0);
-	//outFragColor = vec4(1.0, 0.0, 0.0, 1.0);
 }

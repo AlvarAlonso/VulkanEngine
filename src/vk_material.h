@@ -9,7 +9,7 @@ class Mesh;
 
 namespace VKE
 {
-	struct Texture;
+	class Texture;
 
 	class Material
 	{
@@ -37,8 +37,12 @@ namespace VKE
 		VKE::Texture* _normal_texture;
 
 		Material();
-		Material(Texture* texture);
+		Material(VKE::Texture* texture);
 		void register_material(const char* name);
+
+		static bool ComparePtrToMaterial(const VKE::Material* l, const VKE::Material* r) {
+			return l->_id < r->_id;
+		}
 	};
 
 	struct MaterialToShader
@@ -46,7 +50,7 @@ namespace VKE
 		glm::vec4 _color;
 		glm::vec4 _emissive_factor;
 		glm::vec4 _roughness_metallic_tilling_color_factors; // Color is the index to the color texture
-		glm::ivec1 _emissive_metRough_occlusion_normal_indices; // Indices to material textures
+		glm::vec4 _emissive_metRough_occlusion_normal_indices; // Indices to material textures
 	};
 }
 

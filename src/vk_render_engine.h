@@ -14,6 +14,8 @@
 #include "vk_mesh.h"
 
 const int MAX_OBJECTS = 100;
+const int MAX_MATERIALS = 100;
+const int MAX_TEXTURES = 100;
 
 struct RenderObject;
 class Scene;

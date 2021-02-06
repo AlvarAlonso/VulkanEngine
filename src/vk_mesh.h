@@ -62,37 +62,41 @@ struct Primitive {
 	void draw(glm::mat4& model, VkCommandBuffer commandBuffer, VkPipelineLayout layout);
 };
 
-class Mesh
+namespace VKE
 {
-public:
-	static std::map<std::string, Mesh*> sMeshesLoaded;
-	Mesh();
+	class Mesh
+	{
+	public:
+		static std::map<std::string, Mesh*> sMeshesLoaded;
+		Mesh();
 
-	Mesh(const char* filename);
+		Mesh(const char* filename);
 
-	std::vector<Vertex> _vertices;
-	std::vector<uint32_t> _indices;
+		std::vector<Vertex> _vertices;
+		std::vector<uint32_t> _indices;
 
-	AllocatedBuffer _vertexBuffer;
-	AllocatedBuffer _indexBuffer;
+		AllocatedBuffer _vertexBuffer;
+		AllocatedBuffer _indexBuffer;
 
-	std::vector<Primitive*> _primitives;
+		std::vector<Primitive*> _primitives;
 
-	void upload_to_gpu();
+		void upload_to_gpu();
 
-	bool load_from_obj(const char* filename);
+		bool load_from_obj(const char* filename);
 
-	void create_vertex_buffer();
-	void create_index_buffer();
+		void create_vertex_buffer();
+		void create_index_buffer();
 
-	void destroy_buffers();
+		void destroy_buffers();
 
-	void create_quad();
+		void create_quad();
 
-	void create_cube();
+		void create_cube();
 
-	//loader
-	static Mesh* get(const char* filename, bool skip_load = false);
-	void register_mesh(std::string name);
-};
+		//loader
+		static Mesh* get(const char* filename, bool skip_load = false);
+		void register_mesh(std::string name);
+	};
+}
+
 

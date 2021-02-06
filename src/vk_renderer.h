@@ -48,7 +48,7 @@ public:
 
 	void draw_scene();
 
-	Mesh render_quad;
+	VKE::Mesh render_quad;
 
 	AllocatedBuffer _camBuffer; //cam parameters
 	AllocatedBuffer _objectBuffer; //models

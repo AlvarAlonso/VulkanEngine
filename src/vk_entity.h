@@ -4,9 +4,11 @@
 
 #include "vk_prefab.h"
 
-struct GPUObjectData {
+
+struct GPUObjectData
+{
 	glm::mat4 modelMatrix;
-	glm::ivec4 matIndex; // currently using only x component to pass the primitive material index
+	glm::vec4 matIndex; // currently using only x component to pass the primitive material index
 };
 
 class Entity

@@ -5,20 +5,19 @@
 #include <string>
 #include <cassert>
 
-class Mesh;
-class Texture;
-class Material;
 struct rtVertex;
 
 namespace VKE
 {
+	class Mesh;
+
 	class Node
 	{
 	public:
 		std::string _name;
 		bool _visible;
 
-		Mesh* _mesh;
+		VKE::Mesh* _mesh;
 		glm::mat4 _model;
 		glm::mat4 _global_model;
 		glm::vec3 _translation;
@@ -60,7 +59,7 @@ namespace VKE
 			AllocatedBuffer indexBuffer;
 		} _indices;
 
-		Node _root;
+		std::vector<Node*> _roots;
 
 		Prefab();
 		Prefab(Mesh& mesh);

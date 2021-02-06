@@ -149,6 +149,8 @@ void Renderer::update_uniform_buffers(RenderObject* first, size_t count)
 	void* objectData;
 	vmaMapMemory(_allocator, _objectBuffer._allocation, &objectData);
 
+	// TODO: Rework raytracing descriptor sets for glTF
+	/*
 	GPUObjectData* objectSSBO = (GPUObjectData*)objectData;
 
 	for (int i = 0; i < count; i++)
@@ -158,7 +160,7 @@ void Renderer::update_uniform_buffers(RenderObject* first, size_t count)
 	}
 
 	vmaUnmapMemory(_allocator, _objectBuffer._allocation);
-
+	*/
 	//re->create_top_level_acceleration_structure(*currentScene, true);
 }
 /*
@@ -608,7 +610,7 @@ void Renderer::create_descriptor_buffers()
 
 	for (int i = 0; i < FRAME_OVERLAP; i++)
 	{
-		_frames[i].objectBuffer = vkutil::create_buffer(_allocator, sizeof(GPUObjectData) * MAX_OBJECTS, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+		//_frames[i].objectBuffer = vkutil::create_buffer(_allocator, sizeof(GPUObjectData) * MAX_OBJECTS, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 		_frames[i].cameraBuffer = vkutil::create_buffer(_allocator, sizeof(GPUCameraData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 
 		//cam buffer
@@ -616,7 +618,7 @@ void Renderer::create_descriptor_buffers()
 	}
 
 	//deferred
-	_objectBuffer = vkutil::create_buffer(_allocator, sizeof(VKE::MaterialToShader) * 100, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+	_objectBuffer = vkutil::create_buffer(_allocator, sizeof(VKE::MaterialToShader) * MAX_MATERIALS, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 }
 
 
@@ -704,18 +706,11 @@ void Renderer::init_descriptors()
 		sceneInfo.offset = 0;
 		sceneInfo.range = sizeof(GPUSceneData);
 
-		VkDescriptorBufferInfo objectBufferInfo;
-		objectBufferInfo.buffer = _frames[i].objectBuffer._buffer;
-		objectBufferInfo.offset = 0;
-		objectBufferInfo.range = sizeof(GPUObjectData) * MAX_OBJECTS;
-
 		VkWriteDescriptorSet cameraWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, _frames[i].globalDescriptor, &cameraInfo, 0);
 
 		VkWriteDescriptorSet sceneWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, _frames[i].globalDescriptor, &sceneInfo, 1);
 
-		VkWriteDescriptorSet objectWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _frames[i].objectDescriptor, &objectBufferInfo, 0);
-
-		std::array<VkWriteDescriptorSet, 3> setWrites = { cameraWrite, sceneWrite, objectWrite };
+		std::array<VkWriteDescriptorSet, 2> setWrites = { cameraWrite, sceneWrite };
 
 		vkUpdateDescriptorSets(_device, static_cast<uint32_t>(setWrites.size()), setWrites.data(), 0, nullptr);
 	}
@@ -749,7 +744,7 @@ void Renderer::init_descriptors()
 	VkDescriptorBufferInfo materialBufferInfo;
 	materialBufferInfo.buffer = _objectBuffer._buffer;
 	materialBufferInfo.offset = 0;
-	materialBufferInfo.range = sizeof(VKE::MaterialToShader) * 100;
+	materialBufferInfo.range = sizeof(VKE::MaterialToShader) * MAX_MATERIALS;
 
 	// Pass the texture data from a map to a vector, and order it by idx
 	// Material Textures
@@ -765,7 +760,7 @@ void Renderer::init_descriptors()
 	}
 
 	// Order tex idx vector
-	std::sort(orderedTexVec.begin(), orderedTexVec.end());
+	std::sort(orderedTexVec.begin(), orderedTexVec.end(), VKE::Texture::ComparePtrToTexture);
 
 	for(const auto& texture : orderedTexVec)
 	{
@@ -801,9 +796,10 @@ void Renderer::init_descriptors()
 	for(const auto& material : VKE::Material::sMaterials)
 	{
 		materialsAux[i] = material.second;
+		i++;
 	}
 
-	std::sort(materialsAux.begin(), materialsAux.end());
+	std::sort(materialsAux.begin(), materialsAux.end(), VKE::Material::ComparePtrToMaterial);
 
 	// Assign values to MaterialsToShader
 	i = 0;
@@ -814,12 +810,22 @@ void Renderer::init_descriptors()
 
 		glm::vec4* factors = &glm::vec4{
 			material->_roughness_factor, material->_metallic_factor,
-			material->_tilling_factor, material->_color_texture->_id };
+			material->_tilling_factor, -1 };
+
+		if (material->_color_texture == nullptr)
+		{
+			factors->w = VKE::Texture::sTexturesLoaded["default"]->_id;
+		}
+		else
+		{
+			factors->w = material->_color_texture->_id;
+		}
+
 		factors->z = 1;
 
 		_materialInfos[i]._roughness_metallic_tilling_color_factors = glm::vec4{
 			factors->x ? factors->x : 0, factors->y ? factors->y : 0,
-			factors->z ? factors->z : 1, factors->w ? factors->w : -1
+			factors->z ? factors->z : 1, factors->w ? factors->w : 0
 		};
 
 		_materialInfos[i]._emissive_metRough_occlusion_normal_indices = glm::vec4{ -1, -1, -1, -1 };
@@ -884,12 +890,7 @@ void Renderer::update_descriptors(RenderObject* first, size_t count)
 	void* objectData;
 	vmaMapMemory(_allocator, _objectBuffer._allocation, &objectData);
 
-	VKE::MaterialToShader* objectSSBO = (VKE::MaterialToShader*)objectData;
-
-	for (int i = 0; i < _materialInfos.size(); i++)
-	{
-		objectSSBO[i] = _materialInfos[i];
-	}
+	memcpy(objectData, _materialInfos.data(), sizeof(VKE::MaterialToShader) * _materialInfos.size());
 
 	vmaUnmapMemory(_allocator, _objectBuffer._allocation);
 }
