@@ -51,10 +51,11 @@ public:
 	VKE::Mesh render_quad;
 
 	AllocatedBuffer _camBuffer; //cam parameters
-	AllocatedBuffer _objectBuffer; //models
+	AllocatedBuffer _objectBuffer;
+	AllocatedBuffer _transformBuffer;
 	AllocatedBuffer _sceneBuffer; //lights
 	AllocatedBuffer _materialBuffer;
-	AllocatedBuffer _materialIndicesBuffer;
+	AllocatedBuffer _primitiveInfoBuffer;
 	AllocatedBuffer _texturesBuffer;
 	AllocatedBuffer _textureIndicesBuffer;
 
@@ -138,20 +139,21 @@ private:
 	void init_descriptors();
 
 	//update descriptors
-	void update_descriptors_forward(RenderObject* first, size_t count);
 
 	void update_descriptors(RenderObject* first, size_t count);
 
 	//draw functions
-	void render_forward();
 
 	void render_deferred();
 
 	void render_raytracing();
 
-	void draw_forward(VkCommandBuffer cmd, RenderObject* first, int count);
 
 	void draw_deferred(VkCommandBuffer cmd, int imageIndex);		
 
 	FrameData& get_current_frame();
+
+	void get_primitive_to_shader_info(const VKE::Node* parent, const VKE::Node& node, std::vector<PrimitiveToShader>& primitivesInfo, int renderableIndex);
+
+	void get_nodes_transforms(const VKE::Node* parent, VKE::Node& node, std::vector<glm::mat4>& transforms);
 };

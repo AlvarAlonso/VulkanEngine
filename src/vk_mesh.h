@@ -36,6 +36,10 @@ struct rtVertex {
 	glm::vec4 position;
 	glm::vec4 normal;
 	glm::vec4 uv;
+
+	bool operator==(const rtVertex& other) const {
+		return position == other.position && normal == other.normal && uv == other.uv;
+	}
 };
 
 namespace std {
@@ -60,6 +64,12 @@ struct Primitive {
 	};
 
 	void draw(glm::mat4& model, VkCommandBuffer commandBuffer, VkPipelineLayout layout);
+};
+
+struct PrimitiveToShader {
+	uint32_t firstIndex;
+	uint32_t renderableIndex;
+	uint32_t materialIndex;
 };
 
 namespace VKE

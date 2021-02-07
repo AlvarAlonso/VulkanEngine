@@ -20,9 +20,6 @@ namespace VKE
 		VKE::Mesh* _mesh;
 		glm::mat4 _model;
 		glm::mat4 _global_model;
-		glm::vec3 _translation;
-		glm::mat4 _rotation;
-		glm::vec3 _scale;
 
 		//info to create the tree
 		Node* _parent;
@@ -36,7 +33,6 @@ namespace VKE
 
 		//add node to children list
 		void add_child(Node* child);
-
 		glm::mat4 get_global_matrix(bool fast = false);
 	};
 
@@ -52,6 +48,7 @@ namespace VKE
 		struct Vertices {
 			int count;
 			AllocatedBuffer vertexBuffer;
+			AllocatedBuffer rtvBuffer;
 		} _vertices;
 
 		struct Indices {

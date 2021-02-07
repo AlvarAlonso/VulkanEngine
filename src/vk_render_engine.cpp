@@ -1097,38 +1097,32 @@ void RenderEngine::create_raytracing_pipeline(const int& renderablesCount)
 	VkDescriptorSetLayoutBinding transformBufferBinding{};
 	transformBufferBinding.binding = 5;
 	transformBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-	transformBufferBinding.descriptorCount = renderablesCount;
+	transformBufferBinding.descriptorCount = 1;
 	transformBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
+	VkDescriptorSetLayoutBinding primitiveBufferBinding{};
+	primitiveBufferBinding.binding = 6;
+	primitiveBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	primitiveBufferBinding.descriptorCount = 1;
+	primitiveBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
+
 	VkDescriptorSetLayoutBinding sceneBufferBinding{};
-	sceneBufferBinding.binding = 6;
+	sceneBufferBinding.binding = 7;
 	sceneBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 	sceneBufferBinding.descriptorCount = 1;
 	sceneBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
 	VkDescriptorSetLayoutBinding materialBufferBinding{};
-	materialBufferBinding.binding = 7;
+	materialBufferBinding.binding = 8;
 	materialBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 	materialBufferBinding.descriptorCount = 1;
 	materialBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
-	VkDescriptorSetLayoutBinding materialIndexBufferBinding{};
-	materialIndexBufferBinding.binding = 8;
-	materialIndexBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-	materialIndexBufferBinding.descriptorCount = 1;
-	materialIndexBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
-
 	VkDescriptorSetLayoutBinding textureBufferBinding{};
 	textureBufferBinding.binding = 9;
 	textureBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-	textureBufferBinding.descriptorCount = 2;
+	textureBufferBinding.descriptorCount = VKE::Texture::sTexturesLoaded.size();
 	textureBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
-
-	VkDescriptorSetLayoutBinding textureIndexBufferBinding{};
-	textureIndexBufferBinding.binding = 10;
-	textureIndexBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-	textureIndexBufferBinding.descriptorCount = 1;
-	textureIndexBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
 	std::vector<VkDescriptorSetLayoutBinding> bindings({
 		accelerationStructureLayoutBinding,
@@ -1137,11 +1131,10 @@ void RenderEngine::create_raytracing_pipeline(const int& renderablesCount)
 		vertexBufferBinding,
 		indexBufferBinding,
 		transformBufferBinding,
+		primitiveBufferBinding,
 		sceneBufferBinding,
 		materialBufferBinding,
-		materialIndexBufferBinding,
 		textureBufferBinding,
-		textureIndexBufferBinding
 		});
 
 	VkDescriptorSetLayoutCreateInfo desc_set_layout_info{};

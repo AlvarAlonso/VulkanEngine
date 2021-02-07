@@ -3,6 +3,7 @@
 #include "vk_engine.h"
 #include "vk_material.h"
 #include "vk_textures.h"
+#include "vk_prefab.h"
 #include "vk_utils.h"
 #include <iostream>
 
@@ -99,7 +100,6 @@ void Renderer::draw_scene()
 		isDeferredCommandInit = true;
 	}
 
-	/*
 	if(_renderMode == RENDER_MODE_RAYTRACING && !areAccelerationStructuresInit)
 	{
 		re->create_raytracing_scene_structures(*currentScene);
@@ -107,7 +107,6 @@ void Renderer::draw_scene()
 		record_raytracing_command_buffer();
 		areAccelerationStructuresInit = true;
 	}
-	*/
 	
 	if(_renderMode == RENDER_MODE_FORWARD)
 	{
@@ -146,29 +145,32 @@ void Renderer::update_uniform_buffers(RenderObject* first, size_t count)
 	vmaUnmapMemory(_allocator, _ubo._allocation);
 
 	//models update
-	void* objectData;
-	vmaMapMemory(_allocator, _objectBuffer._allocation, &objectData);
+	std::vector<RenderObject>& renderables = currentScene->_renderables;
+	std::vector<glm::mat4> transforms;
 
+	void* transformData;
+	vmaMapMemory(_allocator, _transformBuffer._allocation, &transformData);
 	// TODO: Rework raytracing descriptor sets for glTF
-	/*
-	GPUObjectData* objectSSBO = (GPUObjectData*)objectData;
-
-	for (int i = 0; i < count; i++)
+	for(const auto& renderable : renderables)
 	{
-		RenderObject& object = first[i];
-		objectSSBO[i].modelMatrix = object._model;
+		for(const auto& node : renderable._prefab->_roots)
+		{
+			get_nodes_transforms(nullptr, *node, transforms);
+		}
 	}
 
-	vmaUnmapMemory(_allocator, _objectBuffer._allocation);
-	*/
+	memcpy(transformData, transforms.data(), transforms.size());
+
+	vmaUnmapMemory(_allocator, _transformBuffer._allocation);
+	
 	//re->create_top_level_acceleration_structure(*currentScene, true);
 }
-/*
 
 void Renderer::create_raytracing_descriptor_sets()
 {
 	std::vector<RenderObject>& renderables = currentScene->_renderables;
 
+	// Allocation of raytracing DescriptorSet
 	VkDescriptorSetAllocateInfo alloc_info = {};
 	alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
 	alloc_info.pNext = nullptr;
@@ -178,6 +180,7 @@ void Renderer::create_raytracing_descriptor_sets()
 
 	VK_CHECK(vkAllocateDescriptorSets(_device, &alloc_info, &_rayTracingDescriptorSet));
 
+	// Binding 0 : Acceleration Structure Descriptor
 	VkWriteDescriptorSetAccelerationStructureKHR descriptorAccelerationStructureInfo{};
 	descriptorAccelerationStructureInfo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR;
 	descriptorAccelerationStructureInfo.accelerationStructureCount = 1;
@@ -192,15 +195,72 @@ void Renderer::create_raytracing_descriptor_sets()
 	accelerationStructureWrite.descriptorCount = 1;
 	accelerationStructureWrite.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
 
+	// Binding 1: Result Image Descriptor
 	VkDescriptorImageInfo storageImageDescriptor{};
 	storageImageDescriptor.imageView = re->_storageImageView;
 	storageImageDescriptor.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
 
+	// Binding 2: Camera Descriptor
 	VkDescriptorBufferInfo uboBufferDescriptor{};
 	uboBufferDescriptor.offset = 0;
 	uboBufferDescriptor.buffer = _ubo._buffer;
 	uboBufferDescriptor.range = sizeof(uniformData);
 
+	// ----------------------------------------------------
+	std::vector<VkDescriptorBufferInfo> verticesBufferInfos;
+	std::vector<VkDescriptorBufferInfo> indicesBufferInfos;
+
+	verticesBufferInfos.reserve(renderables.size());
+	indicesBufferInfos.reserve(renderables.size());
+	std::vector<PrimitiveToShader> primitivesInfo;
+
+	// Binding 5: Transforms Descriptor
+	_transformBuffer = vkutil::create_buffer(_allocator, sizeof(glm::mat4) * MAX_OBJECTS * 2, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+
+	VkDescriptorBufferInfo transformBufferInfo{};
+	transformBufferInfo.offset = 0;
+	transformBufferInfo.buffer = _transformBuffer._buffer;
+	transformBufferInfo.range = sizeof(glm::mat4) * MAX_OBJECTS * 2;
+
+	for (int i = 0; i < renderables.size(); i++)
+	{
+		// Binding 3: RTVertices Descriptor
+		VkDescriptorBufferInfo rtVertexBufferInfo{};
+		rtVertexBufferInfo.offset = 0;
+		rtVertexBufferInfo.buffer = renderables[i]._prefab->_vertices.rtvBuffer._buffer;
+		rtVertexBufferInfo.range = renderables[i]._prefab->_vertices.count * sizeof(rtVertex);
+
+		verticesBufferInfos.push_back(rtVertexBufferInfo);
+
+		// Binding 4: Vertex Indices Descriptor
+		VkDescriptorBufferInfo indexBufferInfo{};
+		indexBufferInfo.offset = 0;
+		indexBufferInfo.buffer = renderables[i]._prefab->_indices.indexBuffer._buffer;
+		indexBufferInfo.range = renderables[i]._prefab->_indices.count * sizeof(uint32_t);
+
+		indicesBufferInfos.push_back(indexBufferInfo);
+
+		// Warning: Take care with how primitives are added
+		// Binding 6: Primitives Descriptor
+		for(const auto& node : renderables[i]._prefab->_roots)
+		{
+			get_primitive_to_shader_info(nullptr, *node, primitivesInfo, i);
+		}
+	}
+
+	_primitiveInfoBuffer = vkutil::create_buffer(_allocator, primitivesInfo.size() * sizeof(PrimitiveToShader), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+
+	VkDescriptorBufferInfo primitivesBufferDescriptor{};
+	primitivesBufferDescriptor.offset = 0;
+	primitivesBufferDescriptor.buffer = _primitiveInfoBuffer._buffer;
+	primitivesBufferDescriptor.range = primitivesInfo.size() * sizeof(PrimitiveToShader);
+
+	void* primitivesData;
+	vmaMapMemory(_allocator, _primitiveInfoBuffer._allocation, &primitivesData);
+	memcpy(primitivesData, primitivesInfo.data(), primitivesInfo.size() * sizeof(PrimitiveToShader));
+	vmaUnmapMemory(_allocator, _primitiveInfoBuffer._allocation);
+
+	// Binding 7: Scene Lights Descriptor
 	_sceneBuffer = vkutil::create_buffer(_allocator, currentScene->_lights.size() * sizeof(Light), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 
 	VkDescriptorBufferInfo sceneBufferDescriptor{};
@@ -213,7 +273,7 @@ void Renderer::create_raytracing_descriptor_sets()
 	memcpy(sceneData, currentScene->_lights.data(), currentScene->_lights.size() * sizeof(Light));
 	vmaUnmapMemory(_allocator, _sceneBuffer._allocation);
 
-
+	// Binding 8: Materials Descriptor
 	_materialBuffer = vkutil::create_buffer(_allocator, VKE::Material::sMaterials.size() * sizeof(VKE::Material), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 	
 	VkDescriptorBufferInfo materialBufferDescriptor{};
@@ -230,30 +290,7 @@ void Renderer::create_raytracing_descriptor_sets()
 	}
 	vmaUnmapMemory(_allocator, _materialBuffer._allocation);
 
-	_materialIndicesBuffer = vkutil::create_buffer(_allocator, currentScene->_matIndices.size() * sizeof(int), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
-
-	VkDescriptorBufferInfo materialIndicesBufferDescriptor{};
-	materialIndicesBufferDescriptor.offset = 0;
-	materialIndicesBufferDescriptor.buffer = _materialIndicesBuffer._buffer;
-	materialIndicesBufferDescriptor.range = currentScene->_matIndices.size() * sizeof(int);
-
-	void* matIdxData;
-	vmaMapMemory(_allocator, _materialIndicesBuffer._allocation, &matIdxData);
-	memcpy(matIdxData, currentScene->_matIndices.data(), currentScene->_matIndices.size() * sizeof(int));
-	vmaUnmapMemory(_allocator, _materialIndicesBuffer._allocation);
-
-	_textureIndicesBuffer = vkutil::create_buffer(_allocator, currentScene->_texIndices.size() * sizeof(int), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
-
-	VkDescriptorBufferInfo textureIndicesInfo{};
-	textureIndicesInfo.offset = 0;
-	textureIndicesInfo.buffer = _textureIndicesBuffer._buffer;
-	textureIndicesInfo.range = currentScene->_texIndices.size() * sizeof(int);
-
-	void* texIdxData;
-	vmaMapMemory(_allocator, _textureIndicesBuffer._allocation, &texIdxData);
-	memcpy(texIdxData, currentScene->_texIndices.data(), currentScene->_texIndices.size() * sizeof(int));
-	vmaUnmapMemory(_allocator, _textureIndicesBuffer._allocation);
-
+	// Binding 9: Textures Descriptor
 	// Pass the texture data from a map to a vector, and order it by idx
 	std::vector<VkDescriptorImageInfo> textureImageInfos;
 	int texCount = VKE::Texture::textureCount;
@@ -279,63 +316,16 @@ void Renderer::create_raytracing_descriptor_sets()
 		textureImageInfos.push_back(textureImageDescriptor);
 	}
 
-	std::vector<VkDescriptorBufferInfo> verticesBufferInfos;
-	std::vector<VkDescriptorBufferInfo> indicesBufferInfos;
-	std::vector<VkDescriptorBufferInfo> transformBufferInfos;
-
-	verticesBufferInfos.reserve(renderables.size());
-	indicesBufferInfos.reserve(renderables.size());
-	transformBufferInfos.reserve(renderables.size());
-
-	for(int i = 0; i < renderables.size(); i++)
-	{
-		AllocatedBuffer rtVertexBuffer = vkutil::create_buffer(_allocator, renderables[i]._prefab->_rtvs.size() * sizeof(rtVertex), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
-
-		VkDescriptorBufferInfo vertexBufferInfo{};
-		vertexBufferInfo.offset = 0;
-		vertexBufferInfo.buffer = rtVertexBuffer._buffer;
-		vertexBufferInfo.range = renderables[i]._prefab->_rtvs.size() * sizeof(rtVertex);
-
-		void* vertexData;
-		vmaMapMemory(_allocator, rtVertexBuffer._allocation, &vertexData);
-		memcpy(vertexData, renderables[i]._prefab->_rtvs.data(), renderables[i]._prefab->_rtvs.size() * sizeof(rtVertex));
-		vmaUnmapMemory(_allocator, rtVertexBuffer._allocation);
-
-		verticesBufferInfos.push_back(vertexBufferInfo);
-
-		VkDescriptorBufferInfo indexBufferInfo{};
-		indexBufferInfo.offset = 0;
-		indexBufferInfo.buffer = renderables[i]._prefab->_indices.indexBuffer._buffer;
-		indexBufferInfo.range = renderables[i]._prefab->_indices.count * sizeof(uint32_t);
-
-		indicesBufferInfos.push_back(indexBufferInfo);
-
-		AllocatedBuffer transformBuffer = vkutil::create_buffer(_allocator, sizeof(glm::mat4), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
-
-		VkDescriptorBufferInfo transformBufferInfo{};
-		transformBufferInfo.offset = 0;
-		transformBufferInfo.buffer = transformBuffer._buffer;
-		transformBufferInfo.range = sizeof(glm::mat4);
-
-		transformBufferInfos.push_back(transformBufferInfo);
-
-		void* data;
-		vmaMapMemory(_allocator, transformBuffer._allocation, &data);
-		memcpy(data, &renderables[i]._model, sizeof(glm::mat4));
-		vmaUnmapMemory(_allocator, transformBuffer._allocation);
-	}
-
 	//Descriptor Writes
 	VkWriteDescriptorSet resultImageWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, _rayTracingDescriptorSet, &storageImageDescriptor, 1);
 	VkWriteDescriptorSet uniformBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, _rayTracingDescriptorSet, &uboBufferDescriptor, 2);
 	VkWriteDescriptorSet vertexBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rayTracingDescriptorSet, verticesBufferInfos.data(), 3, renderables.size());
 	VkWriteDescriptorSet indexBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rayTracingDescriptorSet, indicesBufferInfos.data(), 4, renderables.size());
-	VkWriteDescriptorSet transformBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rayTracingDescriptorSet, transformBufferInfos.data(), 5, renderables.size());
-	VkWriteDescriptorSet sceneBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, _rayTracingDescriptorSet, &sceneBufferDescriptor, 6);
-	VkWriteDescriptorSet materialBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rayTracingDescriptorSet, &materialBufferDescriptor, 7);
-	VkWriteDescriptorSet materialIndicesBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rayTracingDescriptorSet, &materialIndicesBufferDescriptor, 8);
+	VkWriteDescriptorSet transformBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rayTracingDescriptorSet, &transformBufferInfo, 5);
+	VkWriteDescriptorSet primitivesInfoWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rayTracingDescriptorSet, &primitivesBufferDescriptor, 6);
+	VkWriteDescriptorSet sceneBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, _rayTracingDescriptorSet, &sceneBufferDescriptor, 7);
+	VkWriteDescriptorSet materialBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rayTracingDescriptorSet, &materialBufferDescriptor, 8);
 	VkWriteDescriptorSet textureImagesWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, _rayTracingDescriptorSet, textureImageInfos.data(), 9, textureImageInfos.size());
-	VkWriteDescriptorSet textureIndicesImageWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rayTracingDescriptorSet, &textureIndicesInfo, 10);
 
 	std::vector<VkWriteDescriptorSet> writeDescriptorSets = {
 		accelerationStructureWrite,
@@ -344,11 +334,10 @@ void Renderer::create_raytracing_descriptor_sets()
 		vertexBufferWrite,
 		indexBufferWrite,
 		transformBufferWrite,
+		primitivesInfoWrite,
 		sceneBufferWrite,
 		materialBufferWrite,
-		materialIndicesBufferWrite,
 		textureImagesWrite,
-		textureIndicesImageWrite
 	};
 
 	vkUpdateDescriptorSets(_device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, VK_NULL_HANDLE);
@@ -372,7 +361,6 @@ void Renderer::create_raytracing_descriptor_sets()
 
 	vkUpdateDescriptorSets(_device, 1, &pospoWrite, 0, VK_NULL_HANDLE);
 }
-*/
 
 void Renderer::record_raytracing_command_buffer()
 {
@@ -1069,4 +1057,48 @@ void Renderer::draw_deferred(VkCommandBuffer cmd, int imageIndex)
 FrameData& Renderer::get_current_frame()
 {
 	return _frames[_frameNumber % FRAME_OVERLAP];
+}
+
+void Renderer::get_primitive_to_shader_info(const VKE::Node* parent, const VKE::Node& node, std::vector<PrimitiveToShader>& primitivesInfo, int renderableIndex)
+{
+	if(node._children.size() > 0)
+	{
+		for(const auto& child : node._children)
+		{
+			get_primitive_to_shader_info(&node, *child, primitivesInfo, renderableIndex);
+		}
+	}
+
+	if(node._mesh->_primitives.size() > 0)
+	{
+		for(const auto& primitive : node._mesh->_primitives)
+		{
+			PrimitiveToShader primitiveInfo{};
+			primitiveInfo.renderableIndex = renderableIndex;
+			primitiveInfo.firstIndex = primitive->firstIndex;
+			primitiveInfo.materialIndex = primitive->material._id;
+
+			primitivesInfo.push_back(primitiveInfo);
+		}
+	}
+}
+
+void Renderer::get_nodes_transforms(const VKE::Node* parent, VKE::Node& node, std::vector<glm::mat4>& transforms)
+{
+	if(node._children.size() > 0)
+	{
+		for(const auto& child : node._children)
+		{
+			get_nodes_transforms(&node, *child, transforms);
+		}
+	}
+
+	if(node._mesh != nullptr)
+	{
+		if(node._mesh->_primitives.size() > 0)
+		{
+			glm::mat4 globalMatrix = node.get_global_matrix();
+			transforms.push_back(globalMatrix);
+		}
+	}
 }
