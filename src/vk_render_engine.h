@@ -20,6 +20,11 @@ const int MAX_TEXTURES = 100;
 struct RenderObject;
 class Scene;
 
+namespace VKE
+{
+	class Node;
+};
+
 enum RenderMode {
 	RENDER_MODE_FORWARD = 0,
 	RENDER_MODE_DEFERRED,
@@ -285,8 +290,6 @@ private:
 	void delete_scratch_buffer(RayTracingScratchBuffer& scratchBuffer);
 
 	void create_acceleration_structure_buffer(AccelerationStructure& accelerationStructure, VkAccelerationStructureBuildSizesInfoKHR buildSizeInfo);
-
-	BlasInput renderable_to_vulkan_geometry(RenderObject renderable);
 
 	void build_blas(const std::vector<BlasInput>& input, VkBuildAccelerationStructureFlagsKHR flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR);
 

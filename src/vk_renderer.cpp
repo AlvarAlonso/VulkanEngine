@@ -39,7 +39,7 @@ Renderer::Renderer()
 	_allocator = re->_allocator;
 	_graphicsQueue = re->_graphicsQueue;
 	_graphicsQueueFamily = re->_graphicsQueueFamily;
-	_renderMode = RENDER_MODE_DEFERRED;
+	_renderMode = RENDER_MODE_RAYTRACING;
 	re->reset_imgui(_renderMode);
 
 	init_renderer();
@@ -155,7 +155,7 @@ void Renderer::update_uniform_buffers(RenderObject* first, size_t count)
 	{
 		for(const auto& node : renderable._prefab->_roots)
 		{
-			get_nodes_transforms(nullptr, *node, transforms);
+			get_nodes_transforms(nullptr, *node, renderable._model, transforms);
 		}
 	}
 
@@ -213,6 +213,7 @@ void Renderer::create_raytracing_descriptor_sets()
 	verticesBufferInfos.reserve(renderables.size());
 	indicesBufferInfos.reserve(renderables.size());
 	std::vector<PrimitiveToShader> primitivesInfo;
+	std::vector<glm::mat4> transforms;
 
 	// Binding 5: Transforms Descriptor
 	_transformBuffer = vkutil::create_buffer(_allocator, sizeof(glm::mat4) * MAX_OBJECTS * 2, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
@@ -231,7 +232,7 @@ void Renderer::create_raytracing_descriptor_sets()
 		rtVertexBufferInfo.range = renderables[i]._prefab->_vertices.count * sizeof(rtVertex);
 
 		verticesBufferInfos.push_back(rtVertexBufferInfo);
-
+			
 		// Binding 4: Vertex Indices Descriptor
 		VkDescriptorBufferInfo indexBufferInfo{};
 		indexBufferInfo.offset = 0;
@@ -244,7 +245,7 @@ void Renderer::create_raytracing_descriptor_sets()
 		// Binding 6: Primitives Descriptor
 		for(const auto& node : renderables[i]._prefab->_roots)
 		{
-			get_primitive_to_shader_info(nullptr, *node, primitivesInfo, i);
+			get_primitive_to_shader_info(nullptr, *node, renderables[i]._model, primitivesInfo, transforms, i);
 		}
 	}
 
@@ -274,20 +275,82 @@ void Renderer::create_raytracing_descriptor_sets()
 	vmaUnmapMemory(_allocator, _sceneBuffer._allocation);
 
 	// Binding 8: Materials Descriptor
-	_materialBuffer = vkutil::create_buffer(_allocator, VKE::Material::sMaterials.size() * sizeof(VKE::Material), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+
+	// Create material infos vector
+	_materialInfos.resize(VKE::Material::sMaterials.size());
+
+	// Sort materials by their IDs
+	std::vector<VKE::Material*> materialsAux;
+	materialsAux.resize(VKE::Material::sMaterials.size());
+
+	int i = 0;
+	for (const auto& material : VKE::Material::sMaterials)
+	{
+		materialsAux[i] = material.second;
+		i++;
+	}
+
+	std::sort(materialsAux.begin(), materialsAux.end(), VKE::Material::ComparePtrToMaterial);
+
+	// Assign values to MaterialsToShader
+	i = 0;
+	for (const auto& material : materialsAux)
+	{
+		_materialInfos[i]._color = material->_color;
+		_materialInfos[i]._emissive_factor = material->_emissive_factor;
+
+		glm::vec4* factors = &glm::vec4{
+			material->_roughness_factor, material->_metallic_factor,
+			material->_tilling_factor, -1 };
+
+		if (material->_color_texture == nullptr)
+		{
+			factors->w = VKE::Texture::sTexturesLoaded["default"]->_id;
+		}
+		else
+		{
+			factors->w = material->_color_texture->_id;
+		}
+
+		factors->z = 1;
+
+		_materialInfos[i]._roughness_metallic_tilling_color_factors = glm::vec4{
+			factors->x ? factors->x : 0, factors->y ? factors->y : 0,
+			factors->z ? factors->z : 1, factors->w ? factors->w : 0
+		};
+
+		_materialInfos[i]._emissive_metRough_occlusion_normal_indices = glm::vec4{ -1, -1, -1, -1 };
+
+		if (material->_emissive_texture)
+		{
+			_materialInfos[i]._emissive_metRough_occlusion_normal_indices.x = material->_emissive_texture->_id;
+		}
+		if (material->_metallic_roughness_texture)
+		{
+			_materialInfos[i]._emissive_metRough_occlusion_normal_indices.x = material->_metallic_roughness_texture->_id;
+		}
+		if (material->_occlusion_texture)
+		{
+			_materialInfos[i]._emissive_metRough_occlusion_normal_indices.x = material->_occlusion_texture->_id;
+		}
+		if (material->_normal_texture)
+		{
+			_materialInfos[i]._emissive_metRough_occlusion_normal_indices.x = material->_normal_texture->_id;
+		}
+
+		i++;
+	}
+
+	_materialBuffer = vkutil::create_buffer(_allocator, _materialInfos.size() * sizeof(VKE::MaterialToShader), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 	
 	VkDescriptorBufferInfo materialBufferDescriptor{};
 	materialBufferDescriptor.offset = 0;
 	materialBufferDescriptor.buffer = _materialBuffer._buffer;
-	materialBufferDescriptor.range = VKE::Material::sMaterials.size() * sizeof(VKE::Material);
-
+	materialBufferDescriptor.range = _materialInfos.size() * sizeof(VKE::MaterialToShader);
 
 	void* materialData;
 	vmaMapMemory(_allocator, _materialBuffer._allocation, &materialData);
-	for(auto const& material : VKE::Material::sMaterials)
-	{
-		memcpy(materialData, material.second, sizeof(VKE::Material));
-	}
+	memcpy(materialData, _materialInfos.data(), _materialInfos.size() * sizeof(VKE::MaterialToShader));
 	vmaUnmapMemory(_allocator, _materialBuffer._allocation);
 
 	// Binding 9: Textures Descriptor
@@ -304,7 +367,7 @@ void Renderer::create_raytracing_descriptor_sets()
 	}
 
 	// Order tex idx vector
-	std::sort(orderedTexVec.begin(), orderedTexVec.end());
+	std::sort(orderedTexVec.begin(), orderedTexVec.end(), VKE::Texture::ComparePtrToTexture);
 
 	for (auto const& texture : orderedTexVec)
 	{
@@ -1059,37 +1122,42 @@ FrameData& Renderer::get_current_frame()
 	return _frames[_frameNumber % FRAME_OVERLAP];
 }
 
-void Renderer::get_primitive_to_shader_info(const VKE::Node* parent, const VKE::Node& node, std::vector<PrimitiveToShader>& primitivesInfo, int renderableIndex)
+void Renderer::get_primitive_to_shader_info(const VKE::Node* parent, VKE::Node& node, const glm::mat4& model, std::vector<PrimitiveToShader>& primitivesInfo, std::vector<glm::mat4>& transforms, const int renderableIndex)
 {
 	if(node._children.size() > 0)
 	{
 		for(const auto& child : node._children)
 		{
-			get_primitive_to_shader_info(&node, *child, primitivesInfo, renderableIndex);
+			get_primitive_to_shader_info(&node, *child, model, primitivesInfo, transforms, renderableIndex);
 		}
 	}
 
-	if(node._mesh->_primitives.size() > 0)
+	if(node._mesh != nullptr && node._mesh->_primitives.size() > 0)
 	{
+		glm::mat4 global_matrix = model * node.get_global_matrix();
+
 		for(const auto& primitive : node._mesh->_primitives)
 		{
 			PrimitiveToShader primitiveInfo{};
-			primitiveInfo.renderableIndex = renderableIndex;
-			primitiveInfo.firstIndex = primitive->firstIndex;
-			primitiveInfo.materialIndex = primitive->material._id;
+			primitiveInfo.firstIdx_rndIdx_matIdx_transIdx.x = primitive->firstIndex;
+			primitiveInfo.firstIdx_rndIdx_matIdx_transIdx.y = renderableIndex;
+			primitiveInfo.firstIdx_rndIdx_matIdx_transIdx.z = primitive->material._id;
+			primitiveInfo.firstIdx_rndIdx_matIdx_transIdx.w = transforms.size();
 
 			primitivesInfo.push_back(primitiveInfo);
 		}
+
+		transforms.emplace_back(global_matrix);
 	}
 }
 
-void Renderer::get_nodes_transforms(const VKE::Node* parent, VKE::Node& node, std::vector<glm::mat4>& transforms)
+void Renderer::get_nodes_transforms(const VKE::Node* parent, VKE::Node& node, const glm::mat4& model, std::vector<glm::mat4>& transforms)
 {
 	if(node._children.size() > 0)
 	{
 		for(const auto& child : node._children)
 		{
-			get_nodes_transforms(&node, *child, transforms);
+			get_nodes_transforms(&node, *child, model, transforms);
 		}
 	}
 
@@ -1097,8 +1165,8 @@ void Renderer::get_nodes_transforms(const VKE::Node* parent, VKE::Node& node, st
 	{
 		if(node._mesh->_primitives.size() > 0)
 		{
-			glm::mat4 globalMatrix = node.get_global_matrix();
-			transforms.push_back(globalMatrix);
+			glm::mat4 globalMatrix = model * node.get_global_matrix();
+			transforms.emplace_back(globalMatrix);
 		}
 	}
 }

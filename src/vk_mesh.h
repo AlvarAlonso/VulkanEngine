@@ -5,6 +5,8 @@
 #include <map>
 
 // forward declarations
+struct BlasInput;
+
 namespace VKE
 {
 	struct Material;
@@ -63,13 +65,13 @@ struct Primitive {
 		hasIndices = indexCount > 0;
 	};
 
+	void primitive_to_vulkan_geometry(VkDeviceOrHostAddressConstKHR& vertexBufferDeviceAddress, VkDeviceOrHostAddressConstKHR& indexBufferDeviceAddress, std::vector<BlasInput>& input);
+
 	void draw(glm::mat4& model, VkCommandBuffer commandBuffer, VkPipelineLayout layout);
 };
 
 struct PrimitiveToShader {
-	uint32_t firstIndex;
-	uint32_t renderableIndex;
-	uint32_t materialIndex;
+	glm::vec4 firstIdx_rndIdx_matIdx_transIdx;
 };
 
 namespace VKE

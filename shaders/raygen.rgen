@@ -18,10 +18,6 @@ struct RayPayload {
 
 layout(location = 0) rayPayloadEXT RayPayload rayPayload;
 
-uint tea( uint val0, uint val1 );
-uint lcg(inout uint prev);
-float rnd(inout uint prev);
-
 const uint MAX_RECURSION = 10;
 
 void main() 
@@ -32,7 +28,7 @@ void main()
 
 	vec4 origin = cam.viewInverse * vec4(0,0,0,1);
 	vec4 target = cam.projInverse * vec4(d.x, d.y, 1, 1) ;
-	vec4 direction = cam.viewInverse*vec4(normalize(target.xyz), 0) ;
+	vec4 direction = cam.viewInverse*vec4(normalize(target.xyz), 0);
 
 	float tmin = 0.001;
 	float tmax = 10000.0;
@@ -40,7 +36,7 @@ void main()
     vec3 finalColor = vec3(0.0);
 
 	for(int i = 0; i < MAX_RECURSION; i++)
-	{
+	{		
 	    traceRayEXT(topLevelAS, gl_RayFlagsOpaqueEXT, 0xff, 0, 0, 0, origin.xyz, tmin, direction.xyz, tmax, 0);
 
 		const vec3 hitColor = rayPayload.color_dist.xyz;
@@ -57,30 +53,6 @@ void main()
 			vec3 N = rayPayload.direction.xyz;
 			origin.xyz = rayPayload.origin.xyz;
 			direction.xyz = N;
-			/*
-			vec3 irradiance = vec3(0);
-
-			for(int j = 0; j < 24; j++)
-			{
-				traceRayEXT(topLevelAS, gl_RayFlagsOpaqueEXT, 0xff, 0, 0, 0, origin.xyz, tmin, direction.xyz, tmax, 0);
-
-				uint seed1 = uint(origin.x);
-				uint seed2 = uint(origin.y);
-
-				uint prev1 = tea(seed1, seed2);
-				uint prev2 = tea(seed1, seed2);
-				uint prev3 = tea(seed1, seed2);
-
-				direction.xyz = vec3(rnd(prev1), rnd(prev2), rnd(prev3));
-				normalize(direction.xyz);
-
-				float NdotD = dot(N, direction.xyz);
-				
-				irradiance += rayPayload.color_dist.xyz;
-			}
-
-			finalColor; //+= irradiance / 5000;
-			*/
 			break;
 		}
 		else
@@ -93,35 +65,3 @@ void main()
 
 	imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(finalColor, 0.0));
 }
-
-uint tea( uint val0, uint val1 )
-{
-    uint v0 = val0;
-    uint v1 = val1;
-    uint s0 = 0;
-
-    for( uint n = 0; n < 16; n++ )
-    {
-        s0 += 0x9e3779b9;
-        v0 += ((v1 << 4) + 0xa341316c) ^ (v1 + s0) ^ ((v1 >> 5) + 0xc8013ea4);
-        v1 += ((v0 << 4) + 0xad90777d) ^ (v0 + s0) ^ ((v0 >> 5) + 0x7e95761e);
-    }
-
-    return v0;
-};
-
-// Generate a random unsigned int in [0, 2^24) given the previous RNG state
-// using the Numerical Recipes linear congruential generator
-uint lcg(inout uint prev)
-{
-  uint LCG_A = 1664525u;
-  uint LCG_C = 1013904223u;
-  prev       = (LCG_A * prev + LCG_C);
-  return prev & 0x00FFFFFF;
-};
-
-// Generate a random float in [0, 1) given the previous RNG state
-float rnd(inout uint prev)
-{
-  return (float(lcg(prev)) / float(0x01000000));
-};

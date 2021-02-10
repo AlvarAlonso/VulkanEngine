@@ -168,7 +168,7 @@ void texture_from_glTF_image(tinygltf::Image& gltfimage)
 }
 
 void load_node(VKE::Node *parent, const tinygltf::Node &node, uint32_t nodeIndex, const tinygltf::Model &model, 
-    std::vector<uint32_t>& indexBuffer, std::vector<Vertex>& vertexBuffer, float globalScale)
+    std::vector<uint32_t>& indexBuffer, std::vector<Vertex>& vertexBuffer, std::vector<rtVertex>& rtVertexBuffer, float globalScale)
 {
     VKE::Node* newNode = new VKE::Node();
     newNode->_parent = parent;
@@ -198,7 +198,7 @@ void load_node(VKE::Node *parent, const tinygltf::Node &node, uint32_t nodeIndex
     // Node with children
     if(node.children.size() > 0) {
         for(size_t i = 0; i < node.children.size(); i++) {
-            load_node(newNode, model.nodes[node.children[i]], node.children[i], model, indexBuffer, vertexBuffer, globalScale);
+            load_node(newNode, model.nodes[node.children[i]], node.children[i], model, indexBuffer, vertexBuffer, rtVertexBuffer, globalScale);
         }
     }
 
@@ -256,10 +256,17 @@ void load_node(VKE::Node *parent, const tinygltf::Node &node, uint32_t nodeIndex
                 for(size_t v = 0; v < posAccessor.count; v++)
                 {
                     Vertex vert{};
+                    rtVertex rtv{};
+
                     vert.position = glm::vec4(glm::make_vec3(&bufferPos[v * posByteStride]), 1.0f);
                     vert.normal = glm::normalize(glm::vec3(bufferNormals ? glm::make_vec3(&bufferNormals[v * normByteStride]) : glm::vec3(0.0f)));
                     vert.uv = bufferTexCoordSet0 ? glm::make_vec2(&bufferTexCoordSet0[v * uv0ByteStride]) : glm::vec3(0.0f);
 
+                    rtv.position = glm::vec4(vert.position, 1.0f);
+                    rtv.normal = glm::vec4(vert.normal, 1.0f);
+                    rtv.uv = glm::vec4(vert.uv, 1.0f, 1.0f);
+
+                    rtVertexBuffer.push_back(rtv);
                     vertexBuffer.push_back(vert);
                 }
             }
@@ -386,7 +393,7 @@ VKE::Prefab* load_glTF(std::string filename, float scale = 1.0f)
     
     std::vector<uint32_t> indexBuffer;
     std::vector<Vertex> vertexBuffer;
-    std::vector<rtVertex> rtVerticesBuffer;
+    std::vector<rtVertex> rtVertexBuffer;
 
     if(fileLoaded)
     {
@@ -397,7 +404,7 @@ VKE::Prefab* load_glTF(std::string filename, float scale = 1.0f)
         for(size_t i = 0; i < scene.nodes.size(); i++) 
         {
             const tinygltf::Node node = gltfModel.nodes[scene.nodes[i]];
-            load_node(nullptr, node, scene.nodes[i], gltfModel, indexBuffer, vertexBuffer, scale);
+            load_node(nullptr, node, scene.nodes[i], gltfModel, indexBuffer, vertexBuffer, rtVertexBuffer, scale);
         }
 
         // Update textures and materials IDs to match the ones they should have in the engine list
@@ -426,6 +433,10 @@ VKE::Prefab* load_glTF(std::string filename, float scale = 1.0f)
         loadedData.textures.clear();
         loadedData.materials.clear();
         loadedData.nodes.clear();
+
+        // TODO: DELETE THIS
+        prefab->_vertices.vertices = vertexBuffer;
+        prefab->_vertices.rtVertices = rtVertexBuffer;
         
         size_t vertexBufferSize = vertexBuffer.size() * sizeof(Vertex);
         size_t rtVertexBufferSize = vertexBuffer.size() * sizeof(rtVertex);
@@ -434,13 +445,6 @@ VKE::Prefab* load_glTF(std::string filename, float scale = 1.0f)
         prefab->_indices.count = static_cast<uint32_t>(indexBuffer.size());
 
         assert(vertexBufferSize > 0);
-
-        // Create vector of rtVertices (Vertices used for raytracing)
-        for (const auto& vertex : vertexBuffer)
-        {
-            rtVertex rtv = { {glm::vec4(vertex.position, 1.0f)}, {glm::vec4(vertex.normal, 1.0f)}, {glm::vec4(vertex.uv, 1.0f, 1.0f)} };
-            rtVerticesBuffer.push_back(rtv);
-        }
 
         AllocatedBuffer vertexStaging;
         AllocatedBuffer rtvStaging;
@@ -456,15 +460,15 @@ VKE::Prefab* load_glTF(std::string filename, float scale = 1.0f)
         vmaMapMemory(RenderEngine::_allocator, vertexStaging._allocation, &vertexData);
         memcpy(vertexData, vertexBuffer.data(), vertexBufferSize);
         vmaUnmapMemory(RenderEngine::_allocator, vertexStaging._allocation);
-
-        // rtVertex data
+        
+        // RTVertex data
         rtvStaging = vkutil::create_buffer(RenderEngine::_allocator, rtVertexBufferSize,
             VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
             VMA_MEMORY_USAGE_CPU_ONLY);
 
         void* rtVertexData;
         vmaMapMemory(RenderEngine::_allocator, rtvStaging._allocation, &rtVertexData);
-        memcpy(rtVertexData, rtVerticesBuffer.data(), rtVerticesBuffer.size());
+        memcpy(rtVertexData, prefab->_vertices.rtVertices.data(), rtVertexBufferSize);
         vmaUnmapMemory(RenderEngine::_allocator, rtvStaging._allocation);
 
         // Create device local buffers
@@ -474,6 +478,7 @@ VKE::Prefab* load_glTF(std::string filename, float scale = 1.0f)
             VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY);
 
+        // RTVertex buffer
         prefab->_vertices.rtvBuffer = vkutil::create_buffer(RenderEngine::_allocator, rtVertexBufferSize,
             VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY);
 
@@ -505,8 +510,9 @@ VKE::Prefab* load_glTF(std::string filename, float scale = 1.0f)
                 copyRegion.size = vertexBufferSize;
 
                 vkCmdCopyBuffer(cmd, vertexStaging._buffer, prefab->_vertices.vertexBuffer._buffer, 1, &copyRegion);
-            
+
                 copyRegion.size = rtVertexBufferSize;
+
                 vkCmdCopyBuffer(cmd, rtvStaging._buffer, prefab->_vertices.rtvBuffer._buffer, 1, &copyRegion);
 
                 if(indexBufferSize > 0)
@@ -526,7 +532,7 @@ VKE::Prefab* load_glTF(std::string filename, float scale = 1.0f)
             });
 
         vmaDestroyBuffer(RenderEngine::_allocator, vertexStaging._buffer, vertexStaging._allocation);
-        vmaDestroyBuffer(RenderEngine::_allocator, rtvStaging._buffer, rtvStaging._allocation);
+        //vmaDestroyBuffer(RenderEngine::_allocator, rtvStaging._buffer, rtvStaging._allocation);
         if(indexBufferSize > 0)
         {
             vmaDestroyBuffer(RenderEngine::_allocator, indexStaging._buffer, indexStaging._allocation);

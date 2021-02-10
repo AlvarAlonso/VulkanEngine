@@ -9,6 +9,7 @@
 #include "vk_utils.h"
 #include "vk_scene.h"
 #include "vk_textures.h"
+#include "vk_prefab.h"
 
 #include "VkBootstrap.h"
 
@@ -812,8 +813,8 @@ void RenderEngine::init_raytracing_structures()
 	vkCmdBuildAccelerationStructuresKHR = reinterpret_cast<PFN_vkCmdBuildAccelerationStructuresKHR>(vkGetDeviceProcAddr(_device, "vkCmdBuildAccelerationStructuresKHR"));
 	vkBuildAccelerationStructuresKHR = reinterpret_cast<PFN_vkBuildAccelerationStructuresKHR>(vkGetDeviceProcAddr(_device, "vkBuildAccelerationStructuresKHR"));
 	vkCreateAccelerationStructureKHR = reinterpret_cast<PFN_vkCreateAccelerationStructureKHR>(vkGetDeviceProcAddr(_device, "vkCreateAccelerationStructureKHR"));
-	vkDestroyAccelerationStructureKHR = reinterpret_cast<PFN_vkDestroyAccelerationStructureKHR>(vkGetDeviceProcAddr(_device, "vkDestroyAccelerationStructureKHR"));
 	vkGetAccelerationStructureBuildSizesKHR = reinterpret_cast<PFN_vkGetAccelerationStructureBuildSizesKHR>(vkGetDeviceProcAddr(_device, "vkGetAccelerationStructureBuildSizesKHR"));
+	vkDestroyAccelerationStructureKHR = reinterpret_cast<PFN_vkDestroyAccelerationStructureKHR>(vkGetDeviceProcAddr(_device, "vkDestroyAccelerationStructureKHR"));
 	vkGetAccelerationStructureDeviceAddressKHR = reinterpret_cast<PFN_vkGetAccelerationStructureDeviceAddressKHR>(vkGetDeviceProcAddr(_device, "vkGetAccelerationStructureDeviceAddressKHR"));
 	vkCmdTraceRaysKHR = reinterpret_cast<PFN_vkCmdTraceRaysKHR>(vkGetDeviceProcAddr(_device, "vkCmdTraceRaysKHR"));
 	vkGetRayTracingShaderGroupHandlesKHR = reinterpret_cast<PFN_vkGetRayTracingShaderGroupHandlesKHR>(vkGetDeviceProcAddr(_device, "vkGetRayTracingShaderGroupHandlesKHR"));
@@ -841,16 +842,25 @@ void RenderEngine::init_raytracing_structures()
 
 void RenderEngine::create_bottom_level_acceleration_structure(const Scene& scene)
 {
+	// TODO: resize according to primitive number (getter in scene class)
 	std::vector<BlasInput> allBlas;
-	allBlas.reserve(scene._renderables.size());
+	allBlas.reserve(scene._renderables.size()); //per primitive
 
 	_bottomLevelAS.reserve(allBlas.size());
 	_transformBuffers.reserve(allBlas.size());
 
-	for (const auto& renderable : scene._renderables)
+	for(const auto& renderable : scene._renderables)
 	{
-		auto blas = renderable_to_vulkan_geometry(renderable);
-		allBlas.push_back(blas);
+		VkDeviceOrHostAddressConstKHR vertexBufferDeviceAddress{};
+		VkDeviceOrHostAddressConstKHR indexBufferDeviceAddress{};
+
+		vertexBufferDeviceAddress.deviceAddress = vkutil::get_buffer_device_address(_device, renderable._prefab->_vertices.vertexBuffer._buffer);
+		indexBufferDeviceAddress.deviceAddress = vkutil::get_buffer_device_address(_device, renderable._prefab->_indices.indexBuffer._buffer);
+
+		for(const auto& node : renderable._prefab->_roots)
+		{
+			node->node_to_vulkan_geometry(vertexBufferDeviceAddress, indexBufferDeviceAddress, allBlas);
+		}
 	}
 
 	build_blas(allBlas);
@@ -859,27 +869,14 @@ void RenderEngine::create_bottom_level_acceleration_structure(const Scene& scene
 void RenderEngine::create_top_level_acceleration_structure(const Scene& scene, bool recreated)
 {
 	std::vector<VkAccelerationStructureInstanceKHR> instances;
-	instances.resize(scene._renderables.size());
+	instances.reserve(scene._renderables.size());
 
-	for (int i = 0; i < scene._renderables.size(); i++)
+	for (const auto& renderable : scene._renderables)
 	{
-		glm::mat4 model = glm::transpose(scene._renderables[i]._model);
-
-		VkTransformMatrixKHR transformMatrix = {
-			model[0].x, model[0].y, model[0].z, model[0].w,
-			model[1].x, model[1].y, model[1].z, model[1].w,
-			model[2].x, model[2].y, model[2].z, model[2].w,
-		};
-
-		VkAccelerationStructureInstanceKHR instance{};
-		instance.transform = transformMatrix;
-		instance.instanceCustomIndex = i;
-		instance.mask = 0xFF;
-		instance.instanceShaderBindingTableRecordOffset = 0;
-		instance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
-		instance.accelerationStructureReference = _bottomLevelAS[i]._deviceAddress;
-
-		instances[i] = instance;
+		for(const auto& node : renderable._prefab->_roots)
+		{
+			node->node_to_TLAS_instance(renderable._model, _bottomLevelAS, instances);
+		}
 	}
 
 	// Buffer for instance data
@@ -1552,86 +1549,6 @@ void RenderEngine::create_acceleration_structure_buffer(AccelerationStructure& a
 		vkFreeMemory(_device, accelerationStructure._memory, nullptr);
 		vkDestroyBuffer(_device, accelerationStructure._buffer, nullptr);
 		});
-}
-
-BlasInput RenderEngine::renderable_to_vulkan_geometry(RenderObject renderable)
-{
-	BlasInput input;
-
-	// Setup identity transform matrix
-
-	VkTransformMatrixKHR transformMatrix = {
-		1.0f, 0.0f, 0.0f, 0.0f,
-		0.0f, 1.0f, 0.0f, 0.0f,
-		0.0f, 0.0f, 1.0f, 0.0f
-	};
-
-	// Create buffers
-	VkBufferUsageFlags bufferUsageFlags = VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
-	VmaMemoryUsage memoryUsageFlags = VMA_MEMORY_USAGE_CPU_TO_GPU;
-
-	AllocatedBuffer transformBuffer = vkutil::create_buffer(_allocator, sizeof(VkTransformMatrixKHR), bufferUsageFlags, memoryUsageFlags);
-	_transformBuffers.push_back(transformBuffer);
-
-	void* transformData;
-	vmaMapMemory(_allocator, transformBuffer._allocation, &transformData);
-	memcpy(transformData, &transformMatrix, sizeof(VkTransformMatrixKHR));
-	vmaUnmapMemory(_allocator, transformBuffer._allocation);
-
-	VkDeviceOrHostAddressConstKHR vertexBufferDeviceAddress{};
-	VkDeviceOrHostAddressConstKHR indexBufferDeviceAddress{};
-	VkDeviceOrHostAddressConstKHR transformBufferDeviceAddress{};
-
-	vertexBufferDeviceAddress.deviceAddress = vkutil::get_buffer_device_address(_device, renderable._prefab->_vertices.vertexBuffer._buffer);
-	indexBufferDeviceAddress.deviceAddress = vkutil::get_buffer_device_address(_device, renderable._prefab->_indices.indexBuffer._buffer);
-	transformBufferDeviceAddress.deviceAddress = vkutil::get_buffer_device_address(_device, transformBuffer._buffer);
-
-	// Build
-	VkAccelerationStructureGeometryKHR accelerationStructureGeometry{};
-	accelerationStructureGeometry.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
-	accelerationStructureGeometry.flags = VK_GEOMETRY_OPAQUE_BIT_KHR;
-	accelerationStructureGeometry.geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR;
-	accelerationStructureGeometry.geometry.triangles.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR;
-	accelerationStructureGeometry.geometry.triangles.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;
-	accelerationStructureGeometry.geometry.triangles.vertexData = vertexBufferDeviceAddress;
-	accelerationStructureGeometry.geometry.triangles.maxVertex = renderable._prefab->_vertices.count;
-	accelerationStructureGeometry.geometry.triangles.vertexStride = sizeof(Vertex);
-	accelerationStructureGeometry.geometry.triangles.indexType = VK_INDEX_TYPE_UINT32;
-	accelerationStructureGeometry.geometry.triangles.indexData = indexBufferDeviceAddress;
-	accelerationStructureGeometry.geometry.triangles.transformData.deviceAddress = 0;
-	accelerationStructureGeometry.geometry.triangles.transformData.hostAddress = nullptr;
-	accelerationStructureGeometry.geometry.triangles.transformData = transformBufferDeviceAddress;
-
-	// Get size info
-	VkAccelerationStructureBuildGeometryInfoKHR accelerationStructureBuildGeometryInfo{};
-	accelerationStructureBuildGeometryInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
-	accelerationStructureBuildGeometryInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
-	accelerationStructureBuildGeometryInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
-	accelerationStructureBuildGeometryInfo.geometryCount = 1;
-	accelerationStructureBuildGeometryInfo.pGeometries = &accelerationStructureGeometry;
-
-	const uint32_t numTriangles = renderable._prefab->_indices.count / 3;
-	VkAccelerationStructureBuildSizesInfoKHR accelerationStructureBuildSizesInfo{};
-	accelerationStructureBuildSizesInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
-	vkGetAccelerationStructureBuildSizesKHR(
-		_device,
-		VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR,
-		&accelerationStructureBuildGeometryInfo,
-		&numTriangles,
-		&accelerationStructureBuildSizesInfo);
-
-	VkAccelerationStructureBuildRangeInfoKHR accelerationStructureBuildRangeInfo{};
-	accelerationStructureBuildRangeInfo.primitiveCount = numTriangles;
-	accelerationStructureBuildRangeInfo.primitiveOffset = 0;
-	accelerationStructureBuildRangeInfo.firstVertex = 0;
-	accelerationStructureBuildRangeInfo.transformOffset = 0;
-
-	input._accelerationStructureGeometry = accelerationStructureGeometry;
-	input._accelerationStructureBuildGeometryInfo = accelerationStructureBuildGeometryInfo;
-	input._accelerationStructureBuildSizesInfo = accelerationStructureBuildSizesInfo;
-	input._accelerationStructureBuildRangeInfo = accelerationStructureBuildRangeInfo;
-
-	return input;
 }
 
 void RenderEngine::build_blas(const std::vector<BlasInput>& input, VkBuildAccelerationStructureFlagsKHR flags)

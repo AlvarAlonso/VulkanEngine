@@ -345,6 +345,58 @@ void Mesh::create_cube()
     upload_to_gpu();
 }
 
+void Primitive::primitive_to_vulkan_geometry(VkDeviceOrHostAddressConstKHR& vertexBufferDeviceAddress, VkDeviceOrHostAddressConstKHR& indexBufferDeviceAddress, std::vector<BlasInput>& inputVector)
+{
+    BlasInput input;
+
+    PFN_vkGetAccelerationStructureBuildSizesKHR vkGetAccelerationStructureBuildSizesKHR = reinterpret_cast<PFN_vkGetAccelerationStructureBuildSizesKHR>(vkGetDeviceProcAddr(RenderEngine::_device, "vkGetAccelerationStructureBuildSizesKHR"));
+
+    // Build
+    VkAccelerationStructureGeometryKHR accelerationStructureGeometry{};
+    accelerationStructureGeometry.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
+    accelerationStructureGeometry.flags = VK_GEOMETRY_OPAQUE_BIT_KHR;
+    accelerationStructureGeometry.geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR;
+    accelerationStructureGeometry.geometry.triangles.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR;
+    accelerationStructureGeometry.geometry.triangles.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;
+    accelerationStructureGeometry.geometry.triangles.vertexData = vertexBufferDeviceAddress;
+    accelerationStructureGeometry.geometry.triangles.maxVertex = vertexCount;
+    accelerationStructureGeometry.geometry.triangles.vertexStride = sizeof(Vertex);
+    accelerationStructureGeometry.geometry.triangles.indexType = VK_INDEX_TYPE_UINT32;
+    accelerationStructureGeometry.geometry.triangles.indexData = indexBufferDeviceAddress;
+    // Warning: RIP transform matrix information
+
+    // Get size info
+    VkAccelerationStructureBuildGeometryInfoKHR accelerationStructureBuildGeometryInfo{};
+    accelerationStructureBuildGeometryInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
+    accelerationStructureBuildGeometryInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
+    accelerationStructureBuildGeometryInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
+    accelerationStructureBuildGeometryInfo.geometryCount = 1;
+    accelerationStructureBuildGeometryInfo.pGeometries = &accelerationStructureGeometry;
+
+    const uint32_t numTriangles = indexCount / 3;
+    VkAccelerationStructureBuildSizesInfoKHR accelerationStructureBuildSizesInfo{};
+    accelerationStructureBuildSizesInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
+    vkGetAccelerationStructureBuildSizesKHR(
+        RenderEngine::_device,
+        VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR,
+        &accelerationStructureBuildGeometryInfo,
+        &numTriangles,
+        &accelerationStructureBuildSizesInfo);
+
+    VkAccelerationStructureBuildRangeInfoKHR accelerationStructureBuildRangeInfo{};
+    accelerationStructureBuildRangeInfo.primitiveCount = numTriangles;
+    accelerationStructureBuildRangeInfo.primitiveOffset = 0;
+    accelerationStructureBuildRangeInfo.firstVertex = 0; // TODO: put corresponding offset
+    accelerationStructureBuildRangeInfo.transformOffset = 0;
+
+    input._accelerationStructureGeometry = accelerationStructureGeometry;
+    input._accelerationStructureBuildGeometryInfo = accelerationStructureBuildGeometryInfo;
+    input._accelerationStructureBuildSizesInfo = accelerationStructureBuildSizesInfo;
+    input._accelerationStructureBuildRangeInfo = accelerationStructureBuildRangeInfo;
+
+    inputVector.push_back(input);
+}
+
 void Primitive::draw(glm::mat4& model, VkCommandBuffer commandBuffer, VkPipelineLayout layout)
 {
 

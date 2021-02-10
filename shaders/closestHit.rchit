@@ -29,9 +29,15 @@ struct Light {
 	vec4 color_intensity;
 };
 
+struct Primitive {
+	vec4 firstIdx_rndIdx_matIdx_transIdx;
+};
+
 struct Material {
 	vec4 color;
-	vec4 properties; //metalness = x, roughness = y, index of refraction = z, material type = w
+	vec4 emissive_factor;
+	vec4 roughness_metallic_tilling_color_factors; // Color is the index to the color texture
+	vec4 emissive_metRough_occlusion_normal_indices; // Indices to material textures
 };
 
 layout(binding = 2, set = 0) uniform CameraProperties 
@@ -40,14 +46,14 @@ layout(binding = 2, set = 0) uniform CameraProperties
 	mat4 projInverse;
 	vec4 position;
 } cam;
+
 layout(binding = 3, set = 0, scalar) buffer Vertices { Vertex v[]; } vertices[];
 layout(binding = 4, set = 0) buffer Indices { uint i[]; } indices[];
-layout(binding = 5, set = 0) buffer Transforms { mat4 t; } transforms[];
-layout(binding = 6, set = 0) uniform Lights { Light l[5]; } lights;
-layout(binding = 7, set = 0) buffer Materials { Material m[]; } materials;
-layout(binding = 8, set = 0) buffer MatIdx { uint i[]; } matIndices;
+layout(binding = 5, set = 0) buffer Transforms { mat4 t[]; } transforms;
+layout(binding = 6, set = 0) buffer Primitives { Primitive p[]; } primitives;
+layout(binding = 7, set = 0) uniform Lights { Light l[5]; } lights;
+layout(binding = 8, set = 0) buffer Materials { Material m[]; } materials;
 layout(binding = 9, set = 0) uniform sampler2D textures[]; //image2D ?
-layout(binding = 10, set = 0) buffer TexIdx { uint i[]; } texIndices;
 
 //PBR
 float D_GGX ( const in float NoH, const in float linearRoughness );
@@ -70,33 +76,41 @@ void main()
 
 	const vec3 barycentrics = vec3(1.0f - attribs.x - attribs.y, attribs.x, attribs.y);
 
-	// Vertex of the triangle
-	uint i0 = indices[gl_InstanceCustomIndexEXT].i[3 * gl_PrimitiveID + 0];
-	uint i1 = indices[gl_InstanceCustomIndexEXT].i[3 * gl_PrimitiveID + 1];
-	uint i2 = indices[gl_InstanceCustomIndexEXT].i[3 * gl_PrimitiveID + 2];
+	// Primitive Information
+	Primitive primitive = primitives.p[gl_InstanceCustomIndexEXT];
+	uint firstIndex = uint(primitive.firstIdx_rndIdx_matIdx_transIdx.x);
+	uint renderableIndex = uint(primitive.firstIdx_rndIdx_matIdx_transIdx.y);
+	uint materialIndex = uint(primitive.firstIdx_rndIdx_matIdx_transIdx.z);
+	uint transformIndex = uint(primitive.firstIdx_rndIdx_matIdx_transIdx.w);
 
-	Vertex v0 = vertices[gl_InstanceCustomIndexEXT].v[i0];
-	Vertex v1 = vertices[gl_InstanceCustomIndexEXT].v[i1];
-	Vertex v2 = vertices[gl_InstanceCustomIndexEXT].v[i2];
+	// Vertex of the triangle
+	uint i0 = indices[renderableIndex].i[3 * gl_PrimitiveID + firstIndex + 0];
+	uint i1 = indices[renderableIndex].i[3 * gl_PrimitiveID + firstIndex + 1];
+	uint i2 = indices[renderableIndex].i[3 * gl_PrimitiveID + firstIndex + 2];
+
+	Vertex v0 = vertices[renderableIndex].v[i0];
+	Vertex v1 = vertices[renderableIndex].v[i1];
+	Vertex v2 = vertices[renderableIndex].v[i2];
 
 	// Computing the normal at hit position
 	vec3 N = vec3(v0.normal * barycentrics.x + v1.normal * barycentrics.y + v2.normal * barycentrics.z);
 	// Transforming the normal to world space
-	N = normalize(vec3(transforms[gl_InstanceCustomIndexEXT].t * vec4(N, 0.0)));
+	N = normalize(vec3(transforms.t[transformIndex] * vec4(N, 0.0)));
 
 	// Computing the coordinates of the hit position
 	vec3 worldPos = vec3(v0.position * barycentrics.x + v1.position * barycentrics.y + v2.position * barycentrics.z);
 	// Transforming the position to world space
-	worldPos = vec3(transforms[gl_InstanceCustomIndexEXT].t * vec4(worldPos, 1.0));
+	worldPos = vec3(transforms.t[renderableIndex] * vec4(worldPos, 1.0));
 
 	vec2 uv = vec2(v0.uv.xy * barycentrics.x + v1.uv.xy * barycentrics.y + v2.uv.xy * barycentrics.z);
-	uv *= 10.0;
 
 	//MATERIAL INFO
-	float metal = materials.m[matIndices.i[gl_InstanceCustomIndexEXT]].properties.x;
-	float roughness = materials.m[matIndices.i[gl_InstanceCustomIndexEXT]].properties.y;
-	vec3 color_texture = texture(textures[texIndices.i[gl_InstanceCustomIndexEXT]], uv).xyz;
-	vec3 color_material = materials.m[matIndices.i[gl_InstanceCustomIndexEXT]].color.xyz;
+	Material material = materials.m[materialIndex];
+
+	float metal = material.roughness_metallic_tilling_color_factors.y;
+	float roughness = material.roughness_metallic_tilling_color_factors.x;
+	vec3 color_texture = texture(textures[int(material.roughness_metallic_tilling_color_factors.w)], uv).xyz;
+	vec3 color_material = material.color.xyz;
 
 	//calculate f0 reflection based on the color and metalness
 	vec3 f0 = color_texture * metal + (vec3( 0.5 ) * ( 1.0 - metal ));
@@ -160,25 +174,26 @@ void main()
 	  totalLight += direct * lights.l[i].color_intensity.xyz * lightIntensity * attenuation;
 	}
 
-	vec3 finalColor = totalLight;
+	//vec3 finalColor = totalLight;
+	vec3 finalColor = color_texture;
 
 	//PAYLOAD INFORMATION
-	float materialType = materials.m[matIndices.i[gl_InstanceCustomIndexEXT]].properties.w;
+	//float materialType = materials.m[matIndices.i[gl_InstanceCustomIndexEXT]].properties.w;
 
-	if(materialType < 0.001)
+
+	rayPayload.color_dist = vec4(finalColor, gl_RayTmaxEXT);
+
+	if(rayPayload.origin.w < 0.001)
 	{
-		rayPayload.color_dist = vec4(finalColor, gl_RayTmaxEXT);
-
-		if(rayPayload.origin.w < 0.001)
-		{
-			rayPayload.direction.xyz = N;
-		}
-
-		rayPayload.direction.w = -1.0;
-
-		rayPayload.origin.w += 1;
-		rayPayload.origin.xyz = worldPos;
+		rayPayload.direction.xyz = N;
 	}
+
+	rayPayload.direction.w = -1.0;
+
+	rayPayload.origin.w += 1;
+	rayPayload.origin.xyz = worldPos;
+	
+	/*
 	else if(materialType == 1.0)
 	{
 		vec3 I = normalize(gl_WorldRayDirectionEXT);
@@ -223,6 +238,7 @@ void main()
 			rayPayload.origin = vec4(worldPos, 0.0);
 		}
 	}
+	*/
 }
 
 float D_GGX ( const in float NoH, const in float linearRoughness )

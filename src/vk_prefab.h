@@ -6,6 +6,8 @@
 #include <cassert>
 
 struct rtVertex;
+struct Vertex;
+struct BlasInput;
 
 namespace VKE
 {
@@ -34,6 +36,10 @@ namespace VKE
 		//add node to children list
 		void add_child(Node* child);
 		glm::mat4 get_global_matrix(bool fast = false);
+
+		void node_to_vulkan_geometry(VkDeviceOrHostAddressConstKHR& vertexBufferDeviceAddress, 
+			VkDeviceOrHostAddressConstKHR& indexBufferDeviceAddress, std::vector<BlasInput>& inputVector);
+		void node_to_TLAS_instance(const glm::mat4& prefabModel, std::vector<AccelerationStructure>& bottomLevelAS, std::vector<VkAccelerationStructureInstanceKHR>& instances);
 	};
 
 	class Prefab
@@ -49,6 +55,8 @@ namespace VKE
 			int count;
 			AllocatedBuffer vertexBuffer;
 			AllocatedBuffer rtvBuffer;
+			std::vector<Vertex> vertices;
+			std::vector<rtVertex> rtVertices;
 		} _vertices;
 
 		struct Indices {
