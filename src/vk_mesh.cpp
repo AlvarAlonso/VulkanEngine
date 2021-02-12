@@ -382,11 +382,11 @@ void Primitive::primitive_to_vulkan_geometry(VkDeviceOrHostAddressConstKHR& vert
         &accelerationStructureBuildGeometryInfo,
         &numTriangles,
         &accelerationStructureBuildSizesInfo);
-
+    
     VkAccelerationStructureBuildRangeInfoKHR accelerationStructureBuildRangeInfo{};
     accelerationStructureBuildRangeInfo.primitiveCount = numTriangles;
-    accelerationStructureBuildRangeInfo.primitiveOffset = 0;
-    accelerationStructureBuildRangeInfo.firstVertex = 0; // TODO: put corresponding offset
+    accelerationStructureBuildRangeInfo.primitiveOffset = firstIndex * sizeof(uint32_t);
+    accelerationStructureBuildRangeInfo.firstVertex = 0;
     accelerationStructureBuildRangeInfo.transformOffset = 0;
 
     input._accelerationStructureGeometry = accelerationStructureGeometry;

@@ -310,7 +310,7 @@ void load_node(VKE::Node *parent, const tinygltf::Node &node, uint32_t nodeIndex
                 }
             }
 
-            Primitive* newPrimitive = new Primitive(indexStart, indexCount, vertexCount, primitive.material > -1 ? *loadedData.materials[primitive.material] : *loadedData.materials.back());
+            Primitive* newPrimitive = new Primitive(vertexStart, indexStart, indexCount, vertexCount, primitive.material > -1 ? *loadedData.materials[primitive.material] : *loadedData.materials.back());
             newMesh->_primitives.push_back(newPrimitive);
         }
 

@@ -175,7 +175,7 @@ void main()
 	}
 
 	//vec3 finalColor = totalLight;
-	vec3 finalColor = color_texture;
+	vec3 finalColor = color_material;
 
 	//PAYLOAD INFORMATION
 	//float materialType = materials.m[matIndices.i[gl_InstanceCustomIndexEXT]].properties.w;

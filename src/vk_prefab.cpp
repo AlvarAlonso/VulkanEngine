@@ -144,7 +144,7 @@ Prefab::Prefab(Mesh& mesh)
     _indices.count = mesh._indices.size();
     _indices.indexBuffer = mesh._indexBuffer;
 
-    Primitive* primitive = new Primitive(0, _indices.count, _vertices.count, *VKE::Material::sMaterials["default"]);
+    Primitive* primitive = new Primitive(0, 0, _indices.count, _vertices.count, *VKE::Material::sMaterials["default"]);
 
     Node* node = new Node();
     node->_mesh = &mesh;

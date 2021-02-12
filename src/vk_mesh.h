@@ -55,13 +55,14 @@ namespace std {
 }
 
 struct Primitive {
+	uint32_t firstVertex;
 	uint32_t firstIndex;
 	uint32_t indexCount;
 	uint32_t vertexCount;
 	VKE::Material& material;
 	bool hasIndices;
 
-	Primitive(uint32_t firstIndex, uint32_t indexCount, uint32_t vertexCount, VKE::Material& material) : firstIndex(firstIndex), indexCount(indexCount), vertexCount(vertexCount), material(material) {
+	Primitive(uint32_t firstVertex, uint32_t firstIndex, uint32_t indexCount, uint32_t vertexCount, VKE::Material& material) : firstIndex(firstIndex), indexCount(indexCount), vertexCount(vertexCount), material(material) {
 		hasIndices = indexCount > 0;
 	};
 
