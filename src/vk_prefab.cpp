@@ -5,6 +5,8 @@
 #include "vk_gltf_loader.h"
 #include "vk_render_engine.h"
 #include <glm/gtx/transform.hpp>
+#include "vk_utils.h"
+#include <string>
 
 using namespace VKE;
 
@@ -110,7 +112,8 @@ void VKE::Node::node_to_TLAS_instance(const glm::mat4& prefabModel, std::vector<
 
     if (_mesh != nullptr && _mesh->_primitives.size() > 0)
     {
-        glm::mat4 model = glm::transpose(prefabModel * get_global_matrix());
+        glm::mat4 model = prefabModel * get_global_matrix();
+        model = glm::transpose(model);
 
         VkTransformMatrixKHR transformMatrix = {
             model[0].x, model[0].y, model[0].z, model[0].w,
@@ -137,14 +140,53 @@ Prefab::Prefab()
 {
 }
 
-Prefab::Prefab(Mesh& mesh)
+Prefab::Prefab(Mesh& mesh, const std::string& materialName)
 {
     _vertices.count = mesh._vertices.size();
     _vertices.vertexBuffer = mesh._vertexBuffer;
     _indices.count = mesh._indices.size();
     _indices.indexBuffer = mesh._indexBuffer;
 
-    Primitive* primitive = new Primitive(0, 0, _indices.count, _vertices.count, *VKE::Material::sMaterials["default"]);
+    std::vector<rtVertex> rtVertices;
+    rtVertices.reserve(_vertices.count);
+
+    for(const auto& vertex : mesh._vertices)
+    {
+        rtVertex rtv;
+        rtv.position = glm::vec4(vertex.position, 1.0f);
+        rtv.normal = glm::vec4(vertex.normal, 1.0f);
+        rtv.uv = glm::vec4(vertex.uv, 1.0f, 1.0f);
+
+        rtVertices.push_back(rtv);
+    }
+
+    size_t rtVertexBufferSize = sizeof(rtVertex) * rtVertices.size();
+
+    // RTVertex data
+    AllocatedBuffer rtvStaging = vkutil::create_buffer(RenderEngine::_allocator, rtVertexBufferSize,
+        VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+        VMA_MEMORY_USAGE_CPU_ONLY);
+
+    void* rtVertexData;
+    vmaMapMemory(RenderEngine::_allocator, rtvStaging._allocation, &rtVertexData);
+    memcpy(rtVertexData, rtVertices.data(), rtVertexBufferSize);
+    vmaUnmapMemory(RenderEngine::_allocator, rtvStaging._allocation);
+
+    // RTVertex buffer
+    _vertices.rtvBuffer = vkutil::create_buffer(RenderEngine::_allocator, rtVertexBufferSize,
+        VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_GPU_ONLY);
+
+    vkupload::immediate_submit([=](VkCommandBuffer cmd)
+        {
+            VkBufferCopy copyRegion;
+            copyRegion.dstOffset = 0;
+            copyRegion.srcOffset = 0;
+            copyRegion.size = rtVertexBufferSize;
+
+            vkCmdCopyBuffer(cmd, rtvStaging._buffer, _vertices.rtvBuffer._buffer, 1, &copyRegion);
+        });
+
+    Primitive* primitive = new Primitive(0, 0, _indices.count, _vertices.count, *VKE::Material::sMaterials[materialName]);
 
     Node* node = new Node();
     node->_mesh = &mesh;

@@ -975,14 +975,25 @@ void RenderEngine::create_top_level_acceleration_structure(const Scene& scene, b
 	else
 	{
 		// Acceleration structure needs to be build on the device
-		vkupload::immediate_submit([&](VkCommandBuffer cmd)
-			{
-				vkCmdBuildAccelerationStructuresKHR(
-					cmd,
-					1,
-					&accelerationBuildGeometryInfo,
-					accelerationBuildStructureRangeInfos.data());
-			});
+		if(!recreated)
+		{
+			vkupload::immediate_submit([&](VkCommandBuffer cmd)
+				{
+					vkCmdBuildAccelerationStructuresKHR(
+						cmd,
+						1,
+						&accelerationBuildGeometryInfo,
+						accelerationBuildStructureRangeInfos.data());
+
+				});
+		}
+		else
+		{
+			vkupload::immediate_submit([&](VkCommandBuffer cmd)
+				{
+					// TODO:
+				});
+		}
 	}
 
 	VkAccelerationStructureDeviceAddressInfoKHR accelerationDeviceAddressInfo{};
@@ -1626,7 +1637,7 @@ void RenderEngine::get_enabled_features()
 
 	_enabledBufferDeviceAddressFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES;
 	_enabledBufferDeviceAddressFeatures.bufferDeviceAddress = VK_TRUE;
-	_enabledBufferDeviceAddressFeatures.pNext = nullptr;
+	_enabledBufferDeviceAddressFeatures.pNext = &_enabledIndexingFeatures;
 
 	_enabledRayTracingPipelineFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR;
 	_enabledRayTracingPipelineFeatures.rayTracingPipeline = VK_TRUE;
@@ -1722,7 +1733,7 @@ void RenderEngine::init_imgui(VkRenderPass renderPass)
 
 void RenderEngine::cleanup()
 {
-	// TODO: Poner render fence al renderer i fer el cleanup del render engine despres
+	vkQueueWaitIdle(_graphicsQueue);
 
 	if (_isInitialized) {
 

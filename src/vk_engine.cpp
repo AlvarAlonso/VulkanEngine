@@ -182,7 +182,6 @@ void VulkanEngine::run()
 		//ImGui::ShowDemoWindow();
 		render_imgui();
 		
-		//draw();
 		renderer->draw_scene();
 	}
 }
@@ -206,27 +205,13 @@ void VulkanEngine::render_imgui()
 	ImGui::InputFloat("input float", &z, 1.0f, 1.0f, "%.3f");
 
 	scene->_renderables[0]._model = glm::transpose(model);
-	
-	/*
-	static float x = scene->_lights[0]._position.x;
-	ImGui::InputFloat("input float", &x, 1.0f, 1.0f, "%.3f");
-	scene->_lights[0]._position.x = x;
-
-	static float y = scene->_lights[0]._position.y;
-	ImGui::InputFloat("input float", &y, 1.0f, 1.0f, "%.3f");
-	scene->_lights[0]._position.y = y;
-
-	static float z = scene->_lights[0]._position.z;
-	ImGui::InputFloat("input float", &z, 1.0f, 1.0f, "%.3f");
-	scene->_lights[0]._position.z = z;
-	*/
 }
 
 void VulkanEngine::load_meshes()
 {
-	VKE::Mesh tree("../assets/MapleTree.obj");
-	VKE::Mesh tree_leaves("../assets/MapleTreeLeaves.obj");
-	VKE::Mesh tree_stem("../assets/MapleTreeStem.obj");
+	VKE::Mesh::get("../assets/MapleTree.obj");
+	VKE::Mesh::get("../assets/MapleTreeLeaves.obj");
+	VKE::Mesh::get("../assets/MapleTreeStem.obj");
 }
 
 void VulkanEngine::load_images()
@@ -252,8 +237,51 @@ void VulkanEngine::load_images()
 	grassTexture->_id = VKE::Texture::sTexturesLoaded.size();
 	grassTexture->register_texture("grass");
 
+
+	VKE::Texture* barkTexture = new VKE::Texture();
+
+	vkutil::load_image_from_file(*this, "../assets/maple_bark.png", barkTexture->_image);
+
+	VkImageViewCreateInfo barTexView = vkinit::imageview_create_info(VK_FORMAT_R8G8B8A8_UNORM, barkTexture->_image._image, VK_IMAGE_ASPECT_COLOR_BIT);
+	vkCreateImageView(RenderEngine::_device, &barTexView, nullptr, &barkTexture->_imageView);
+
+	barkTexture->_id = VKE::Texture::sTexturesLoaded.size();
+	barkTexture->register_texture("bark");
+
+
+	VKE::Texture* leavesTexture = new VKE::Texture();
+
+	vkutil::load_image_from_file(*this, "../assets/maple_leaf.png", leavesTexture->_image);
+
+	VkImageViewCreateInfo leavesTexView = vkinit::imageview_create_info(VK_FORMAT_R8G8B8A8_UNORM, leavesTexture->_image._image, VK_IMAGE_ASPECT_COLOR_BIT);
+	vkCreateImageView(RenderEngine::_device, &leavesTexView, nullptr, &leavesTexture->_imageView);
+
+	leavesTexture->_id = VKE::Texture::sTexturesLoaded.size();
+	leavesTexture->register_texture("leaf");
+
+
+	VKE::Texture* leavesOcclusionTexture = new VKE::Texture();
+
+	vkutil::load_image_from_file(*this, "../assets/maple_leaf_Mask.jpg", leavesOcclusionTexture->_image);
+
+	VkImageViewCreateInfo leavesOcclusionView = vkinit::imageview_create_info(VK_FORMAT_R8G8B8A8_UNORM, leavesOcclusionTexture->_image._image, VK_IMAGE_ASPECT_COLOR_BIT);
+	vkCreateImageView(RenderEngine::_device, &leavesOcclusionView, nullptr, &leavesOcclusionTexture->_imageView);
+
+	leavesOcclusionTexture->_id = VKE::Texture::sTexturesLoaded.size();
+	leavesOcclusionTexture->register_texture("leaf_occlusion");
+
+
 	RenderEngine::_mainDeletionQueue.push_function([=]() {
 		vkDestroyImageView(RenderEngine::_device, defaultTexture->_imageView, nullptr);
 		vkDestroyImageView(RenderEngine::_device, grassTexture->_imageView, nullptr);
+		vkDestroyImageView(RenderEngine::_device, barkTexture->_imageView, nullptr);
+		vkDestroyImageView(RenderEngine::_device, leavesTexture->_imageView, nullptr);
+		vkDestroyImageView(RenderEngine::_device, leavesOcclusionTexture->_imageView, nullptr);
+
+		vmaDestroyImage(RenderEngine::_allocator, defaultTexture->_image._image, nullptr);
+		vmaDestroyImage(RenderEngine::_allocator, grassTexture->_image._image, nullptr);
+		vmaDestroyImage(RenderEngine::_allocator, barkTexture->_image._image, nullptr);
+		vmaDestroyImage(RenderEngine::_allocator, leavesTexture->_image._image, nullptr);
+		vmaDestroyImage(RenderEngine::_allocator, leavesOcclusionTexture->_image._image, nullptr);
 		});
 }

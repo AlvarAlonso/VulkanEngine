@@ -2,44 +2,27 @@
 #extension GL_EXT_ray_tracing : enable
 #extension GL_EXT_nonuniform_qualifier : enable
 #extension GL_EXT_scalar_block_layout : enable
+#extension GL_GOOGLE_include_directive : require
+
+#include "shaderCommon.glsl"
+
+hitAttributeEXT vec3 attribs;
+
+// vec4 origin = 0 means it has ignored the hit
 
 struct RayPayload {
 	vec4 color_dist;
 	vec4 direction;
 	vec4 origin;
+	uint rngState;
 };
 
+// Payloads
 layout(location = 0) rayPayloadInEXT RayPayload rayPayload;
 layout(location = 1) rayPayloadInEXT bool isShadowed;
 
+// Descriptors
 layout(binding = 0, set = 0) uniform accelerationStructureEXT topLevelAS;
-
-#define PI 3.1415926535897932384626433832795
-
-hitAttributeEXT vec3 attribs;
-
-struct Vertex {
-	vec4 position;
-	vec4 normal;
-	vec4 uv;
-};
-
-struct Light {
-	vec4 position_maxDist;
-	vec4 color_intensity;
-};
-
-struct Primitive {
-	vec4 firstIdx_rndIdx_matIdx_transIdx;
-};
-
-struct Material {
-	vec4 color;
-	vec4 emissive_factor;
-	vec4 roughness_metallic_tilling_color_factors; // Color is the index to the color texture
-	vec4 emissive_metRough_occlusion_normal_indices; // Indices to material textures
-};
-
 layout(binding = 2, set = 0) uniform CameraProperties 
 {
 	mat4 viewInverse;
@@ -54,21 +37,6 @@ layout(binding = 6, set = 0) buffer Primitives { Primitive p[]; } primitives;
 layout(binding = 7, set = 0) uniform Lights { Light l[5]; } lights;
 layout(binding = 8, set = 0) buffer Materials { Material m[]; } materials;
 layout(binding = 9, set = 0) uniform sampler2D textures[]; //image2D ?
-
-//PBR
-float D_GGX ( const in float NoH, const in float linearRoughness );
-vec3 F_Schlick( const in float VoH, const in vec3 f0 );
-float GGX(float NdotV, float k);
-float G_Smith( float NdotV, float NdotL, float roughness);
-vec3 specularBRDF( float roughness, vec3 f0, float NoH, float NoV, float NoL, float LoH );
-
-float computeAttenuation( in float distanceToLight, in float maxDist )
-{
-	float att_factor = maxDist - distanceToLight;
-	att_factor /= maxDist;
-	att_factor = max(att_factor, 0.0);
-	return att_factor*att_factor;
-}
 
 void main()
 {
@@ -95,22 +63,43 @@ void main()
 	// Computing the normal at hit position
 	vec3 N = vec3(v0.normal * barycentrics.x + v1.normal * barycentrics.y + v2.normal * barycentrics.z);
 	// Transforming the normal to world space
-	N = normalize(vec3(transforms.t[transformIndex] * vec4(N, 0.0)));
+	N = normalize(vec3(transforms.t[transformIndex] * vec4(N, 0.0))); // TODO: Inverse Transpose of the transform
 
 	// Computing the coordinates of the hit position
 	vec3 worldPos = vec3(v0.position * barycentrics.x + v1.position * barycentrics.y + v2.position * barycentrics.z);
 	// Transforming the position to world space
-	worldPos = vec3(transforms.t[renderableIndex] * vec4(worldPos, 1.0));
+	worldPos = vec3(transforms.t[transformIndex] * vec4(worldPos, 1.0));
 
 	vec2 uv = vec2(v0.uv.xy * barycentrics.x + v1.uv.xy * barycentrics.y + v2.uv.xy * barycentrics.z);
 
 	//MATERIAL INFO
 	Material material = materials.m[materialIndex];
 
+	// Calculate if the hit was in a non opaque area
+	int occlusionTextureIdx = int(material.emissive_metRough_occlusion_normal_indices.z);
+	vec3 occlusion_texture = texture(textures[occlusionTextureIdx], uv).xyz;
+	
+	if(occlusionTextureIdx >= 0 && occlusion_texture.x < 0.2 && occlusion_texture.y < 0.2 && occlusion_texture.z < 0.2)
+	{
+		rayPayload.color_dist.w = gl_RayTmaxEXT;
+		rayPayload.origin.xyz = offsetPositionAlongNormal(worldPos, -N);
+		rayPayload.origin.w = 0;
+		return;
+	}
+	// origin.w is different from 0 if this hit is not skipped
+	rayPayload.origin.w = 1;
+
+	// Material properties
 	float metal = material.roughness_metallic_tilling_color_factors.y;
 	float roughness = material.roughness_metallic_tilling_color_factors.x;
-	vec3 color_texture = texture(textures[int(material.roughness_metallic_tilling_color_factors.w)], uv).xyz;
+	int textureIndex = int(material.roughness_metallic_tilling_color_factors.w);
+	vec3 color_texture = texture(textures[textureIndex], uv).xyz;
 	vec3 color_material = material.color.xyz;
+
+	if(textureIndex < 0.001)
+	{
+		color_texture *= color_material;
+	}
 
 	//calculate f0 reflection based on the color and metalness
 	vec3 f0 = color_texture * metal + (vec3( 0.5 ) * ( 1.0 - metal ));
@@ -118,13 +107,19 @@ void main()
 	//COMPUTE LIGHT
 	vec3 totalLight = vec3(0);
 
-  for(int i = 0; i < 5; i++)
+	// Update seed
+	rayPayload.rngState = uint(renderableIndex * gl_PrimitiveID / gl_InstanceCustomIndexEXT);
+
+	uint seed = tea(gl_LaunchIDEXT.y * gl_LaunchSizeEXT.x + gl_LaunchIDEXT.x, gl_LaunchIDEXT.x * gl_LaunchSizeEXT.y);
+
+  for(int i = 0; i < 1; i++)
   {
 	  float lightIntensity = lights.l[i].color_intensity.w;
 	  float lightMaxDist  = lights.l[i].position_maxDist.w;
+	  vec3 lightPosition = lights.l[i].position_maxDist.xyz;
 
 	  // Point light
-	  vec3 lDir      = lights.l[i].position_maxDist.xyz - worldPos;
+	  vec3 lDir      = lightPosition - worldPos;
 	  float lightDistance  = length(lDir);
 
 	  vec3 L = normalize(lDir);
@@ -136,31 +131,51 @@ void main()
       float LdotH = clamp( dot( L, H ), 0.0, 1.0 );
 
 	  float attenuation = computeAttenuation( lightDistance,  lightMaxDist );
-
+	  
 	  // Tracing shadow ray only if the light is visible from the surface
 	  if(NdotL > 0.0)
 	  {
+		  
+		  // Calculates the angle of a cone that starts at position worldPosition and perfectly
+		  // encapsulates a sphere at position light.position with radius light.radius
+		  vec3 perpL = cross(L, vec3(0.0, 1.0, 0.0));
+		  // Handle case where L = up -> perpL should then be (1, 0, 0)
+		  if(perpL == vec3(0))
+		  {
+			perpL.x = 1.0;
+		  }
+		  // Use perpL to get a vector from worldPosition to the edge of the light sphere
+		  vec3 toLightEdge = normalize((lightPosition + perpL * 5.0f) - worldPos); // radius
+		  // Angle between L and toLightEdge. Used as the cone angle when sampling shadow rays
+		  float coneAngle = acos(dot(L, toLightEdge)) * 2.0f;
+
+		  vec3 sampledDirection = normalize(getConeSample(seed, L, coneAngle));
+		  
+		  //vec3 sampledPoint = getSphereSample(seed, lightPosition, 1.0f);
+
+		  //vec3 sampledDirection = normalize(sampledPoint - worldPos);
+
 		  float tMin   = 0.001;
-		  float tMax   = lightDistance;
+		  float tMax   = length(lightDistance + 100);
 		  uint  flags = gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsOpaqueEXT | gl_RayFlagsSkipClosestHitShaderEXT;
 		  isShadowed = true;
-		  traceRayEXT(topLevelAS,  // acceleration structure
-				  flags,       // rayFlags
-				  0xFF,        // cullMask
-				  0,           // sbtRecordOffset
-				  0,           // sbtRecordStride
-				  1,           // missIndex
-				  worldPos,      // ray origin
-				  tMin,        // ray min range
-				  L,          // ray direction
-				  tMax,        // ray max range
-				  1            // payload (location = 1)
-		  );
+
+			traceRayEXT(topLevelAS,  // acceleration structure
+			flags,       // rayFlags
+			0xFF,        // cullMask
+			0,           // sbtRecordOffset
+			0,           // sbtRecordStride
+			1,           // missIndex
+			worldPos,      // ray origin
+			tMin,        // ray min range
+			-sampledDirection,          // ray direction
+			tMax,        // ray max range
+			1            // payload (location = 1)
+			);
 
 		  if(isShadowed)
 		  {
 			  attenuation = 0.0;
-			  totalLight += 0.0;
 			  continue;
 		  }
 	  }
@@ -174,12 +189,9 @@ void main()
 	  totalLight += direct * lights.l[i].color_intensity.xyz * lightIntensity * attenuation;
 	}
 
-	//vec3 finalColor = totalLight;
-	vec3 finalColor = color_material;
+	vec3 finalColor = totalLight;
 
 	//PAYLOAD INFORMATION
-	//float materialType = materials.m[matIndices.i[gl_InstanceCustomIndexEXT]].properties.w;
-
 
 	rayPayload.color_dist = vec4(finalColor, gl_RayTmaxEXT);
 
@@ -192,89 +204,4 @@ void main()
 
 	rayPayload.origin.w += 1;
 	rayPayload.origin.xyz = worldPos;
-	
-	/*
-	else if(materialType == 1.0)
-	{
-		vec3 I = normalize(gl_WorldRayDirectionEXT);
-
-		vec3 direction = reflect(I, N);
-
-		rayPayload.color_dist = vec4(finalColor, gl_RayTmaxEXT);
-		rayPayload.direction = vec4(direction, 1.0);
-
-		if(rayPayload.origin.w == 1.0)
-		{
-			rayPayload.origin = vec4(worldPos, 2.0);
-		}
-		else
-		{
-			rayPayload.origin = vec4(worldPos, 0.0);
-		}
-	}
-	else if(materialType == 2.0)
-	{
-		finalColor = vec3(0.0);
-		//vec3 N = normalize(N);
-		vec3 D = normalize(gl_WorldRayDirectionEXT);
-		
-		float NdotD = dot(N, D); 
-			
-		vec3 refractedN = NdotD > 0.0 ? -N : N;
-		float ior = materials.m[matIndices.i[gl_InstanceCustomIndexEXT]].properties.z;
-		float eta = NdotD > 0.0 ? 1.0 / ior : ior;
-
-		vec3 direction = refract(D, refractedN, eta);
-
-		rayPayload.color_dist = vec4(finalColor, gl_RayTmaxEXT);
-		rayPayload.direction = vec4(direction.xyz,  1.0);
-
-		if(rayPayload.origin.w == 1.0)
-		{
-			rayPayload.origin = vec4(worldPos, 2.0);
-		}
-		else
-		{
-			rayPayload.origin = vec4(worldPos, 0.0);
-		}
-	}
-	*/
-}
-
-float D_GGX ( const in float NoH, const in float linearRoughness )
-{
-	float a2 = linearRoughness * linearRoughness;
-	float f = (NoH * NoH) * (a2 - 1.0) + 1.0;
-	return a2 / (PI * f * f);
-}
-
-vec3 F_Schlick( const in float VoH, const in vec3 f0 )
-{
-	float f = pow(1.0 - VoH, 5.0);
-	return f0 + (vec3(1.0) - f0) * f;
-}
-
-float GGX(float NdotV, float k)
-{
-	return NdotV / (NdotV * (1.0 - k) + k);
-}
-	
-float G_Smith( float NdotV, float NdotL, float roughness)
-{
-	float k = pow(roughness + 1.0, 2.0) / 8.0;
-	return GGX(NdotL, k) * GGX(NdotV, k);
-}
-
-vec3 specularBRDF( float roughness, vec3 f0, float NoH, float NoV, float NoL, float LoH )
-{
-	float a = roughness * roughness;
-
-	float D = D_GGX( NoH, a );
-	vec3 F = F_Schlick( LoH, f0 );
-	float G = G_Smith( NoV, NoL, roughness );
-	
-	vec3 spec = D * G * F;
-	spec /= ( 4.0 * NoL * NoV + 1e-6 );
-
-	return spec;
 }

@@ -127,6 +127,10 @@ void Renderer::create_uniform_buffer()
 	_ubo = vkutil::create_buffer(_allocator, sizeof(uniformData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
 		VMA_MEMORY_USAGE_CPU_TO_GPU);
 
+	re->_mainDeletionQueue.push_function([=]() {
+		vmaDestroyBuffer(_allocator, _ubo._buffer, _ubo._allocation);
+		});
+
 	//update_uniform_buffers();
 }
 
@@ -150,7 +154,7 @@ void Renderer::update_uniform_buffers(RenderObject* first, size_t count)
 
 	void* transformData;
 	vmaMapMemory(_allocator, _transformBuffer._allocation, &transformData);
-	// TODO: Rework raytracing descriptor sets for glTF
+
 	for(const auto& renderable : renderables)
 	{
 		for(const auto& node : renderable._prefab->_roots)
@@ -159,10 +163,11 @@ void Renderer::update_uniform_buffers(RenderObject* first, size_t count)
 		}
 	}
 
-	memcpy(transformData, transforms.data(), transforms.size());
+	memcpy(transformData, transforms.data(), transforms.size() * sizeof(glm::mat4));
 
 	vmaUnmapMemory(_allocator, _transformBuffer._allocation);
 	
+	// TODO: Solve memory leak
 	//re->create_top_level_acceleration_structure(*currentScene, true);
 }
 
@@ -216,12 +221,12 @@ void Renderer::create_raytracing_descriptor_sets()
 	std::vector<glm::mat4> transforms;
 
 	// Binding 5: Transforms Descriptor
-	_transformBuffer = vkutil::create_buffer(_allocator, sizeof(glm::mat4) * MAX_OBJECTS * 2, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+	_transformBuffer = vkutil::create_buffer(_allocator, sizeof(glm::mat4) * MAX_OBJECTS, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 
 	VkDescriptorBufferInfo transformBufferInfo{};
 	transformBufferInfo.offset = 0;
 	transformBufferInfo.buffer = _transformBuffer._buffer;
-	transformBufferInfo.range = sizeof(glm::mat4) * MAX_OBJECTS * 2;
+	transformBufferInfo.range = sizeof(glm::mat4) * MAX_OBJECTS;
 
 	for (int i = 0; i < renderables.size(); i++)
 	{
@@ -327,15 +332,15 @@ void Renderer::create_raytracing_descriptor_sets()
 		}
 		if (material->_metallic_roughness_texture)
 		{
-			_materialInfos[i]._emissive_metRough_occlusion_normal_indices.x = material->_metallic_roughness_texture->_id;
+			_materialInfos[i]._emissive_metRough_occlusion_normal_indices.y = material->_metallic_roughness_texture->_id;
 		}
 		if (material->_occlusion_texture)
 		{
-			_materialInfos[i]._emissive_metRough_occlusion_normal_indices.x = material->_occlusion_texture->_id;
+			_materialInfos[i]._emissive_metRough_occlusion_normal_indices.z = material->_occlusion_texture->_id;
 		}
 		if (material->_normal_texture)
 		{
-			_materialInfos[i]._emissive_metRough_occlusion_normal_indices.x = material->_normal_texture->_id;
+			_materialInfos[i]._emissive_metRough_occlusion_normal_indices.w = material->_normal_texture->_id;
 		}
 
 		i++;
@@ -423,6 +428,13 @@ void Renderer::create_raytracing_descriptor_sets()
 	VkWriteDescriptorSet pospoWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, re->pospo._textureSet, &pospoImageInfo, 0);
 
 	vkUpdateDescriptorSets(_device, 1, &pospoWrite, 0, VK_NULL_HANDLE);
+
+	re->_mainDeletionQueue.push_function([=]() {
+		vmaDestroyBuffer(_allocator, _transformBuffer._buffer, _transformBuffer._allocation);
+		vmaDestroyBuffer(_allocator, _primitiveInfoBuffer._buffer, _primitiveInfoBuffer._allocation);
+		vmaDestroyBuffer(_allocator, _sceneBuffer._buffer, _sceneBuffer._allocation);
+		vmaDestroyBuffer(_allocator, _materialBuffer._buffer, _materialBuffer._allocation);
+		});
 }
 
 void Renderer::record_raytracing_command_buffer()

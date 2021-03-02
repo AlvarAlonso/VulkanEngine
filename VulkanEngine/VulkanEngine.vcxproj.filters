@@ -128,6 +128,9 @@
     <ClInclude Include="..\src\vk_material.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\shaders\shaderCommon.glsl">
+      <Filter>Shaders</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="..\shaders\compile.bat">

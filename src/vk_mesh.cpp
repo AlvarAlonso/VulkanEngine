@@ -6,6 +6,10 @@
 #include "vk_render_engine.h"
 #include <unordered_map>
 
+using namespace VKE;
+
+std::map<std::string, Mesh*> Mesh::sMeshesLoaded;
+
 VertexInputDescription Vertex::get_vertex_description()
 {
     VertexInputDescription description;
@@ -56,10 +60,8 @@ Mesh::Mesh()
 {
 }
 
-Mesh::Mesh(const char* filename)
+VKE::Mesh::~Mesh()
 {
-    load_from_obj(filename);
-    upload_to_gpu();
 }
 
 void Mesh::upload_to_gpu()
@@ -343,6 +345,23 @@ void Mesh::create_cube()
     };
 
     upload_to_gpu();
+}
+
+Mesh* VKE::Mesh::get(const char* filename, bool skip_load)
+{
+    assert(filename);
+    std::map<std::string, Mesh*>::iterator it = sMeshesLoaded.find(filename);
+    if (it != sMeshesLoaded.end())
+        return it->second;
+
+    VKE::Mesh* mesh = new VKE::Mesh();
+    mesh->load_from_obj(filename);
+    mesh->upload_to_gpu();
+    return mesh;
+}
+
+void VKE::Mesh::register_mesh(std::string name)
+{
 }
 
 void Primitive::primitive_to_vulkan_geometry(VkDeviceOrHostAddressConstKHR& vertexBufferDeviceAddress, VkDeviceOrHostAddressConstKHR& indexBufferDeviceAddress, std::vector<BlasInput>& inputVector)

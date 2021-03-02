@@ -67,7 +67,7 @@ namespace VKE
 		std::vector<Node*> _roots;
 
 		Prefab();
-		Prefab(Mesh& mesh);
+		Prefab(Mesh& mesh, const std::string& materialName = "default");
 		virtual ~Prefab();
 
 		void draw(glm::mat4& model, VkCommandBuffer commandBuffer, VkPipelineLayout layout);

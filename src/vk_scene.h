@@ -19,6 +19,7 @@ public:
 
 	void generate_sample_scene();
 
+	int primitiveCount;
 	std::vector<RenderObject> _renderables;
 	std::vector<Light> _lights;
 

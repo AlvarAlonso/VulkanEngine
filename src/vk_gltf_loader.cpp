@@ -522,6 +522,9 @@ VKE::Prefab* load_glTF(std::string filename, float scale = 1.0f)
                 }
             });
 
+        prefab->_vertices.vertices.clear();
+        prefab->_vertices.rtVertices.clear();
+
         RenderEngine::_mainDeletionQueue.push_function([=]() {
             vmaDestroyBuffer(RenderEngine::_allocator, prefab->_vertices.vertexBuffer._buffer, prefab->_vertices.vertexBuffer._allocation);
             vmaDestroyBuffer(RenderEngine::_allocator, prefab->_vertices.rtvBuffer._buffer, prefab->_vertices.rtvBuffer._allocation);

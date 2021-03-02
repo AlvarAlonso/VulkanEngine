@@ -2,6 +2,8 @@
 #include "vk_initializers.h"
 #include <glm/gtx/transform.hpp>
 #include <array>
+#include "vk_material.h"
+#include "vk_textures.h"
 
 using namespace VKE;
 
@@ -13,20 +15,11 @@ void Scene::generate_sample_scene()
 {	
 	// TODO raytracing must accept glTFs with no indices
 	/*
-	Prefab* foxPrefab = Prefab::get("../assets/Fox.glb");
-	foxPrefab->register_prefab("fox");
-
-	RenderObject* fox = new RenderObject();
-	fox->_model = glm::translate(glm::vec3{ -2, 0, -5 });
-	fox->_model = glm::scale(fox->_model, glm::vec3{ 0.02, 0.02, 0.02 });
-	fox->_prefab = foxPrefab;
-	*/
-	/*
 	Prefab* duckPrefab = Prefab::get("../assets/Duck.glb");
 	duckPrefab->register_prefab("pato");
 
 	RenderObject* duck = new RenderObject();
-	duck->_model = glm::translate(glm::vec3{ 0, 0, 0 });
+	duck->_model = glm::translate(duck->_model, glm::vec3{ 0, 1, 0 });
 	duck->_prefab = duckPrefab;
 	*/
 	/*
@@ -43,18 +36,50 @@ void Scene::generate_sample_scene()
 	cornellPrefab->register_prefab("cornell");
 
 	RenderObject* cornellBox = new RenderObject();
-	cornellBox->_model = glm::translate(glm::vec3{ 10, 0 , 2 });
+	cornellBox->_model = glm::translate(glm::vec3{ 0, 5, 0 });
+	cornellBox->_model = glm::rotate(cornellBox->_model, glm::radians(-45.0f), glm::vec3{ 0.0, 1.0, 0.0 });
 	cornellBox->_prefab = cornellPrefab;
 	
 	// TODO: Rework renderables created on code to work with raytracing
 	/*
-	VKE::Mesh* treeMesh = new VKE::Mesh("../assets/MapleTree.obj");
-	Prefab* treePrefab = new VKE::Prefab(*treeMesh);
+	VKE::Material* stemMaterial = new VKE::Material(Texture::get("bark"));
+	stemMaterial->_id = VKE::Material::sMaterials.size();
+	stemMaterial->register_material("stem");
 
-	RenderObject* tree = new RenderObject();
-	tree->_model = glm::translate(glm::vec3{ 0, 0, 0 });
-	tree->_prefab = treePrefab = treePrefab;
+	VKE::Mesh* treeStemMesh = VKE::Mesh::get("../assets/MapleTreeStem.obj");
+	Prefab* stemPrefab = new VKE::Prefab(*treeStemMesh, "stem");
+
+	RenderObject* treeStem = new RenderObject();
+	treeStem->_model = glm::translate(glm::vec3{ 0, 0, 0 });
+	treeStem->_prefab = stemPrefab;
+
+
+	VKE::Material* leavesMaterial = new VKE::Material(Texture::get("leaf"));
+	leavesMaterial->_occlusion_texture = Texture::get("leaf_occlusion");
+	leavesMaterial->_id = VKE::Material::sMaterials.size();
+	leavesMaterial->register_material("leaves");
+
+	VKE::Mesh* treeLeavesMesh = VKE::Mesh::get("../assets/MapleTreeLeaves.obj");
+	Prefab* leavesPrefab = new VKE::Prefab(*treeLeavesMesh, "leaves");
+
+	RenderObject* treeLeaves = new RenderObject();
+	treeLeaves->_model = glm::translate(glm::vec3{ 0, 0, 0 });
+	treeLeaves->_prefab = leavesPrefab;
 	*/
+	VKE::Material* grassMaterial = new VKE::Material(Texture::get("grass"));
+	grassMaterial->_id = VKE::Material::sMaterials.size();
+	grassMaterial->register_material("grass");
+	
+	VKE::Mesh* planeMesh = new VKE::Mesh();
+	planeMesh->create_quad();
+	Prefab* planePrefab = new VKE::Prefab(*planeMesh, "grass");
+
+	RenderObject* plane = new RenderObject();
+	plane->_model = glm::translate(glm::mat4(1), glm::vec3{ 0.0, 0.0, 0.0 });
+	plane->_model = glm::rotate(glm::mat4(1), glm::radians(-90.0f), glm::vec3{ 1, 0, 0 });
+	plane->_model *= glm::scale(glm::mat4(1), glm::vec3{ 100, 100, 1 });
+	plane->_prefab = planePrefab;
+
 	/*
 	Prefab* boxPrefab = Prefab::get("../assets/Box.glb");
 	boxPrefab->register_prefab("box");
@@ -73,16 +98,18 @@ void Scene::generate_sample_scene()
 	car->_prefab = carPrefab;
 	*/
 	Light point_light1;
-	point_light1._position = glm::vec4(0.0f, 0.0f, 0.0f, 300.0f);
+	point_light1._position = glm::vec4(30.0f, 50.0f, 0.0f, 300.0f);
 	point_light1._color = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
 	
 	//_renderables.push_back(*box);
 	//_renderables.push_back(*duck);
 	//_renderables.push_back(*fox);
 	//_renderables.push_back(*helmet);
-	//_renderables.push_back(*tree);
+	//_renderables.push_back(*treeStem);
+	//_renderables.push_back(*treeLeaves);
 	_renderables.push_back(*cornellBox);
 	//_renderables.push_back(*car);
+	_renderables.push_back(*plane);
 
 	_lights.push_back(point_light1);
 }                                

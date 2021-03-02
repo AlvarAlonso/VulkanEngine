@@ -117,8 +117,8 @@ void vkupload::immediate_submit(std::function<void(VkCommandBuffer cmd)>&& funct
 
 	VK_CHECK(vkQueueSubmit(RenderEngine::_graphicsQueue, 1, &submit, RenderEngine::_uploadContext._uploadFence));
 
-	vkWaitForFences(RenderEngine::_device, 1, &RenderEngine::_uploadContext._uploadFence, true, UINT64_MAX);
-	vkResetFences(RenderEngine::_device, 1, &RenderEngine::_uploadContext._uploadFence);
+	VK_CHECK(vkWaitForFences(RenderEngine::_device, 1, &RenderEngine::_uploadContext._uploadFence, true, UINT64_MAX));
+	VK_CHECK(vkResetFences(RenderEngine::_device, 1, &RenderEngine::_uploadContext._uploadFence));
 
 	vkResetCommandPool(RenderEngine::_device, RenderEngine::_uploadContext._commandPool, 0);
 }

@@ -82,8 +82,7 @@ namespace VKE
 	public:
 		static std::map<std::string, Mesh*> sMeshesLoaded;
 		Mesh();
-
-		Mesh(const char* filename);
+		~Mesh();
 
 		std::vector<Vertex> _vertices;
 		std::vector<uint32_t> _indices;
