@@ -128,7 +128,7 @@
     <ClInclude Include="..\src\vk_material.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\shaders\shaderCommon.glsl">
+    <ClInclude Include="..\shaders\shaderCommon.h">
       <Filter>Shaders</Filter>
     </ClInclude>
   </ItemGroup>
@@ -170,6 +170,12 @@
       <Filter>Shaders</Filter>
     </None>
     <None Include="..\shaders\raytraceShadow.rmiss">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="..\shaders\random.h">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="..\shaders\raytrace.ahit">
       <Filter>Shaders</Filter>
     </None>
   </ItemGroup>

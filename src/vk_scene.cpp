@@ -31,7 +31,7 @@ void Scene::generate_sample_scene()
 	//helmet->_model = glm::rotate(glm::mat4(1), glm::radians(90.0f), glm::vec3{1, 0, 0});
 	helmet->_prefab = helmetPrefab;
 	*/
-	
+	/*
 	Prefab* cornellPrefab = Prefab::get("../assets/cornellBox.gltf");
 	cornellPrefab->register_prefab("cornell");
 
@@ -39,9 +39,9 @@ void Scene::generate_sample_scene()
 	cornellBox->_model = glm::translate(glm::vec3{ 0, 5, 0 });
 	cornellBox->_model = glm::rotate(cornellBox->_model, glm::radians(-45.0f), glm::vec3{ 0.0, 1.0, 0.0 });
 	cornellBox->_prefab = cornellPrefab;
-	
+	*/
 	// TODO: Rework renderables created on code to work with raytracing
-	/*
+	
 	VKE::Material* stemMaterial = new VKE::Material(Texture::get("bark"));
 	stemMaterial->_id = VKE::Material::sMaterials.size();
 	stemMaterial->register_material("stem");
@@ -65,8 +65,9 @@ void Scene::generate_sample_scene()
 	RenderObject* treeLeaves = new RenderObject();
 	treeLeaves->_model = glm::translate(glm::vec3{ 0, 0, 0 });
 	treeLeaves->_prefab = leavesPrefab;
-	*/
+	
 	VKE::Material* grassMaterial = new VKE::Material(Texture::get("grass"));
+	grassMaterial->_tilling_factor = 10.0f;
 	grassMaterial->_id = VKE::Material::sMaterials.size();
 	grassMaterial->register_material("grass");
 	
@@ -98,16 +99,19 @@ void Scene::generate_sample_scene()
 	car->_prefab = carPrefab;
 	*/
 	Light point_light1;
-	point_light1._position = glm::vec4(30.0f, 50.0f, 0.0f, 300.0f);
+	point_light1._model = glm::translate(glm::vec3{ 20, 100, 0 });
 	point_light1._color = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
+	point_light1._radius = 100.0f;
+	point_light1._intensity = 1.0f;
+	point_light1._maxDist = 300.0f;
 	
 	//_renderables.push_back(*box);
 	//_renderables.push_back(*duck);
 	//_renderables.push_back(*fox);
 	//_renderables.push_back(*helmet);
-	//_renderables.push_back(*treeStem);
-	//_renderables.push_back(*treeLeaves);
-	_renderables.push_back(*cornellBox);
+	_renderables.push_back(*treeStem);
+	_renderables.push_back(*treeLeaves);
+	//_renderables.push_back(*cornellBox);
 	//_renderables.push_back(*car);
 	_renderables.push_back(*plane);
 

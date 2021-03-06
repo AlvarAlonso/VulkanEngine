@@ -26,11 +26,20 @@ public:
 	VKE::Prefab* _prefab;
 };
 
-class Light
+class Light : public Entity
 {
 public:
 	Light();
 
-	glm::vec4 _position;
-	glm::vec4 _color;
+	glm::vec3 _color;
+	float _maxDist;
+	float _intensity;
+	float _radius;
+};
+
+struct LightToShader
+{
+	glm::vec4 _position_dist;
+	glm::vec4 _color_intensity;
+	float _radius;
 };

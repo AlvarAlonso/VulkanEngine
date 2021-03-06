@@ -1022,7 +1022,8 @@ void RenderEngine::create_storage_image()
 		1
 	};
 
-	VkImageCreateInfo image = vkinit::image_create_info(VK_FORMAT_B8G8R8A8_UNORM, VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, extent);
+	VkImageCreateInfo image = vkinit::image_create_info(VK_FORMAT_B8G8R8A8_UNORM, VK_IMAGE_USAGE_TRANSFER_SRC_BIT
+		| VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, extent);
 	image.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 	VK_CHECK(vkCreateImage(_device, &image, nullptr, &_storageImage));
 
@@ -1072,65 +1073,76 @@ void RenderEngine::create_storage_image()
 
 void RenderEngine::create_raytracing_pipeline(const int& renderablesCount)
 {
+	// Layout Bindings
+	// TLAS
 	VkDescriptorSetLayoutBinding accelerationStructureLayoutBinding{};
 	accelerationStructureLayoutBinding.binding = 0;
 	accelerationStructureLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
 	accelerationStructureLayoutBinding.descriptorCount = 1;
 	accelerationStructureLayoutBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
+	// Output Image
 	VkDescriptorSetLayoutBinding resultImageLayoutBinding{};
 	resultImageLayoutBinding.binding = 1;
 	resultImageLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
 	resultImageLayoutBinding.descriptorCount = 1;
 	resultImageLayoutBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
 
+	// Camera
 	VkDescriptorSetLayoutBinding uniformBufferBinding{};
 	uniformBufferBinding.binding = 2;
 	uniformBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 	uniformBufferBinding.descriptorCount = 1;
 	uniformBufferBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
+	// Vertices
 	VkDescriptorSetLayoutBinding vertexBufferBinding{};
 	vertexBufferBinding.binding = 3;
 	vertexBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 	vertexBufferBinding.descriptorCount = renderablesCount;
-	vertexBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
+	vertexBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
 
+	// Indices
 	VkDescriptorSetLayoutBinding indexBufferBinding{};
 	indexBufferBinding.binding = 4;
 	indexBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 	indexBufferBinding.descriptorCount = renderablesCount;
-	indexBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
+	indexBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
 
+	// Transforms
 	VkDescriptorSetLayoutBinding transformBufferBinding{};
 	transformBufferBinding.binding = 5;
 	transformBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 	transformBufferBinding.descriptorCount = 1;
-	transformBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
+	transformBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
 
+	// Primitives
 	VkDescriptorSetLayoutBinding primitiveBufferBinding{};
 	primitiveBufferBinding.binding = 6;
 	primitiveBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 	primitiveBufferBinding.descriptorCount = 1;
-	primitiveBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
+	primitiveBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
 
+	// Lights
 	VkDescriptorSetLayoutBinding sceneBufferBinding{};
 	sceneBufferBinding.binding = 7;
 	sceneBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 	sceneBufferBinding.descriptorCount = 1;
 	sceneBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
+	// Materials
 	VkDescriptorSetLayoutBinding materialBufferBinding{};
 	materialBufferBinding.binding = 8;
 	materialBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 	materialBufferBinding.descriptorCount = 1;
-	materialBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
+	materialBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
 
+	// Textures
 	VkDescriptorSetLayoutBinding textureBufferBinding{};
 	textureBufferBinding.binding = 9;
 	textureBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 	textureBufferBinding.descriptorCount = VKE::Texture::sTexturesLoaded.size();
-	textureBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
+	textureBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
 
 	std::vector<VkDescriptorSetLayoutBinding> bindings({
 		accelerationStructureLayoutBinding,
@@ -1233,25 +1245,30 @@ void RenderEngine::create_raytracing_pipeline(const int& renderablesCount)
 		_shaderGroups.push_back(shaderGroup);
 	}
 
+	// Closest hit shader shared between different hit groups
+	VkShaderModule closestHitShader;
+	if (!vkutil::load_shader_module(_device, "../shaders/closestHit.rchit.spv", &closestHitShader))
+	{
+		std::cout << "Error when building the closest hit shader module" << std::endl;
+	}
+	else {
+		std::cout << "Closest hit shader succesfully loaded" << std::endl;
+	}
+
+	VkPipelineShaderStageCreateInfo shader_stage_info = vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, closestHitShader);
+	uint32_t chitIdx = static_cast<uint32_t>(shaderStages.size() - 1);
+
 	// Closest hit group
 	{
-		VkShaderModule closestHitShader;
-		if (!vkutil::load_shader_module(_device, "../shaders/closestHit.rchit.spv", &closestHitShader))
-		{
-			std::cout << "Error when building the closest hit shader module" << std::endl;
-		}
-		else {
-			std::cout << "Closest hit shader succesfully loaded" << std::endl;
-		}
+		// Any Hit Shader for shadows
 
-		VkPipelineShaderStageCreateInfo shader_stage_info = vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, closestHitShader);
 
 		shaderStages.push_back(shader_stage_info);
 		VkRayTracingShaderGroupCreateInfoKHR shaderGroup{};
 		shaderGroup.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
 		shaderGroup.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
 		shaderGroup.generalShader = VK_SHADER_UNUSED_KHR;
-		shaderGroup.closestHitShader = static_cast<uint32_t>(shaderStages.size()) - 1;
+		shaderGroup.closestHitShader = chitIdx;
 		shaderGroup.anyHitShader = VK_SHADER_UNUSED_KHR;
 		shaderGroup.intersectionShader = VK_SHADER_UNUSED_KHR;
 		_shaderGroups.push_back(shaderGroup);

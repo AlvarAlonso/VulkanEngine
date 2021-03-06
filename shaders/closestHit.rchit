@@ -4,7 +4,8 @@
 #extension GL_EXT_scalar_block_layout : enable
 #extension GL_GOOGLE_include_directive : require
 
-#include "shaderCommon.glsl"
+#include "random.h"
+#include "shaderCommon.h"
 
 hitAttributeEXT vec3 attribs;
 
@@ -90,8 +91,14 @@ void main()
 	rayPayload.origin.w = 1;
 
 	// Material properties
-	float metal = material.roughness_metallic_tilling_color_factors.y;
 	float roughness = material.roughness_metallic_tilling_color_factors.x;
+	float metal = material.roughness_metallic_tilling_color_factors.y;
+	float tilling = material.roughness_metallic_tilling_color_factors.z;
+	
+	//apply tilling
+	uv *= tilling;
+
+	//get texture texels values
 	int textureIndex = int(material.roughness_metallic_tilling_color_factors.w);
 	vec3 color_texture = texture(textures[textureIndex], uv).xyz;
 	vec3 color_material = material.color.xyz;
@@ -114,9 +121,11 @@ void main()
 
   for(int i = 0; i < 1; i++)
   {
+	  // light info
 	  float lightIntensity = lights.l[i].color_intensity.w;
 	  float lightMaxDist  = lights.l[i].position_maxDist.w;
 	  vec3 lightPosition = lights.l[i].position_maxDist.xyz;
+	  float radius = lights.l[i].radius;
 
 	  // Point light
 	  vec3 lDir      = lightPosition - worldPos;
@@ -145,7 +154,7 @@ void main()
 			perpL.x = 1.0;
 		  }
 		  // Use perpL to get a vector from worldPosition to the edge of the light sphere
-		  vec3 toLightEdge = normalize((lightPosition + perpL * 5.0f) - worldPos); // radius
+		  vec3 toLightEdge = normalize((lightPosition + perpL * radius) - worldPos); // radius
 		  // Angle between L and toLightEdge. Used as the cone angle when sampling shadow rays
 		  float coneAngle = acos(dot(L, toLightEdge)) * 2.0f;
 

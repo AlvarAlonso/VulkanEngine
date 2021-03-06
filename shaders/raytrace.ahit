@@ -1,0 +1,72 @@
+#version 460
+#extension GL_EXT_ray_tracing : enable
+
+struct RayPayloadAnyHit
+{
+	bool isShadowed;
+}
+
+// Payloads
+layout(location = 0) rayPayloadInEXT RayPayloadAnyHit prd;
+
+layout(binding = 3, set = 0, scalar) buffer Vertices { Vertex v[]; } vertices[];
+layout(binding = 4, set = 0) buffer Indices { uint i[]; } indices[];
+layout(binding = 5, set = 0) buffer Transforms { mat4 t[]; } transforms;
+layout(binding = 6, set = 0) buffer Primitives { Primitive p[]; } primitives;
+layout(binding = 8, set = 0) buffer Materials { Material m[]; } materials;
+layout(binding = 9, set = 0) uniform sampler2D textures[]; //image2D ?
+
+void main()
+{
+	if(prd.isShadowed == true)
+	{
+		return;
+	}
+
+	//COMPUTE TRIANGLE INFO
+
+	const vec3 barycentrics = vec3(1.0f - attribs.x - attribs.y, attribs.x, attribs.y);
+
+	// Primitive Information
+	Primitive primitive = primitives.p[gl_InstanceCustomIndexEXT];
+	uint firstIndex = uint(primitive.firstIdx_rndIdx_matIdx_transIdx.x);
+	uint renderableIndex = uint(primitive.firstIdx_rndIdx_matIdx_transIdx.y);
+	uint materialIndex = uint(primitive.firstIdx_rndIdx_matIdx_transIdx.z);
+	uint transformIndex = uint(primitive.firstIdx_rndIdx_matIdx_transIdx.w);
+
+	// Vertex of the triangle
+	uint i0 = indices[renderableIndex].i[3 * gl_PrimitiveID + firstIndex + 0];
+	uint i1 = indices[renderableIndex].i[3 * gl_PrimitiveID + firstIndex + 1];
+	uint i2 = indices[renderableIndex].i[3 * gl_PrimitiveID + firstIndex + 2];
+
+	Vertex v0 = vertices[renderableIndex].v[i0];
+	Vertex v1 = vertices[renderableIndex].v[i1];
+	Vertex v2 = vertices[renderableIndex].v[i2];
+
+	// Computing the normal at hit position
+	vec3 N = vec3(v0.normal * barycentrics.x + v1.normal * barycentrics.y + v2.normal * barycentrics.z);
+	// Transforming the normal to world space
+	N = normalize(vec3(transforms.t[transformIndex] * vec4(N, 0.0))); // TODO: Inverse Transpose of the transform
+
+	// Computing the coordinates of the hit position
+	vec3 worldPos = vec3(v0.position * barycentrics.x + v1.position * barycentrics.y + v2.position * barycentrics.z);
+	// Transforming the position to world space
+	worldPos = vec3(transforms.t[transformIndex] * vec4(worldPos, 1.0));
+
+	vec2 uv = vec2(v0.uv.xy * barycentrics.x + v1.uv.xy * barycentrics.y + v2.uv.xy * barycentrics.z);
+
+	//MATERIAL INFO
+	Material material = materials.m[materialIndex];
+
+	// Calculate if the hit was in a non opaque area
+	int occlusionTextureIdx = int(material.emissive_metRough_occlusion_normal_indices.z);
+	vec3 occlusion_texture = texture(textures[occlusionTextureIdx], uv).xyz;
+	
+	if(occlusionTextureIdx >= 0 && occlusion_texture.x < 0.2 && occlusion_texture.y < 0.2 && occlusion_texture.z < 0.2)
+	{
+		return;
+	}
+
+	prd.isShadowed = true;
+}
+

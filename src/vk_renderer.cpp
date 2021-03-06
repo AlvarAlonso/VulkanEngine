@@ -267,16 +267,29 @@ void Renderer::create_raytracing_descriptor_sets()
 	vmaUnmapMemory(_allocator, _primitiveInfoBuffer._allocation);
 
 	// Binding 7: Scene Lights Descriptor
-	_sceneBuffer = vkutil::create_buffer(_allocator, currentScene->_lights.size() * sizeof(Light), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+	_sceneBuffer = vkutil::create_buffer(_allocator, currentScene->_lights.size() * sizeof(LightToShader), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+
+	std::vector<LightToShader> lightInfos;
+	lightInfos.reserve(currentScene->_lights.size());
+
+	// Pass Lights to LightToShader
+	for(const auto& light : currentScene->_lights)
+	{
+		LightToShader lightInfo;
+		lightInfo._position_dist = glm::vec4(glm::vec3(light._model[3]), light._maxDist);
+		lightInfo._color_intensity = glm::vec4(light._color, light._intensity);
+		lightInfo._radius = light._radius;
+		lightInfos.emplace_back(lightInfo);
+	}
 
 	VkDescriptorBufferInfo sceneBufferDescriptor{};
 	sceneBufferDescriptor.offset = 0;
 	sceneBufferDescriptor.buffer = _sceneBuffer._buffer;
-	sceneBufferDescriptor.range = currentScene->_lights.size() * sizeof(Light);
+	sceneBufferDescriptor.range = lightInfos.size() * sizeof(LightToShader);
 
 	void* sceneData;
 	vmaMapMemory(_allocator, _sceneBuffer._allocation, &sceneData);
-	memcpy(sceneData, currentScene->_lights.data(), currentScene->_lights.size() * sizeof(Light));
+	memcpy(sceneData, lightInfos.data(), lightInfos.size() * sizeof(LightToShader));
 	vmaUnmapMemory(_allocator, _sceneBuffer._allocation);
 
 	// Binding 8: Materials Descriptor
@@ -316,8 +329,6 @@ void Renderer::create_raytracing_descriptor_sets()
 		{
 			factors->w = material->_color_texture->_id;
 		}
-
-		factors->z = 1;
 
 		_materialInfos[i]._roughness_metallic_tilling_color_factors = glm::vec4{
 			factors->x ? factors->x : 0, factors->y ? factors->y : 0,
