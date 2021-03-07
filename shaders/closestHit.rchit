@@ -9,18 +9,9 @@
 
 hitAttributeEXT vec3 attribs;
 
-// vec4 origin = 0 means it has ignored the hit
-
-struct RayPayload {
-	vec4 color_dist;
-	vec4 direction;
-	vec4 origin;
-	uint rngState;
-};
-
 // Payloads
 layout(location = 0) rayPayloadInEXT RayPayload rayPayload;
-layout(location = 1) rayPayloadInEXT bool isShadowed;
+layout(location = 1) rayPayloadEXT ShadowRayPayload shadowPrd;
 
 // Descriptors
 layout(binding = 0, set = 0) uniform accelerationStructureEXT topLevelAS;
@@ -159,20 +150,18 @@ void main()
 		  float coneAngle = acos(dot(L, toLightEdge)) * 2.0f;
 
 		  vec3 sampledDirection = normalize(getConeSample(seed, L, coneAngle));
-		  
-		  //vec3 sampledPoint = getSphereSample(seed, lightPosition, 1.0f);
-
-		  //vec3 sampledDirection = normalize(sampledPoint - worldPos);
 
 		  float tMin   = 0.001;
 		  float tMax   = length(lightDistance + 100);
-		  uint  flags = gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsOpaqueEXT | gl_RayFlagsSkipClosestHitShaderEXT;
-		  isShadowed = true;
+		  //uint  flags = gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsOpaqueEXT | gl_RayFlagsSkipClosestHitShaderEXT;
+		  uint flags = gl_RayFlagsSkipClosestHitShaderEXT;
+		  shadowPrd.alpha = 0.0f;
+		  shadowPrd.hardShadowed = true;
 
 			traceRayEXT(topLevelAS,  // acceleration structure
 			flags,       // rayFlags
 			0xFF,        // cullMask
-			0,           // sbtRecordOffset
+			1,           // sbtRecordOffset
 			0,           // sbtRecordStride
 			1,           // missIndex
 			worldPos,      // ray origin
@@ -182,11 +171,9 @@ void main()
 			1            // payload (location = 1)
 			);
 
-		  if(isShadowed)
-		  {
-			  attenuation = 0.0;
-			  continue;
-		  }
+		clamp(shadowPrd.alpha, 0.0, 1.0);
+		attenuation = 1.0 - shadowPrd.alpha;
+		if(attenuation < 0.0001) continue;
 	  }
 		
 	  //calulate the specular and diffuse

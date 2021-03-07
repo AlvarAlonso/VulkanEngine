@@ -1,5 +1,6 @@
 #include "vk_mesh.h"
 #include "vk_utils.h"
+#include "vk_material.h"
 #define TINYOBJLOADER_IMPLEMENTATION
 #include <tiny_obj_loader.h>
 #include <iostream>
@@ -362,6 +363,7 @@ Mesh* VKE::Mesh::get(const char* filename, bool skip_load)
 
 void VKE::Mesh::register_mesh(std::string name)
 {
+    // TODO:
 }
 
 void Primitive::primitive_to_vulkan_geometry(VkDeviceOrHostAddressConstKHR& vertexBufferDeviceAddress, VkDeviceOrHostAddressConstKHR& indexBufferDeviceAddress, std::vector<BlasInput>& inputVector)
@@ -369,11 +371,11 @@ void Primitive::primitive_to_vulkan_geometry(VkDeviceOrHostAddressConstKHR& vert
     BlasInput input;
 
     PFN_vkGetAccelerationStructureBuildSizesKHR vkGetAccelerationStructureBuildSizesKHR = reinterpret_cast<PFN_vkGetAccelerationStructureBuildSizesKHR>(vkGetDeviceProcAddr(RenderEngine::_device, "vkGetAccelerationStructureBuildSizesKHR"));
-
+    
     // Build
     VkAccelerationStructureGeometryKHR accelerationStructureGeometry{};
     accelerationStructureGeometry.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
-    accelerationStructureGeometry.flags = VK_GEOMETRY_OPAQUE_BIT_KHR;
+    accelerationStructureGeometry.flags = VK_GEOMETRY_NO_DUPLICATE_ANY_HIT_INVOCATION_BIT_KHR; // TODO: aserlo bien
     accelerationStructureGeometry.geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR;
     accelerationStructureGeometry.geometry.triangles.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR;
     accelerationStructureGeometry.geometry.triangles.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;
@@ -416,7 +418,8 @@ void Primitive::primitive_to_vulkan_geometry(VkDeviceOrHostAddressConstKHR& vert
     inputVector.push_back(input);
 }
 
+
 void Primitive::draw(glm::mat4& model, VkCommandBuffer commandBuffer, VkPipelineLayout layout)
 {
-
+    // TODO:
 }

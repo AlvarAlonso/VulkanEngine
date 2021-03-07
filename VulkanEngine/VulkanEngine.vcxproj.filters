@@ -175,7 +175,7 @@
     <None Include="..\shaders\random.h">
       <Filter>Shaders</Filter>
     </None>
-    <None Include="..\shaders\raytrace.ahit">
+    <None Include="..\shaders\raytrace.rahit">
       <Filter>Shaders</Filter>
     </None>
   </ItemGroup>

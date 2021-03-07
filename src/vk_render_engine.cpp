@@ -898,7 +898,7 @@ void RenderEngine::create_top_level_acceleration_structure(const Scene& scene, b
 	VkAccelerationStructureGeometryKHR accelerationStructureGeometry{};
 	accelerationStructureGeometry.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
 	accelerationStructureGeometry.geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR;
-	accelerationStructureGeometry.flags = VK_GEOMETRY_OPAQUE_BIT_KHR;
+	accelerationStructureGeometry.flags = VK_GEOMETRY_NO_DUPLICATE_ANY_HIT_INVOCATION_BIT_KHR;
 	accelerationStructureGeometry.geometry.instances.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR;
 	accelerationStructureGeometry.geometry.instances.arrayOfPointers = VK_FALSE;
 	accelerationStructureGeometry.geometry.instances.data = instanceDataDeviceAddress;
@@ -1255,13 +1255,36 @@ void RenderEngine::create_raytracing_pipeline(const int& renderablesCount)
 		std::cout << "Closest hit shader succesfully loaded" << std::endl;
 	}
 
-	VkPipelineShaderStageCreateInfo shader_stage_info = vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, closestHitShader);
+	VkPipelineShaderStageCreateInfo chit_shader_stage_info = vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, closestHitShader);
+	shaderStages.push_back(chit_shader_stage_info);
 	uint32_t chitIdx = static_cast<uint32_t>(shaderStages.size() - 1);
 
-	// Closest hit group
+	// Closest hit group 0
+	{
+		VkRayTracingShaderGroupCreateInfoKHR shaderGroup{};
+		shaderGroup.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
+		shaderGroup.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
+		shaderGroup.generalShader = VK_SHADER_UNUSED_KHR;
+		shaderGroup.closestHitShader = chitIdx;
+		shaderGroup.anyHitShader = VK_SHADER_UNUSED_KHR;
+		shaderGroup.intersectionShader = VK_SHADER_UNUSED_KHR;
+		_shaderGroups.push_back(shaderGroup);
+	}
+
+	// Closest hit group 1
 	{
 		// Any Hit Shader for shadows
+		VkShaderModule shadowsAnyHitShader;
+		if (!vkutil::load_shader_module(_device, "../shaders/raytrace.rahit.spv", &shadowsAnyHitShader))
+		{
+			std::cout << "Error when building the shadow any hit shader module" << std::endl;
+		}
+		else
+		{
+			std::cout << "Shadow any hit shader succesfully loaded" << std::endl;
+		}
 
+		VkPipelineShaderStageCreateInfo shader_stage_info = vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_ANY_HIT_BIT_KHR, shadowsAnyHitShader);
 
 		shaderStages.push_back(shader_stage_info);
 		VkRayTracingShaderGroupCreateInfoKHR shaderGroup{};
@@ -1269,7 +1292,7 @@ void RenderEngine::create_raytracing_pipeline(const int& renderablesCount)
 		shaderGroup.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
 		shaderGroup.generalShader = VK_SHADER_UNUSED_KHR;
 		shaderGroup.closestHitShader = chitIdx;
-		shaderGroup.anyHitShader = VK_SHADER_UNUSED_KHR;
+		shaderGroup.anyHitShader = static_cast<uint32_t>(shaderStages.size() - 1);
 		shaderGroup.intersectionShader = VK_SHADER_UNUSED_KHR;
 		_shaderGroups.push_back(shaderGroup);
 	}
@@ -1453,7 +1476,7 @@ void RenderEngine::create_shader_binding_table()
 		_allocator, handleSize * 2, bufferUsageFlags, memoryUsageFlags);
 
 	_hitShaderBindingTable = vkutil::create_buffer(
-		_allocator, handleSize, bufferUsageFlags, memoryUsageFlags);
+		_allocator, handleSize * 2, bufferUsageFlags, memoryUsageFlags);
 
 	// Copy handles
 	void* raygen_data;
@@ -1468,7 +1491,7 @@ void RenderEngine::create_shader_binding_table()
 
 	void* hit_data;
 	vmaMapMemory(_allocator, _hitShaderBindingTable._allocation, &hit_data);
-	memcpy(hit_data, shaderHandleStorage.data() + handleSizeAligned * 3, handleSize);
+	memcpy(hit_data, shaderHandleStorage.data() + handleSizeAligned * 3, handleSize * 2);
 	vmaUnmapMemory(_allocator, _hitShaderBindingTable._allocation);
 }
 

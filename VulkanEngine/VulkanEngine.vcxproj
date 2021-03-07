@@ -202,7 +202,7 @@
     <None Include="..\shaders\pospo.frag" />
     <None Include="..\shaders\random.h" />
     <None Include="..\shaders\raygen.rgen" />
-    <None Include="..\shaders\raytrace.ahit" />
+    <None Include="..\shaders\raytrace.rahit" />
     <None Include="..\shaders\raytraceShadow.rmiss" />
     <None Include="..\shaders\textured_lit.frag" />
     <None Include="..\shaders\tri_mesh.vert" />

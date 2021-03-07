@@ -43,6 +43,7 @@ void Scene::generate_sample_scene()
 	// TODO: Rework renderables created on code to work with raytracing
 	
 	VKE::Material* stemMaterial = new VKE::Material(Texture::get("bark"));
+	stemMaterial->_type = VKE::DIFFUSE;
 	stemMaterial->_id = VKE::Material::sMaterials.size();
 	stemMaterial->register_material("stem");
 
@@ -55,6 +56,7 @@ void Scene::generate_sample_scene()
 
 
 	VKE::Material* leavesMaterial = new VKE::Material(Texture::get("leaf"));
+	leavesMaterial->_type = VKE::REFRACTIVE;
 	leavesMaterial->_occlusion_texture = Texture::get("leaf_occlusion");
 	leavesMaterial->_id = VKE::Material::sMaterials.size();
 	leavesMaterial->register_material("leaves");
@@ -101,7 +103,7 @@ void Scene::generate_sample_scene()
 	Light point_light1;
 	point_light1._model = glm::translate(glm::vec3{ 20, 100, 0 });
 	point_light1._color = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
-	point_light1._radius = 100.0f;
+	point_light1._radius = 1.0f;
 	point_light1._intensity = 1.0f;
 	point_light1._maxDist = 300.0f;
 	

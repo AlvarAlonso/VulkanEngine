@@ -6,6 +6,20 @@
 
 #define PI 3.1415926535897932384626433832795
 
+// vec4 origin = 0 means it has ignored the hit
+struct RayPayload {
+	vec4 color_dist;
+	vec4 direction;
+	vec4 origin;
+	uint rngState;
+};
+
+struct ShadowRayPayload
+{
+	float alpha;
+	bool hardShadowed;
+};
+
 struct Vertex {
 	vec4 position;
 	vec4 normal;

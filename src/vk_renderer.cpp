@@ -314,7 +314,8 @@ void Renderer::create_raytracing_descriptor_sets()
 	i = 0;
 	for (const auto& material : materialsAux)
 	{
-		_materialInfos[i]._color = material->_color;
+		_materialInfos[i]._color_type = material->_color;
+		_materialInfos[i]._color_type.w = material->_type;
 		_materialInfos[i]._emissive_factor = material->_emissive_factor;
 
 		glm::vec4* factors = &glm::vec4{
@@ -879,7 +880,8 @@ void Renderer::init_descriptors()
 	i = 0;
 	for(const auto& material : materialsAux)
 	{
-		_materialInfos[i]._color = material->_color;
+		_materialInfos[i]._color_type = material->_color;
+		_materialInfos[i]._color_type.w = material->_type;
 		_materialInfos[i]._emissive_factor = material->_emissive_factor;
 
 		glm::vec4* factors = &glm::vec4{
@@ -1145,6 +1147,7 @@ FrameData& Renderer::get_current_frame()
 	return _frames[_frameNumber % FRAME_OVERLAP];
 }
 
+// TODO: CHANGE THE LOCATION OF THOSE FUNCTIONS
 void Renderer::get_primitive_to_shader_info(const VKE::Node* parent, VKE::Node& node, const glm::mat4& model, std::vector<PrimitiveToShader>& primitivesInfo, std::vector<glm::mat4>& transforms, const int renderableIndex)
 {
 	if(node._children.size() > 0)

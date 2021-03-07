@@ -1,13 +1,16 @@
 #version 460
 #extension GL_EXT_ray_tracing : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_EXT_scalar_block_layout : enable
+#extension GL_GOOGLE_include_directive : require
 
-struct RayPayloadAnyHit
-{
-	bool isShadowed;
-}
+#include "random.h"
+#include "shaderCommon.h"
+
+hitAttributeEXT vec3 attribs;
 
 // Payloads
-layout(location = 0) rayPayloadInEXT RayPayloadAnyHit prd;
+layout(location = 0) rayPayloadInEXT ShadowRayPayload prd;
 
 layout(binding = 3, set = 0, scalar) buffer Vertices { Vertex v[]; } vertices[];
 layout(binding = 4, set = 0) buffer Indices { uint i[]; } indices[];
@@ -18,7 +21,7 @@ layout(binding = 9, set = 0) uniform sampler2D textures[]; //image2D ?
 
 void main()
 {
-	if(prd.isShadowed == true)
+	if(prd.alpha == 1.0) // if already hard shadow, return
 	{
 		return;
 	}
@@ -58,6 +61,11 @@ void main()
 	//MATERIAL INFO
 	Material material = materials.m[materialIndex];
 
+	if(material.color.w < 2.999)
+	{
+		prd.alpha = 1.0;
+	}
+
 	// Calculate if the hit was in a non opaque area
 	int occlusionTextureIdx = int(material.emissive_metRough_occlusion_normal_indices.z);
 	vec3 occlusion_texture = texture(textures[occlusionTextureIdx], uv).xyz;
@@ -67,6 +75,6 @@ void main()
 		return;
 	}
 
-	prd.isShadowed = true;
+	prd.alpha += 0.4;
 }
 

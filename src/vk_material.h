@@ -5,11 +5,17 @@
 #include <map>
 #include <string>
 
-class Mesh;
-
 namespace VKE
 {
 	class Texture;
+
+	enum MaterialType 
+	{
+		UNDEFINED = 0,
+		DIFFUSE,
+		REFLECTIVE,
+		REFRACTIVE
+	};
 
 	class Material
 	{
@@ -22,6 +28,7 @@ namespace VKE
 		static Material* get(const char* name);
 
 		//material properties
+		MaterialType _type;
 		glm::vec4 _color;
 		float _roughness_factor;
 		float _metallic_factor;
@@ -47,7 +54,7 @@ namespace VKE
 
 	struct MaterialToShader
 	{
-		glm::vec4 _color;
+		glm::vec4 _color_type;
 		glm::vec4 _emissive_factor;
 		glm::vec4 _roughness_metallic_tilling_color_factors; // Color is the index to the color texture
 		glm::vec4 _emissive_metRough_occlusion_normal_indices; // Indices to material textures
