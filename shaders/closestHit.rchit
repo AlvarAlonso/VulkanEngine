@@ -153,14 +153,33 @@ void main()
 
 		  float tMin   = 0.001;
 		  float tMax   = length(lightDistance + 100);
-		  //uint  flags = gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsOpaqueEXT | gl_RayFlagsSkipClosestHitShaderEXT;
-		  uint flags = gl_RayFlagsSkipClosestHitShaderEXT;
+		  uint  flags = gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsOpaqueEXT | gl_RayFlagsSkipClosestHitShaderEXT;
 		  shadowPrd.alpha = 0.0f;
 		  shadowPrd.hardShadowed = true;
 
+			// trace to the first opaque surface
+			traceRayEXT(topLevelAS,
+			flags,
+			0xFE,
+			0,
+			0,
+			1,
+			worldPos,
+			tMin,
+			-sampledDirection,
+			tMax,
+			1);
+
+			if(shadowPrd.hardShadowed == true)
+			{
+				continue;
+			}
+
+			flags = gl_RayFlagsSkipClosestHitShaderEXT;
+
 			traceRayEXT(topLevelAS,  // acceleration structure
 			flags,       // rayFlags
-			0xFF,        // cullMask
+			0xFD,        // cullMask
 			1,           // sbtRecordOffset
 			0,           // sbtRecordStride
 			1,           // missIndex

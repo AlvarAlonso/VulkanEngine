@@ -12,7 +12,7 @@ using namespace VKE;
 
 std::map<std::string, Prefab*> Prefab::sPrefabsLoaded;
 
-Node::Node() : _parent(nullptr), _mesh(nullptr), _visible(true)
+Node::Node() :_opaque(true), _parent(nullptr), _mesh(nullptr), _visible(true)
 {
 
 }
@@ -126,7 +126,7 @@ void VKE::Node::node_to_TLAS_instance(const glm::mat4& prefabModel, std::vector<
             VkAccelerationStructureInstanceKHR instance{};
             instance.transform = transformMatrix;
             instance.instanceCustomIndex = instances.size();
-            instance.mask = 0xFF;
+            instance.mask = _opaque ? 0x02 : 0x01; //FD, FE masks
             instance.instanceShaderBindingTableRecordOffset = 0;
             instance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
             instance.accelerationStructureReference = bottomLevelAS[instances.size()]._deviceAddress;
@@ -189,6 +189,7 @@ Prefab::Prefab(Mesh& mesh, const std::string& materialName)
     Primitive* primitive = new Primitive(0, 0, _indices.count, _vertices.count, *VKE::Material::sMaterials[materialName]);
 
     Node* node = new Node();
+    node->_opaque = primitive->material._type == DIFFUSE ? true : false;
     node->_mesh = &mesh;
     node->_mesh->_primitives.push_back(primitive);
     node->_model = glm::translate(glm::vec3{ 0, 0, 0 });

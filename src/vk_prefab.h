@@ -18,6 +18,7 @@ namespace VKE
 	public:
 		std::string _name;
 		bool _visible;
+		bool _opaque; // changes the mask of the tlas instance
 
 		VKE::Mesh* _mesh;
 		glm::mat4 _model;

@@ -67,7 +67,36 @@ void Scene::generate_sample_scene()
 	RenderObject* treeLeaves = new RenderObject();
 	treeLeaves->_model = glm::translate(glm::vec3{ 0, 0, 0 });
 	treeLeaves->_prefab = leavesPrefab;
-	
+
+	_renderables.push_back(*treeStem);
+	_renderables.push_back(*treeLeaves);
+
+	treeStem->_model = glm::translate(glm::vec3{ 10, 0, 10 });
+	treeLeaves->_model = glm::translate(glm::vec3{ 10, 0, 10 });
+
+	_renderables.push_back(*treeStem);
+	_renderables.push_back(*treeLeaves);
+
+	treeStem->_model = glm::translate(glm::vec3{ -10, 0, 10 });
+	treeLeaves->_model = glm::translate(glm::vec3{ -10, 0, 10 });
+
+	_renderables.push_back(*treeStem);
+	_renderables.push_back(*treeLeaves);
+
+	treeStem->_model = glm::translate(glm::vec3{ 10, 0, -10 });
+	treeLeaves->_model = glm::translate(glm::vec3{ 10, 0, -10 });
+
+	_renderables.push_back(*treeStem);
+	_renderables.push_back(*treeLeaves);
+
+	treeStem->_model = glm::translate(glm::vec3{ 20, 0, 10 });
+	treeLeaves->_model = glm::translate(glm::vec3{ 20, 0, 10 });
+
+	_renderables.push_back(*treeStem);
+	_renderables.push_back(*treeLeaves);
+
+
+
 	VKE::Material* grassMaterial = new VKE::Material(Texture::get("grass"));
 	grassMaterial->_tilling_factor = 10.0f;
 	grassMaterial->_id = VKE::Material::sMaterials.size();
@@ -111,8 +140,7 @@ void Scene::generate_sample_scene()
 	//_renderables.push_back(*duck);
 	//_renderables.push_back(*fox);
 	//_renderables.push_back(*helmet);
-	_renderables.push_back(*treeStem);
-	_renderables.push_back(*treeLeaves);
+
 	//_renderables.push_back(*cornellBox);
 	//_renderables.push_back(*car);
 	_renderables.push_back(*plane);

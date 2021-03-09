@@ -61,11 +61,6 @@ void main()
 	//MATERIAL INFO
 	Material material = materials.m[materialIndex];
 
-	if(material.color.w < 2.999)
-	{
-		prd.alpha = 1.0;
-	}
-
 	// Calculate if the hit was in a non opaque area
 	int occlusionTextureIdx = int(material.emissive_metRough_occlusion_normal_indices.z);
 	vec3 occlusion_texture = texture(textures[occlusionTextureIdx], uv).xyz;
