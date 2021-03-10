@@ -178,5 +178,8 @@
     <None Include="..\shaders\raytrace.rahit">
       <Filter>Shaders</Filter>
     </None>
+    <None Include="..\shaders\denoiser.comp">
+      <Filter>Shaders</Filter>
+    </None>
   </ItemGroup>
 </Project>

@@ -227,6 +227,7 @@ VkImageCreateInfo vkinit::image_create_info(VkFormat format, VkImageUsageFlags u
 	info.samples = VK_SAMPLE_COUNT_1_BIT;
 	info.tiling = VK_IMAGE_TILING_OPTIMAL;
 	info.usage = usageFlags;
+	info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
 	return info;
 }

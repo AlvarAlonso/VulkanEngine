@@ -80,6 +80,8 @@ public:
 	bool _isInitialized{ false };
 
 	VkExtent2D _windowExtent{ 1920 , 1080 };
+	static const uint32_t workgroup_width = 16;
+	static const uint32_t workgroup_height = 8;
 
 	struct SDL_Window* _window{ nullptr };
 
@@ -88,25 +90,25 @@ public:
 	// Vulkan Components
 
 	// Core 
-	VkInstance _instance;
-	VkDebugUtilsMessengerEXT _debug_messenger;
-	static VkPhysicalDevice _physicalDevice;
-	static VkDevice _device;
-	VkSurfaceKHR _surface;
+	VkInstance					_instance;
+	VkDebugUtilsMessengerEXT	_debug_messenger;
+	static VkPhysicalDevice		_physicalDevice;
+	static VkDevice				_device;
+	VkSurfaceKHR				_surface;
 
 	// Swapchain
-	VkSwapchainKHR _swapchain;
-	VkFormat _swapchainImageFormat;
+	VkSwapchainKHR				_swapchain;
+	VkFormat					_swapchainImageFormat;
 
-	std::vector<VkImage> _swapchainImages;
-	std::vector<VkImageView> _swapchainImageViews;
+	std::vector<VkImage>		_swapchainImages;
+	std::vector<VkImageView>	_swapchainImageViews;
 
 	// Queues
-	static VkQueue _graphicsQueue;
-	uint32_t _graphicsQueueFamily;
+	static VkQueue				_graphicsQueue;
+	uint32_t					_graphicsQueueFamily;
 
 	// Samplers
-	static VkSampler _defaultSampler;
+	static VkSampler	_defaultSampler;
 
 	//Deletion
 	static DeletionQueue _mainDeletionQueue;
@@ -117,13 +119,13 @@ public:
 
 	// Scene Descriptors
 	// - Descriptor Pool
-	static VkDescriptorPool _descriptorPool;
+	static VkDescriptorPool			_descriptorPool;
 	// - Descriptor Layouts
-	VkDescriptorSetLayout _globalSetLayout;
-	VkDescriptorSetLayout _objectSetLayout;
-	static VkDescriptorSetLayout _materialsSetLayout;
-	VkDescriptorSetLayout _singleTextureSetLayout;
-	VkDescriptorSetLayout _camSetLayout;
+	VkDescriptorSetLayout			_globalSetLayout;
+	VkDescriptorSetLayout			_objectSetLayout;
+	static VkDescriptorSetLayout	_materialsSetLayout;
+	VkDescriptorSetLayout			_singleTextureSetLayout;
+	VkDescriptorSetLayout			_camSetLayout;
 
 	// - Pipeline Layouts
 	VkPipelineLayout _forwardPipelineLayout;
@@ -132,8 +134,8 @@ public:
 	VkPipelineLayout _lightPipelineLayout;
 
 	// Pipelines
-	VkPipeline _forwardPipeline;
-	VkPipeline _texPipeline;
+	VkPipeline	_forwardPipeline;
+	VkPipeline	_texPipeline;
 	VkPipeline _deferredPipeline;
 	VkPipeline _lightPipeline;
 
@@ -174,39 +176,40 @@ public:
 
 	//Pointers to functions
 	// - Raytracing function pointers
-	PFN_vkGetBufferDeviceAddressKHR vkGetBufferDeviceAddressKHR;
-	PFN_vkCreateAccelerationStructureKHR vkCreateAccelerationStructureKHR;
-	PFN_vkDestroyAccelerationStructureKHR vkDestroyAccelerationStructureKHR;
-	PFN_vkGetAccelerationStructureBuildSizesKHR vkGetAccelerationStructureBuildSizesKHR;
-	PFN_vkGetAccelerationStructureDeviceAddressKHR vkGetAccelerationStructureDeviceAddressKHR;
-	PFN_vkCmdBuildAccelerationStructuresKHR vkCmdBuildAccelerationStructuresKHR;
-	PFN_vkBuildAccelerationStructuresKHR vkBuildAccelerationStructuresKHR;
-	PFN_vkCmdTraceRaysKHR vkCmdTraceRaysKHR;
-	PFN_vkGetRayTracingShaderGroupHandlesKHR vkGetRayTracingShaderGroupHandlesKHR;
-	PFN_vkCreateRayTracingPipelinesKHR vkCreateRayTracingPipelinesKHR;
+	PFN_vkGetBufferDeviceAddressKHR					vkGetBufferDeviceAddressKHR;
+	PFN_vkCreateAccelerationStructureKHR			vkCreateAccelerationStructureKHR;
+	PFN_vkDestroyAccelerationStructureKHR			vkDestroyAccelerationStructureKHR;
+	PFN_vkGetAccelerationStructureBuildSizesKHR		vkGetAccelerationStructureBuildSizesKHR;
+	PFN_vkGetAccelerationStructureDeviceAddressKHR	vkGetAccelerationStructureDeviceAddressKHR;
+	PFN_vkCmdBuildAccelerationStructuresKHR			vkCmdBuildAccelerationStructuresKHR;
+	PFN_vkBuildAccelerationStructuresKHR			vkBuildAccelerationStructuresKHR;
+	PFN_vkCmdTraceRaysKHR							vkCmdTraceRaysKHR;
+	PFN_vkGetRayTracingShaderGroupHandlesKHR		vkGetRayTracingShaderGroupHandlesKHR;
+	PFN_vkCreateRayTracingPipelinesKHR				vkCreateRayTracingPipelinesKHR;
 
 	//Raytracing attributes
 	// - Acceleration Structures
 	AccelerationStructure _topLevelAS{};
 	std::vector<AccelerationStructure> _bottomLevelAS{};
 
-	//AllocatedBuffer _vertexBuffer;
-	//AllocatedBuffer _indexBuffer;
-	//std::vector<uint32_t> _indexCount;
-	std::vector<AllocatedBuffer> _transformBuffers; //for bottom AS
-	//std::vector<AllocatedBuffer> _modelBuffers;
-	std::vector<VkRayTracingShaderGroupCreateInfoKHR> _shaderGroups{};
-	//std::vector<AllocatedBuffer> _rtVertexBuffers;
+	std::vector<AllocatedBuffer>						_transformBuffers; //for bottom AS
+	std::vector<VkRayTracingShaderGroupCreateInfoKHR>	_shaderGroups{};
+	
 	AllocatedBuffer _raygenShaderBindingTable;
-	AllocatedBuffer _missShaderBindingTable;
-	AllocatedBuffer _hitShaderBindingTable;
+	AllocatedBuffer	_missShaderBindingTable;
+	AllocatedBuffer	_hitShaderBindingTable;
 
 	Pospo pospo;
 
-	VkPipeline _rayTracingPipeline;
-	VkPipelineLayout _rayTracingPipelineLayout;
-	VkDescriptorPool _rayTracingDescriptorPool;
-	VkDescriptorSetLayout _rayTracingSetLayout;
+	VkPipeline				_rayTracingPipeline;
+	VkPipeline				_denoiserPipeline;
+	RtPushConstant			_rtPushConstant;
+	VkPipelineLayout		_rayTracingPipelineLayout;
+	VkPipelineLayout		_denoiserPipelineLayout;
+	VkDescriptorPool		_rayTracingDescriptorPool;
+	VkDescriptorSetLayout	_rayTracingSetLayout;
+	VkDescriptorSetLayout	_denoiserSetLayout;
+	VkDescriptorSet			_denoiserSet;
 
 
 	struct UniformData {
@@ -218,6 +221,9 @@ public:
 	VkImage _storageImage;
 	VkDeviceMemory _storageImageMemory;
 	VkImageView _storageImageView;
+
+	//shadow images
+	Image _shadowImage;
 
 
 	//init the render engine
@@ -277,7 +283,9 @@ private:
 
 	void create_storage_image();
 
-	void create_raytracing_pipeline(const int& renderablesCount);
+	void create_shadow_images();
+
+	void create_raytracing_pipelines(const int& renderablesCount);
 
 	void create_pospo_structures();
 

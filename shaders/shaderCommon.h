@@ -11,7 +11,7 @@ struct RayPayload {
 	vec4 color_dist;
 	vec4 direction;
 	vec4 origin;
-	uint rngState;
+	uint seed;
 };
 
 struct ShadowRayPayload

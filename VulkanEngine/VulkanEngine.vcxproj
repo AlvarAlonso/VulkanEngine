@@ -196,6 +196,7 @@
     <None Include="..\shaders\compile.bat" />
     <None Include="..\shaders\deferred.frag" />
     <None Include="..\shaders\deferred.vert" />
+    <None Include="..\shaders\denoiser.comp" />
     <None Include="..\shaders\light.frag" />
     <None Include="..\shaders\light.vert" />
     <None Include="..\shaders\miss.rmiss" />

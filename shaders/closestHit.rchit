@@ -10,7 +10,7 @@
 hitAttributeEXT vec3 attribs;
 
 // Payloads
-layout(location = 0) rayPayloadInEXT RayPayload rayPayload;
+layout(location = 0) rayPayloadInEXT RayPayload prd;
 layout(location = 1) rayPayloadEXT ShadowRayPayload shadowPrd;
 
 // Descriptors
@@ -73,13 +73,13 @@ void main()
 	
 	if(occlusionTextureIdx >= 0 && occlusion_texture.x < 0.2 && occlusion_texture.y < 0.2 && occlusion_texture.z < 0.2)
 	{
-		rayPayload.color_dist.w = gl_RayTmaxEXT;
-		rayPayload.origin.xyz = offsetPositionAlongNormal(worldPos, -N);
-		rayPayload.origin.w = 0;
+		prd.color_dist.w = gl_RayTmaxEXT;
+		prd.origin.xyz = offsetPositionAlongNormal(worldPos, -N);
+		prd.origin.w = 0;
 		return;
 	}
 	// origin.w is different from 0 if this hit is not skipped
-	rayPayload.origin.w = 1;
+	prd.origin.w = 1;
 
 	// Material properties
 	float roughness = material.roughness_metallic_tilling_color_factors.x;
@@ -106,9 +106,9 @@ void main()
 	vec3 totalLight = vec3(0);
 
 	// Update seed
-	rayPayload.rngState = uint(renderableIndex * gl_PrimitiveID / gl_InstanceCustomIndexEXT);
+	//prd.seed = uint(renderableIndex * gl_PrimitiveID / gl_InstanceCustomIndexEXT);
 
-	uint seed = tea(gl_LaunchIDEXT.y * gl_LaunchSizeEXT.x + gl_LaunchIDEXT.x, gl_LaunchIDEXT.x * gl_LaunchSizeEXT.y);
+	//uint seed = tea(gl_LaunchIDEXT.y * gl_LaunchSizeEXT.x + gl_LaunchIDEXT.x, gl_LaunchIDEXT.x * gl_LaunchSizeEXT.y);
 
   for(int i = 0; i < 1; i++)
   {
@@ -149,7 +149,7 @@ void main()
 		  // Angle between L and toLightEdge. Used as the cone angle when sampling shadow rays
 		  float coneAngle = acos(dot(L, toLightEdge)) * 2.0f;
 
-		  vec3 sampledDirection = normalize(getConeSample(seed, L, coneAngle));
+		  vec3 sampledDirection = normalize(getConeSample(prd.seed, L, coneAngle));
 
 		  float tMin   = 0.001;
 		  float tMax   = length(lightDistance + 100);
@@ -208,15 +208,15 @@ void main()
 
 	//PAYLOAD INFORMATION
 
-	rayPayload.color_dist = vec4(finalColor, gl_RayTmaxEXT);
+	prd.color_dist = vec4(finalColor, gl_RayTmaxEXT);
 
-	if(rayPayload.origin.w < 0.001)
+	if(prd.origin.w < 0.001)
 	{
-		rayPayload.direction.xyz = N;
+		prd.direction.xyz = N;
 	}
 
-	rayPayload.direction.w = -1.0;
+	prd.direction.w = -1.0;
 
-	rayPayload.origin.w += 1;
-	rayPayload.origin.xyz = worldPos;
+	prd.origin.w += 1;
+	prd.origin.xyz = worldPos;
 }

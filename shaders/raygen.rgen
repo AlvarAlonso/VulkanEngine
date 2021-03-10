@@ -1,5 +1,8 @@
 #version 460
 #extension GL_EXT_ray_tracing : enable
+#extension GL_GOOGLE_include_directive : require
+
+#include "random.h"
 
 layout(binding = 0, set = 0) uniform accelerationStructureEXT topLevelAS;
 layout(binding = 1, set = 0, rgba8) uniform image2D image;
@@ -14,23 +17,35 @@ struct RayPayload {
 	vec4 color_dist;
 	vec4 direction;
 	vec4 origin;
-	uint rngState;
+	uint seed;
 };
 
-layout(location = 0) rayPayloadEXT RayPayload rayPayload;
+layout( push_constant ) uniform RtPushConstant {
+	int frame;
+} pushConstant;
+
+layout(location = 0) rayPayloadEXT RayPayload prd;
 
 const uint MAX_RECURSION = 10;
 
 void main() 
 {
-	const vec2 pixelCenter = vec2(gl_LaunchIDEXT.xy) + vec2(0.5);
+	prd.seed = tea(gl_LaunchIDEXT.y * gl_LaunchSizeEXT.x + gl_LaunchIDEXT.x, pushConstant.frame);
+
+	float r1 = rnd(prd.seed);
+	float r2 = rnd(prd.seed);
+	// Subpixel jitter: send the ray through a different position inside the pixel
+	// each time, to provide antialiasing.
+	vec2 subpixel_jitter = pushConstant.frame == 0 ? vec2(0.5f, 0.5f) : vec2(r1, r2);
+
+	const vec2 pixelCenter = vec2(gl_LaunchIDEXT.xy) + subpixel_jitter;
 	const vec2 inUV = pixelCenter/vec2(gl_LaunchSizeEXT.xy);
 	vec2 d = inUV * 2.0 - 1.0;
 
 	vec4 origin = cam.viewInverse * vec4(0,0,0,1);
 	vec4 target = cam.projInverse * vec4(d.x, d.y, 1, 1) ;
 	vec4 direction = cam.viewInverse*vec4(normalize(target.xyz), 0);
-	rayPayload.direction.xyz = direction.xyz;
+	prd.direction.xyz = direction.xyz;
 
 	float tmin = 0.001;
 	float tmax = 10000.0;
@@ -42,10 +57,10 @@ void main()
 	{		
 	    traceRayEXT(topLevelAS, gl_RayFlagsOpaqueEXT, 0xff, 0, 0, 0, origin.xyz, tmin, direction.xyz, tmax, 0);
 
-		const vec3 hitColor = rayPayload.color_dist.xyz;
-		const float dist = rayPayload.color_dist.w;
-		const bool bounce = rayPayload.direction.w > 0;
-		const bool ignoredHit = rayPayload.origin.w >= 0 && rayPayload.origin.w < 0.001;
+		const vec3 hitColor = prd.color_dist.xyz;
+		const float dist = prd.color_dist.w;
+		const bool bounce = prd.direction.w > 0;
+		const bool ignoredHit = prd.origin.w >= 0 && prd.origin.w < 0.001;
 
 		if (dist < 0.0f) { //miss
 			finalColor += hitColor;
@@ -55,18 +70,31 @@ void main()
 		{
 			// continue the ray
 			// reset the parameter that tells us if the hit was ignored
-			origin.xyz = rayPayload.origin.xyz;
-			rayPayload.origin.w = 1;
+			origin.xyz = prd.origin.xyz;
+			prd.origin.w = 1;
 		}
 		else if(!bounce) //diffuse
 		{
 			finalColor += hitColor;
-			vec3 N = rayPayload.direction.xyz;
-			origin.xyz = rayPayload.origin.xyz + rayPayload.direction.xyz * 0.001;
+			vec3 N = prd.direction.xyz;
+			origin.xyz = prd.origin.xyz + prd.direction.xyz * 0.001;
 			direction.xyz = N;
 			break;
 		}
 	}
+	
+	// Do accumulation over time
+	if(pushConstant.frame > 0)
+	{
+		float a         = 1.0f / float(pushConstant.frame + 1);
+		vec3  old_color = imageLoad(image, ivec2(gl_LaunchIDEXT.xy)).xyz;
+		imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(mix(old_color, finalColor, a), 1.0f));
+	}
+	else
+	{
+		// First frame, replace the value in the buffer
+		imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(finalColor, 1.0f));
+	}
 
-	imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(finalColor, 0.0));
+	imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(finalColor, 1.0f));
 }

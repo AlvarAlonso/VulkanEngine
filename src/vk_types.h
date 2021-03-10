@@ -60,3 +60,8 @@ struct Image {
 	VmaAllocation _allocation;
 	VkFormat _format;
 };
+
+struct RtPushConstant
+{
+	int frame{ 0 };
+};

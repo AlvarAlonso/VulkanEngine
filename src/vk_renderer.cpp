@@ -104,7 +104,7 @@ void Renderer::draw_scene()
 	{
 		re->create_raytracing_scene_structures(*currentScene);
 		create_raytracing_descriptor_sets();
-		record_raytracing_command_buffer();
+		//record_raytracing_command_buffer();
 		areAccelerationStructuresInit = true;
 	}
 	
@@ -422,7 +422,34 @@ void Renderer::create_raytracing_descriptor_sets()
 
 	vkUpdateDescriptorSets(_device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, VK_NULL_HANDLE);
 
-	//pospo descriptor
+	// denoiser descriptor
+	VkDescriptorSetAllocateInfo denoiser_set_alloc_info = {};
+	denoiser_set_alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	denoiser_set_alloc_info.pNext = nullptr;
+	denoiser_set_alloc_info.descriptorPool = re->_rayTracingDescriptorPool;
+	denoiser_set_alloc_info.descriptorSetCount = 1;
+	denoiser_set_alloc_info.pSetLayouts = &re->_denoiserSetLayout;
+
+	VK_CHECK(vkAllocateDescriptorSets(_device, &denoiser_set_alloc_info, &re->_denoiserSet));
+
+	VkDescriptorImageInfo colorImageInfo = {};
+	colorImageInfo.sampler = VK_NULL_HANDLE;
+	colorImageInfo.imageView = re->_storageImageView;
+	colorImageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+
+	VkDescriptorImageInfo shadowImageInfo = {};
+	shadowImageInfo.sampler = VK_NULL_HANDLE;
+	shadowImageInfo.imageView = re->_shadowImage._view;
+	shadowImageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+
+	VkWriteDescriptorSet colorImageWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, re->_denoiserSet, &colorImageInfo, 0);
+	VkWriteDescriptorSet shadowImageWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, re->_denoiserSet, &shadowImageInfo, 1);
+
+	std::array<VkWriteDescriptorSet, 2> denoiser_set_writes = { colorImageWrite, shadowImageWrite };
+
+	vkUpdateDescriptorSets(_device, static_cast<uint32_t>(denoiser_set_writes.size()), denoiser_set_writes.data(), 0, VK_NULL_HANDLE);
+
+	// pospo descriptor
 	VkDescriptorSetAllocateInfo pospo_alloc_info = {};
 	pospo_alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
 	pospo_alloc_info.pNext = nullptr;
@@ -430,7 +457,7 @@ void Renderer::create_raytracing_descriptor_sets()
 	pospo_alloc_info.descriptorSetCount = 1;
 	pospo_alloc_info.pSetLayouts = &re->_singleTextureSetLayout;
 
-	VkResult result = vkAllocateDescriptorSets(_device, &pospo_alloc_info, &re->pospo._textureSet);
+	VK_CHECK(vkAllocateDescriptorSets(_device, &pospo_alloc_info, &re->pospo._textureSet));
 
 	VkDescriptorImageInfo pospoImageInfo = {};
 	pospoImageInfo.sampler = re->_defaultSampler;
@@ -499,6 +526,7 @@ void Renderer::record_raytracing_command_buffer()
 	*/
 	
 	vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, re->_rayTracingPipeline);
+	vkCmdPushConstants(cmd, re->_rayTracingPipelineLayout, VK_SHADER_STAGE_RAYGEN_BIT_KHR, 0, sizeof(RtPushConstant), &re->_rtPushConstant);
 	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, re->_rayTracingPipelineLayout, 0, 1, &_rayTracingDescriptorSet, 0, 0);
 	
 	re->vkCmdTraceRaysKHR(
@@ -510,12 +538,26 @@ void Renderer::record_raytracing_command_buffer()
 		re->_windowExtent.width,
 		re->_windowExtent.height,
 		1);
-	
-	/*
-		Copy ray tracing output to swap chain image
-	*/
-	
-	// Prepare current swap chain image as transfer destination
+
+		VkMemoryBarrier memoryBarrier = {};
+		memoryBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+		memoryBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+		memoryBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+		vkCmdPipelineBarrier(cmd,
+		VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
+		VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+		0,
+		1, &memoryBarrier,
+		0, nullptr,
+		0, nullptr);
+
+		// Bind the compute shader pipeline
+		vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, re->_denoiserPipeline);
+		vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, re->_denoiserPipelineLayout, 0, 1, &re->_denoiserSet, 0, nullptr);
+		// Run the compute shader with enough workgroups to cover the entire buffer:
+		vkCmdDispatch(cmd, (uint32_t(re->_windowExtent.width) + re->workgroup_width - 1) / re->workgroup_width,
+		(uint32_t(re->_windowExtent.height) + re->workgroup_height - 1) / re->workgroup_height, 1);
+
 	{
 		VkImageMemoryBarrier barrier = {};
 		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -1043,11 +1085,12 @@ void Renderer::render_raytracing()
 	uint32_t swapchainImageIndex;
 	VK_CHECK(vkAcquireNextImageKHR(_device, re->_swapchain, 0, _frames[get_current_frame_index()]._presentSemaphore, nullptr, &swapchainImageIndex));
 
+	update_frame();
 	update_uniform_buffers(currentScene->_renderables.data(), currentScene->_renderables.size());
 
 	//VK_CHECK(vkResetCommandBuffer(_raytracingCommandBuffer, 0));
-
-	//record_raytracing_command_buffer();
+	
+	record_raytracing_command_buffer();
 
 	VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
 
@@ -1145,6 +1188,25 @@ void Renderer::draw_deferred(VkCommandBuffer cmd, int imageIndex)
 FrameData& Renderer::get_current_frame()
 {
 	return _frames[_frameNumber % FRAME_OVERLAP];
+}
+
+void Renderer::reset_frame()
+{
+	re->_rtPushConstant.frame = -1;
+}
+
+void Renderer::update_frame()
+{
+	static glm::mat4 refCamMatrix;
+
+	const auto& m = VulkanEngine::cinstance->camera->getView();
+
+	if (memcmp(&refCamMatrix, &m, sizeof(glm::mat4)) != 0)
+	{
+		reset_frame();
+		refCamMatrix = m;
+	}
+	re->_rtPushConstant.frame++;
 }
 
 // TODO: CHANGE THE LOCATION OF THOSE FUNCTIONS

@@ -1071,8 +1071,59 @@ void RenderEngine::create_storage_image()
 		});
 }
 
-void RenderEngine::create_raytracing_pipeline(const int& renderablesCount)
+void RenderEngine::create_shadow_images()
 {
+	VkExtent3D extent =
+	{
+		_windowExtent.width,
+		_windowExtent.height,
+		1
+	};
+	
+	// TODO: Create an image for each light
+	VkImageCreateInfo image_info = vkinit::image_create_info(VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, extent);
+	
+	VmaAllocationCreateInfo img_alloc_info = {};
+	img_alloc_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+	img_alloc_info.requiredFlags = VkMemoryPropertyFlagBits(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+	
+	VK_CHECK(vmaCreateImage(_allocator, &image_info, &img_alloc_info, &_shadowImage._image, &_shadowImage._allocation, nullptr));
+
+	VkImageViewCreateInfo image_view_info = vkinit::imageview_create_info(VK_FORMAT_R8G8B8A8_UNORM, _shadowImage._image, VK_IMAGE_ASPECT_COLOR_BIT);
+	VK_CHECK(vkCreateImageView(_device, &image_view_info, nullptr, &_shadowImage._view));
+
+	vkupload::immediate_submit([&](VkCommandBuffer cmd) {
+		VkImageMemoryBarrier barrier = {};
+		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+		barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.image = _storageImage;
+		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		barrier.subresourceRange.baseMipLevel = 0;
+		barrier.subresourceRange.levelCount = 1;
+		barrier.subresourceRange.baseArrayLayer = 0;
+		barrier.subresourceRange.layerCount = 1;
+
+		barrier.srcAccessMask = 0;
+		barrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+
+		vkCmdPipelineBarrier(
+			cmd,
+			VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+			0,
+			0, nullptr,
+			0, nullptr,
+			1, &barrier
+		);
+
+		});
+}
+
+void RenderEngine::create_raytracing_pipelines(const int& renderablesCount)
+{
+#pragma region Raytracing pass
 	// Layout Bindings
 	// TLAS
 	VkDescriptorSetLayoutBinding accelerationStructureLayoutBinding{};
@@ -1144,7 +1195,7 @@ void RenderEngine::create_raytracing_pipeline(const int& renderablesCount)
 	textureBufferBinding.descriptorCount = VKE::Texture::sTexturesLoaded.size();
 	textureBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
 
-	std::vector<VkDescriptorSetLayoutBinding> bindings({
+	std::vector<VkDescriptorSetLayoutBinding> rt_bindings({
 		accelerationStructureLayoutBinding,
 		resultImageLayoutBinding,
 		uniformBufferBinding,
@@ -1159,14 +1210,21 @@ void RenderEngine::create_raytracing_pipeline(const int& renderablesCount)
 
 	VkDescriptorSetLayoutCreateInfo desc_set_layout_info{};
 	desc_set_layout_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-	desc_set_layout_info.bindingCount = static_cast<uint32_t>(bindings.size());
-	desc_set_layout_info.pBindings = bindings.data();
+	desc_set_layout_info.bindingCount = static_cast<uint32_t>(rt_bindings.size());
+	desc_set_layout_info.pBindings = rt_bindings.data();
 	VK_CHECK(vkCreateDescriptorSetLayout(_device, &desc_set_layout_info, nullptr, &_rayTracingSetLayout));
+
+	VkPushConstantRange pushConstant = {};
+	pushConstant.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
+	pushConstant.offset = 0;
+	pushConstant.size = sizeof(RtPushConstant);
 
 	VkPipelineLayoutCreateInfo pipeline_layout_info{};
 	pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 	pipeline_layout_info.setLayoutCount = 1;
 	pipeline_layout_info.pSetLayouts = &_rayTracingSetLayout;
+	pipeline_layout_info.pushConstantRangeCount = 1;
+	pipeline_layout_info.pPushConstantRanges = &pushConstant;
 	VK_CHECK(vkCreatePipelineLayout(_device, &pipeline_layout_info, nullptr, &_rayTracingPipelineLayout));
 
 	/*
@@ -1310,6 +1368,59 @@ void RenderEngine::create_raytracing_pipeline(const int& renderablesCount)
 	raytracing_pipeline_info.layout = _rayTracingPipelineLayout;
 
 	VK_CHECK(vkCreateRayTracingPipelinesKHR(_device, VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &raytracing_pipeline_info, nullptr, &_rayTracingPipeline));
+#pragma endregion
+
+#pragma region Denoising pass
+	VkShaderModule denoiseShader;
+	if(!vkutil::load_shader_module(_device, "../shaders/denoiser.comp.spv", &denoiseShader))
+	{
+		std::cout << "Error when building the denoiser compute shader module" << std::endl;
+	}
+	else
+	{
+		std::cout << "Denoiser compute shader succesfully loaded" << std::endl;
+	}
+
+	VkPipelineShaderStageCreateInfo shader_stage = vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_COMPUTE_BIT, denoiseShader);
+	
+	// Layout bindings
+	// Color Image
+	VkDescriptorSetLayoutBinding colorImageBinding = {};
+	colorImageBinding.binding = 0;
+	colorImageBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+	colorImageBinding.descriptorCount = 1;
+	colorImageBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
+	// Shadow Image
+	VkDescriptorSetLayoutBinding shadowImageBinding = {};
+	shadowImageBinding.binding = 1;
+	shadowImageBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+	shadowImageBinding.descriptorCount = 1;
+	shadowImageBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
+	std::array<VkDescriptorSetLayoutBinding, 2> denoiser_bindings = { colorImageBinding, shadowImageBinding };
+
+	// DescriptorSet Layout
+	VkDescriptorSetLayoutCreateInfo denoiser_descriptor_set_layout = {};
+	denoiser_descriptor_set_layout.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	denoiser_descriptor_set_layout.bindingCount = static_cast<uint32_t>(denoiser_bindings.size());
+	denoiser_descriptor_set_layout.pBindings = denoiser_bindings.data();
+	VK_CHECK(vkCreateDescriptorSetLayout(_device, &denoiser_descriptor_set_layout, nullptr, &_denoiserSetLayout));
+
+	// Pipeline layout
+	VkPipelineLayoutCreateInfo denoiser_pipeline_layout_info = vkinit::pipeline_layout_create_info();
+	denoiser_pipeline_layout_info.setLayoutCount = 1;
+	denoiser_pipeline_layout_info.pSetLayouts = &_denoiserSetLayout;
+	VK_CHECK(vkCreatePipelineLayout(_device, &denoiser_pipeline_layout_info, nullptr, &_denoiserPipelineLayout));
+
+	// Compute pipeline
+	VkComputePipelineCreateInfo compute_pipeline_info = {};
+	compute_pipeline_info.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+	compute_pipeline_info.stage = shader_stage;
+	compute_pipeline_info.layout = _denoiserPipelineLayout;
+
+	VK_CHECK(vkCreateComputePipelines(_device, VK_NULL_HANDLE, 1, &compute_pipeline_info, nullptr, &_denoiserPipeline));
+#pragma endregion
 }
 
 void RenderEngine::create_pospo_structures()
@@ -1510,14 +1621,14 @@ void RenderEngine::create_raytracing_descriptor_pool()
 	{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1},
 	{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1},
 	{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 10},
-	{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 3},
+	{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 10},
 	};
 
 	VkDescriptorPoolCreateInfo dp_info = {};
 	dp_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
 	dp_info.pNext = nullptr;
 	dp_info.flags = 0;
-	dp_info.maxSets = 2;
+	dp_info.maxSets = 3;
 	dp_info.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
 	dp_info.pPoolSizes = poolSizes.data();
 
@@ -1693,7 +1804,9 @@ void RenderEngine::get_enabled_features()
 
 void RenderEngine::create_raytracing_scene_structures(const Scene& scene)
 {
-	create_raytracing_pipeline(scene._renderables.size());
+	create_shadow_images();
+
+	create_raytracing_pipelines(scene._renderables.size());
 	create_shader_binding_table();
 
 	create_bottom_level_acceleration_structure(scene);
