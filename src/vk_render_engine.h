@@ -263,8 +263,6 @@ private:
 
 	void init_raster_structures();
 
-	void init_depth_buffer();
-
 	void init_deferred_attachments();
 
 	void init_render_passes();

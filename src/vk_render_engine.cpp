@@ -293,35 +293,11 @@ void RenderEngine::init_descriptor_set_layouts()
 void RenderEngine::init_raster_structures()
 {
 	init_descriptor_set_pool();
-	init_depth_buffer();
 	init_deferred_attachments();
 	init_render_passes();
 	init_framebuffers();
 	init_gbuffer_descriptors();
 	
-}
-
-void RenderEngine::init_depth_buffer()
-{
-	VkExtent3D depthImageExtent = {
-		_windowExtent.width,
-		_windowExtent.height,
-		1
-	};
-
-	_depthImage._format = VK_FORMAT_D32_SFLOAT;
-
-	VkImageCreateInfo dimg_info = vkinit::image_create_info(_depthImage._format, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, depthImageExtent);
-
-	VmaAllocationCreateInfo dimg_allocinfo = {};
-	dimg_allocinfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-	dimg_allocinfo.requiredFlags = VkMemoryPropertyFlagBits(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
-	vmaCreateImage(_allocator, &dimg_info, &dimg_allocinfo, &_depthImage._image, &_depthImage._allocation, nullptr);
-
-	VkImageViewCreateInfo dview_info = vkinit::imageview_create_info(_depthImage._format, _depthImage._image, VK_IMAGE_ASPECT_DEPTH_BIT);
-
-	VK_CHECK(vkCreateImageView(_device, &dview_info, nullptr, &_depthImage._view));
 }
 
 void RenderEngine::init_deferred_attachments()
@@ -335,10 +311,12 @@ void RenderEngine::init_deferred_attachments()
 	_positionImage._format = VK_FORMAT_R16G16B16A16_SFLOAT;
 	_normalImage._format = VK_FORMAT_R16G16B16A16_SFLOAT;
 	_albedoImage._format = VK_FORMAT_R8G8B8A8_UNORM;
+	_depthImage._format = VK_FORMAT_D32_SFLOAT;
 
 	VkImageCreateInfo position_igm = vkinit::image_create_info(_positionImage._format, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, attachmentExtent);
 	VkImageCreateInfo normal_igm = vkinit::image_create_info(_normalImage._format, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, attachmentExtent);
 	VkImageCreateInfo albedo_igm = vkinit::image_create_info(_albedoImage._format, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, attachmentExtent);
+	VkImageCreateInfo depth_igm = vkinit::image_create_info(_depthImage._format, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, attachmentExtent);
 
 	VmaAllocationCreateInfo img_alloc_info = {};
 	img_alloc_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
@@ -347,14 +325,17 @@ void RenderEngine::init_deferred_attachments()
 	vmaCreateImage(_allocator, &position_igm, &img_alloc_info, &_positionImage._image, &_positionImage._allocation, nullptr);
 	vmaCreateImage(_allocator, &normal_igm, &img_alloc_info, &_normalImage._image, &_normalImage._allocation, nullptr);
 	vmaCreateImage(_allocator, &albedo_igm, &img_alloc_info, &_albedoImage._image, &_albedoImage._allocation, nullptr);
+	vmaCreateImage(_allocator, &depth_igm, &img_alloc_info, &_depthImage._image, &_depthImage._allocation, nullptr);
 
 	VkImageViewCreateInfo position_view_igm = vkinit::imageview_create_info(VK_FORMAT_R16G16B16A16_SFLOAT, _positionImage._image, VK_IMAGE_ASPECT_COLOR_BIT);
 	VkImageViewCreateInfo normal_view_igm = vkinit::imageview_create_info(VK_FORMAT_R16G16B16A16_SFLOAT, _normalImage._image, VK_IMAGE_ASPECT_COLOR_BIT);
 	VkImageViewCreateInfo albedo_view_igm = vkinit::imageview_create_info(VK_FORMAT_R8G8B8A8_UNORM, _albedoImage._image, VK_IMAGE_ASPECT_COLOR_BIT);
+	VkImageViewCreateInfo depth_view_igm = vkinit::imageview_create_info(_depthImage._format, _depthImage._image, VK_IMAGE_ASPECT_DEPTH_BIT);
 
 	VK_CHECK(vkCreateImageView(_device, &position_view_igm, nullptr, &_positionImage._view));
 	VK_CHECK(vkCreateImageView(_device, &normal_view_igm, nullptr, &_normalImage._view));
 	VK_CHECK(vkCreateImageView(_device, &albedo_view_igm, nullptr, &_albedoImage._view));
+	VK_CHECK(vkCreateImageView(_device, &depth_view_igm, nullptr, &_depthImage._view));
 
 	_mainDeletionQueue.push_function([=]() {
 		vkDestroyImageView(_device, _positionImage._view, nullptr);
@@ -363,64 +344,13 @@ void RenderEngine::init_deferred_attachments()
 		vmaDestroyImage(_allocator, _normalImage._image, _normalImage._allocation);
 		vkDestroyImageView(_device, _albedoImage._view, nullptr);
 		vmaDestroyImage(_allocator, _albedoImage._image, _albedoImage._allocation);
+		vkDestroyImageView(_device, _depthImage._view, nullptr);
+		vmaDestroyImage(_allocator, _depthImage._image, _depthImage._allocation);
 		});
 }
 
 void RenderEngine::init_render_passes()
 {
-	{
-		//DEFAULT RENDER PASS
-		VkAttachmentDescription color_attachment = {};
-		color_attachment.format = _swapchainImageFormat;
-		color_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
-		color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-		color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-		color_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-		color_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		color_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		color_attachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-
-		VkAttachmentReference color_attachment_ref = {};
-		color_attachment_ref.attachment = 0;
-		color_attachment_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-		VkAttachmentDescription depth_attachment = {};
-		depth_attachment.flags = 0;
-		depth_attachment.format = _depthImage._format;
-		depth_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
-		depth_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-		depth_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-		depth_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-		depth_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		depth_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		depth_attachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-		VkAttachmentReference depth_attachment_ref = {};
-		depth_attachment_ref.attachment = 1;
-		depth_attachment_ref.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-		VkSubpassDescription subpass = {};
-		subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-		subpass.colorAttachmentCount = 1;
-		subpass.pColorAttachments = &color_attachment_ref;
-		subpass.pDepthStencilAttachment = &depth_attachment_ref;
-
-		VkAttachmentDescription attachments[2] = { color_attachment, depth_attachment };
-
-		VkRenderPassCreateInfo render_pass_info = {};
-		render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-		render_pass_info.attachmentCount = 2;
-		render_pass_info.pAttachments = &attachments[0];
-		render_pass_info.subpassCount = 1;
-		render_pass_info.pSubpasses = &subpass;
-
-		VK_CHECK(vkCreateRenderPass(_device, &render_pass_info, nullptr, &_defaultRenderPass));
-
-		_mainDeletionQueue.push_function([=]() {
-			vkDestroyRenderPass(_device, _defaultRenderPass, nullptr);
-			});
-	}
-
 	{
 		//DEFERRED RENDER PASS
 		//gBuffers Pass
@@ -604,26 +534,6 @@ void RenderEngine::init_pipelines()
 			std::cout << "Frag vertex shader succesfully loaded" << endl;
 		}
 
-		VkShaderModule lightVertex;
-		if (!vkutil::load_shader_module(_device, "../shaders/light.vert.spv", &lightVertex))
-		{
-			std::cout << "Error when building the light vertex shader" << std::endl;
-		}
-		else
-		{
-			std::cout << "Light vertex shader succesfully loaded" << endl;
-		}
-
-		VkShaderModule lightFrag;
-		if (!vkutil::load_shader_module(_device, "../shaders/light.frag.spv", &lightFrag))
-		{
-			std::cout << "Error when building the light frag shader" << std::endl;
-		}
-		else
-		{
-			std::cout << "Light frag shader succesfully loaded" << endl;
-		}
-
 		//LAYOUTS
 		VkPipelineLayoutCreateInfo layoutInfo = vkinit::pipeline_layout_create_info();
 
@@ -711,32 +621,13 @@ void RenderEngine::init_pipelines()
 		pipelineBuilder._colorBlendAttachment.clear();
 		pipelineBuilder._colorBlendAttachment.push_back(vkinit::color_blend_attachment_state());
 
-		//Light Shaders
-		pipelineBuilder._shaderStages.clear();
-		pipelineBuilder._shaderStages.push_back(
-			vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT, lightVertex));
-		pipelineBuilder._shaderStages.push_back(
-			vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, lightFrag));
-
-		//Light Layout
-		pipelineBuilder._pipelineLayout = _lightPipelineLayout;
-
-		_lightPipeline = pipelineBuilder.build_pipeline(_device, _defaultRenderPass);
-
-
 		//DELETIONS
-
-		vkDestroyShaderModule(_device, lightFrag, nullptr);
-		vkDestroyShaderModule(_device, lightVertex, nullptr);
 		vkDestroyShaderModule(_device, deferredFrag, nullptr);
 		vkDestroyShaderModule(_device, deferredVertex, nullptr);
 
 		_mainDeletionQueue.push_function([=]() {
 			vkDestroyPipeline(_device, _deferredPipeline, nullptr);
-			vkDestroyPipeline(_device, _lightPipeline, nullptr);
-
 			vkDestroyPipelineLayout(_device, _deferredPipelineLayout, nullptr);
-			vkDestroyPipelineLayout(_device, _lightPipelineLayout, nullptr);
 			});
 	}
 }

@@ -95,6 +95,4 @@ void main()
 		// First frame, replace the value in the buffer
 		imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(finalColor, 1.0f));
 	}
-
-	imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(finalColor, 1.0f));
 }

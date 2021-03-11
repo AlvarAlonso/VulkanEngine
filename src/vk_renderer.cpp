@@ -159,7 +159,7 @@ void Renderer::update_uniform_buffers(RenderObject* first, size_t count)
 	{
 		for(const auto& node : renderable._prefab->_roots)
 		{
-			get_nodes_transforms(nullptr, *node, renderable._model, transforms);
+			node->get_nodes_transforms(renderable._model, transforms);
 		}
 	}
 
@@ -250,7 +250,7 @@ void Renderer::create_raytracing_descriptor_sets()
 		// Binding 6: Primitives Descriptor
 		for(const auto& node : renderables[i]._prefab->_roots)
 		{
-			get_primitive_to_shader_info(nullptr, *node, renderables[i]._model, primitivesInfo, transforms, i);
+			node->get_primitive_to_shader_info(renderables[i]._model, primitivesInfo, transforms, i);
 		}
 	}
 
@@ -1207,54 +1207,4 @@ void Renderer::update_frame()
 		refCamMatrix = m;
 	}
 	re->_rtPushConstant.frame++;
-}
-
-// TODO: CHANGE THE LOCATION OF THOSE FUNCTIONS
-void Renderer::get_primitive_to_shader_info(const VKE::Node* parent, VKE::Node& node, const glm::mat4& model, std::vector<PrimitiveToShader>& primitivesInfo, std::vector<glm::mat4>& transforms, const int renderableIndex)
-{
-	if(node._children.size() > 0)
-	{
-		for(const auto& child : node._children)
-		{
-			get_primitive_to_shader_info(&node, *child, model, primitivesInfo, transforms, renderableIndex);
-		}
-	}
-
-	if(node._mesh != nullptr && node._mesh->_primitives.size() > 0)
-	{
-		glm::mat4 global_matrix = model * node.get_global_matrix();
-
-		for(const auto& primitive : node._mesh->_primitives)
-		{
-			PrimitiveToShader primitiveInfo{};
-			primitiveInfo.firstIdx_rndIdx_matIdx_transIdx.x = primitive->firstIndex;
-			primitiveInfo.firstIdx_rndIdx_matIdx_transIdx.y = renderableIndex;
-			primitiveInfo.firstIdx_rndIdx_matIdx_transIdx.z = primitive->material._id;
-			primitiveInfo.firstIdx_rndIdx_matIdx_transIdx.w = transforms.size();
-
-			primitivesInfo.push_back(primitiveInfo);
-		}
-
-		transforms.emplace_back(global_matrix);
-	}
-}
-
-void Renderer::get_nodes_transforms(const VKE::Node* parent, VKE::Node& node, const glm::mat4& model, std::vector<glm::mat4>& transforms)
-{
-	if(node._children.size() > 0)
-	{
-		for(const auto& child : node._children)
-		{
-			get_nodes_transforms(&node, *child, model, transforms);
-		}
-	}
-
-	if(node._mesh != nullptr)
-	{
-		if(node._mesh->_primitives.size() > 0)
-		{
-			glm::mat4 globalMatrix = model * node.get_global_matrix();
-			transforms.emplace_back(globalMatrix);
-		}
-	}
 }

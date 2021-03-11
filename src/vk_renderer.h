@@ -156,8 +156,4 @@ private:
 	void reset_frame();
 
 	void update_frame();
-
-	void get_primitive_to_shader_info(const VKE::Node* parent, VKE::Node& node, const glm::mat4& model, std::vector<PrimitiveToShader>& primitivesInfo, std::vector<glm::mat4>& transforms, const int renderableIndex);
-
-	void get_nodes_transforms(const VKE::Node* parent, VKE::Node& node, const glm::mat4& model, std::vector<glm::mat4>& transforms);
 };
