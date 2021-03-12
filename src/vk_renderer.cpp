@@ -1088,23 +1088,33 @@ void Renderer::render_raytracing()
 	update_frame();
 	update_uniform_buffers(currentScene->_renderables.data(), currentScene->_renderables.size());
 
-	//VK_CHECK(vkResetCommandBuffer(_raytracingCommandBuffer, 0));
-	
-	record_raytracing_command_buffer();
+	record_deferred_command_buffers(currentScene->_renderables.data(), currentScene->_renderables.size());
 
+	// G_BUFFER PASS
 	VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
 
-	VkSubmitInfo submit_info = vkinit::submit_info(&_raytracingCommandBuffer);
-	submit_info.pWaitDstStageMask = waitStages;
-	submit_info.waitSemaphoreCount = 1;
-	submit_info.pWaitSemaphores = &_frames[get_current_frame_index()]._presentSemaphore;
-	submit_info.signalSemaphoreCount = 1;
-	submit_info.pSignalSemaphores = &_offscreenSemaphore;
+	VkSubmitInfo submit_info_gbuffer_pass = vkinit::submit_info(&_deferredCommandBuffer);
+	submit_info_gbuffer_pass.pWaitDstStageMask = waitStages;
+	submit_info_gbuffer_pass.waitSemaphoreCount = 1;
+	submit_info_gbuffer_pass.pWaitSemaphores = &_frames[get_current_frame_index()]._presentSemaphore;
+	submit_info_gbuffer_pass.signalSemaphoreCount = 1;
+	submit_info_gbuffer_pass.pSignalSemaphores = &_offscreenSemaphore;
 
-	VK_CHECK(vkQueueSubmit(_graphicsQueue, 1, &submit_info, nullptr));
+	VK_CHECK(vkQueueSubmit(_graphicsQueue, 1, &submit_info_gbuffer_pass, nullptr));
+
+	// RT PASS
+	record_raytracing_command_buffer();
+
+	VkSubmitInfo submit_info_rt_pass = vkinit::submit_info(&_raytracingCommandBuffer);
+	submit_info_rt_pass.pWaitDstStageMask = waitStages;
+	submit_info_rt_pass.waitSemaphoreCount = 1;
+	submit_info_rt_pass.pWaitSemaphores = nullptr;
+	submit_info_rt_pass.signalSemaphoreCount = 1;
+	submit_info_rt_pass.pSignalSemaphores = nullptr;
 
 	VkCommandBuffer cmd = _frames[get_current_frame_index()]._mainCommandBuffer;
 
+	// POSTPROCESSING PASS
 	record_pospo_command_buffer(cmd, swapchainImageIndex);
 
 	VkSubmitInfo pospo_submit_info = vkinit::submit_info(&cmd);
