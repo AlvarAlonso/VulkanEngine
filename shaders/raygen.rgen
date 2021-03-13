@@ -3,6 +3,9 @@
 #extension GL_GOOGLE_include_directive : require
 
 #include "random.h"
+#include "shaderCommon.h"
+
+const int MAX_MATERIALS = 100;
 
 layout(binding = 0, set = 0) uniform accelerationStructureEXT topLevelAS;
 layout(binding = 1, set = 0) uniform sampler2D gbuffers[]; // 0 = position, 1 = normal, 2 = albedo
@@ -13,13 +16,6 @@ layout(binding = 3, set = 0) uniform CameraProperties
 	mat4 projInverse;
 	vec4 position;
 } cam;
-
-struct RayPayload {
-	vec4 color_dist;
-	vec4 direction;
-	vec4 origin;
-	uint seed;
-};
 
 layout( push_constant ) uniform RtPushConstant {
 	int frame;
@@ -33,27 +29,31 @@ void main()
 {
 	prd.seed = tea(gl_LaunchIDEXT.y * gl_LaunchSizeEXT.x + gl_LaunchIDEXT.x, pushConstant.frame);
 
-	float r1 = rnd(prd.seed);
-	float r2 = rnd(prd.seed);
-	// Subpixel jitter: send the ray through a different position inside the pixel
-	// each time, to provide antialiasing.
-	vec2 subpixel_jitter = pushConstant.frame == 0 ? vec2(0.5f, 0.5f) : vec2(r1, r2);
+	
+	const vec2 pixelCenter = vec2(gl_LaunchIDEXT.xy) + vec2(0.5);
+	vec2 gbufferUV = vec2(pixelCenter.x / gl_LaunchSizeEXT.x, pixelCenter.y / gl_LaunchSizeEXT.y);
+	
+	ivec2 pixel = ivec2(gl_LaunchIDEXT.xy);
 
-	const vec2 pixelCenter = vec2(gl_LaunchIDEXT.xy) + subpixel_jitter;
-	const vec2 inUV = pixelCenter/vec2(gl_LaunchSizeEXT.xy);
-	vec2 d = inUV * 2.0 - 1.0;
+	/*
+	vec4 position = imageLoad(gbuffers[0], pixel);
+	vec4 normal = imageLoad(gbuffers[1], pixel);
+	vec4 albedo = vec4(imageLoad(gbuffers[2], pixel).xyz, 1.0);
+	int matIdx = int(imageLoad(gbuffers[2], pixel).w * MAX_MATERIALS);
+	*/
 
-	vec4 origin = cam.viewInverse * vec4(0,0,0,1);
-	vec4 target = cam.projInverse * vec4(d.x, d.y, 1, 1) ;
-	vec4 direction = cam.viewInverse*vec4(normalize(target.xyz), 0);
-	prd.direction.xyz = direction.xyz;
+	vec4 albedo = texture(gbuffers[2], gbufferUV);
+
+	//prd.direction.xyz = vec3(0);
 
 	float tmin = 0.001;
 	float tmax = 10000.0;
 
-	origin.w = 1;
+	//vec4 origin = position;
+	//origin.w = 1;
     vec3 finalColor = vec3(0.0);
-
+	finalColor = albedo.xyz;
+	/*
 	for(int i = 0; i < MAX_RECURSION; i++)
 	{		
 	    traceRayEXT(topLevelAS, gl_RayFlagsOpaqueEXT, 0xff, 0, 0, 0, origin.xyz, tmin, direction.xyz, tmax, 0);
@@ -83,7 +83,8 @@ void main()
 			break;
 		}
 	}
-	
+	*/
+	/*
 	// Do accumulation over time
 	if(pushConstant.frame > 0)
 	{
@@ -96,4 +97,7 @@ void main()
 		// First frame, replace the value in the buffer
 		imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(finalColor, 1.0f));
 	}
+	*/
+
+	imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(finalColor, 1.0f));
 }

@@ -28,7 +28,7 @@ layout(binding = 6, set = 0) buffer Transforms { mat4 t[]; } transforms;
 layout(binding = 7, set = 0) buffer Primitives { Primitive p[]; } primitives;
 layout(binding = 8, set = 0) uniform Lights { Light l[5]; } lights;
 layout(binding = 9, set = 0) buffer Materials { Material m[]; } materials;
-layout(binding = 10, set = 0) uniform sampler2D textures[]; //image2D ?
+layout(binding = 10, set = 0) uniform sampler2D textures[];
 
 void main()
 {

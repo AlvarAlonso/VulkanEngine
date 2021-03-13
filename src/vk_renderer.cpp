@@ -196,17 +196,20 @@ void Renderer::create_raytracing_descriptor_sets()
 	// Position
 	VkDescriptorImageInfo positionImageDescriptor{};
 	positionImageDescriptor.imageView = re->_positionImage._view;
-	positionImageDescriptor.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+	positionImageDescriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	positionImageDescriptor.sampler = re->_defaultSampler;
 
 	// Normal
 	VkDescriptorImageInfo normalImageDescriptor{};
 	normalImageDescriptor.imageView = re->_normalImage._view;
-	normalImageDescriptor.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+	normalImageDescriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	normalImageDescriptor.sampler = re->_defaultSampler;
 
 	// Albedo
 	VkDescriptorImageInfo albedoImageDescriptor{};
 	albedoImageDescriptor.imageView = re->_albedoImage._view;
-	albedoImageDescriptor.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+	albedoImageDescriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	albedoImageDescriptor.sampler = re->_defaultSampler;
 
 	std::array<VkDescriptorImageInfo, 3> gbuffersImageInfos = { positionImageDescriptor, normalImageDescriptor, albedoImageDescriptor };
 
@@ -406,7 +409,7 @@ void Renderer::create_raytracing_descriptor_sets()
 	}
 
 	//Descriptor Writes
-	VkWriteDescriptorSet gbuffersWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, _rayTracingDescriptorSet, gbuffersImageInfos.data(), 1, gbuffersImageInfos.size());
+	VkWriteDescriptorSet gbuffersWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, _rayTracingDescriptorSet, gbuffersImageInfos.data(), 1, gbuffersImageInfos.size());
 	VkWriteDescriptorSet resultImageWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, _rayTracingDescriptorSet, &storageImageDescriptor, 2);
 	VkWriteDescriptorSet uniformBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, _rayTracingDescriptorSet, &uboBufferDescriptor, 3);
 	VkWriteDescriptorSet vertexBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rayTracingDescriptorSet, verticesBufferInfos.data(), 4, renderables.size());
@@ -795,7 +798,7 @@ void Renderer::record_deferred_command_buffers(RenderObject* first, int count)
 	}
 
 	vkCmdEndRenderPass(_deferredCommandBuffer);
-
+	/*
 	VkImageSubresourceRange range;
 	range.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 	range.baseMipLevel = 0;
@@ -809,7 +812,7 @@ void Renderer::record_deferred_command_buffers(RenderObject* first, int count)
 	positionImgBarrier_toGeneral.newLayout = VK_IMAGE_LAYOUT_GENERAL;
 	positionImgBarrier_toGeneral.image = re->_positionImage._image;
 	positionImgBarrier_toGeneral.subresourceRange = range;
-	positionImgBarrier_toGeneral.srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
+	positionImgBarrier_toGeneral.srcAccessMask = 0;
 	positionImgBarrier_toGeneral.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
 
 	VkImageMemoryBarrier normalImgBarrier_toGeneral = {};
@@ -818,7 +821,7 @@ void Renderer::record_deferred_command_buffers(RenderObject* first, int count)
 	normalImgBarrier_toGeneral.newLayout = VK_IMAGE_LAYOUT_GENERAL;
 	normalImgBarrier_toGeneral.image = re->_normalImage._image;
 	normalImgBarrier_toGeneral.subresourceRange = range;
-	normalImgBarrier_toGeneral.srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
+	normalImgBarrier_toGeneral.srcAccessMask = 0;
 	normalImgBarrier_toGeneral.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
 
 	VkImageMemoryBarrier albedoImgBarrier_toGeneral = {};
@@ -827,7 +830,7 @@ void Renderer::record_deferred_command_buffers(RenderObject* first, int count)
 	albedoImgBarrier_toGeneral.newLayout = VK_IMAGE_LAYOUT_GENERAL;
 	albedoImgBarrier_toGeneral.image = re->_albedoImage._image;
 	albedoImgBarrier_toGeneral.subresourceRange = range;
-	albedoImgBarrier_toGeneral.srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
+	albedoImgBarrier_toGeneral.srcAccessMask = 0;
 	albedoImgBarrier_toGeneral.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
 
 	std::array<VkImageMemoryBarrier, 3> imageBarriers =
@@ -841,7 +844,7 @@ void Renderer::record_deferred_command_buffers(RenderObject* first, int count)
 		0, nullptr,
 		0, nullptr,
 		static_cast<uint32_t>(imageBarriers.size()), imageBarriers.data());
-
+		*/
 	VK_CHECK(vkEndCommandBuffer(_deferredCommandBuffer));
 }
 

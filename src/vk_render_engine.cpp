@@ -308,14 +308,14 @@ void RenderEngine::init_deferred_attachments()
 		1
 	};
 
-	_positionImage._format = VK_FORMAT_R16G16B16A16_SFLOAT;
-	_normalImage._format = VK_FORMAT_R16G16B16A16_SFLOAT;
+	_positionImage._format = VK_FORMAT_R8G8B8A8_UNORM;
+	_normalImage._format = VK_FORMAT_R8G8B8A8_UNORM;
 	_albedoImage._format = VK_FORMAT_R8G8B8A8_UNORM;
 	_depthImage._format = VK_FORMAT_D32_SFLOAT;
 
-	VkImageCreateInfo position_igm = vkinit::image_create_info(_positionImage._format, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |VK_IMAGE_USAGE_STORAGE_BIT, attachmentExtent);
-	VkImageCreateInfo normal_igm = vkinit::image_create_info(_normalImage._format, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT, attachmentExtent);
-	VkImageCreateInfo albedo_igm = vkinit::image_create_info(_albedoImage._format, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT, attachmentExtent);
+	VkImageCreateInfo position_igm = vkinit::image_create_info(_positionImage._format, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, attachmentExtent);
+	VkImageCreateInfo normal_igm = vkinit::image_create_info(_normalImage._format, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, attachmentExtent);
+	VkImageCreateInfo albedo_igm = vkinit::image_create_info(_albedoImage._format, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, attachmentExtent);
 	VkImageCreateInfo depth_igm = vkinit::image_create_info(_depthImage._format, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, attachmentExtent);
 
 	VmaAllocationCreateInfo img_alloc_info = {};
@@ -327,9 +327,9 @@ void RenderEngine::init_deferred_attachments()
 	vmaCreateImage(_allocator, &albedo_igm, &img_alloc_info, &_albedoImage._image, &_albedoImage._allocation, nullptr);
 	vmaCreateImage(_allocator, &depth_igm, &img_alloc_info, &_depthImage._image, &_depthImage._allocation, nullptr);
 
-	VkImageViewCreateInfo position_view_igm = vkinit::imageview_create_info(VK_FORMAT_R16G16B16A16_SFLOAT, _positionImage._image, VK_IMAGE_ASPECT_COLOR_BIT);
-	VkImageViewCreateInfo normal_view_igm = vkinit::imageview_create_info(VK_FORMAT_R16G16B16A16_SFLOAT, _normalImage._image, VK_IMAGE_ASPECT_COLOR_BIT);
-	VkImageViewCreateInfo albedo_view_igm = vkinit::imageview_create_info(VK_FORMAT_R8G8B8A8_UNORM, _albedoImage._image, VK_IMAGE_ASPECT_COLOR_BIT);
+	VkImageViewCreateInfo position_view_igm = vkinit::imageview_create_info(_positionImage._format, _positionImage._image, VK_IMAGE_ASPECT_COLOR_BIT);
+	VkImageViewCreateInfo normal_view_igm = vkinit::imageview_create_info(_normalImage._format, _normalImage._image, VK_IMAGE_ASPECT_COLOR_BIT);
+	VkImageViewCreateInfo albedo_view_igm = vkinit::imageview_create_info(_albedoImage._format, _albedoImage._image, VK_IMAGE_ASPECT_COLOR_BIT);
 	VkImageViewCreateInfo depth_view_igm = vkinit::imageview_create_info(_depthImage._format, _depthImage._image, VK_IMAGE_ASPECT_DEPTH_BIT);
 
 	VK_CHECK(vkCreateImageView(_device, &position_view_igm, nullptr, &_positionImage._view));
@@ -996,7 +996,7 @@ void RenderEngine::create_raytracing_pipelines(const int& renderablesCount)
 	// G-Buffers
 	VkDescriptorSetLayoutBinding gbuffersLayoutBinding{};
 	gbuffersLayoutBinding.binding = 1;
-	gbuffersLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+	gbuffersLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 	gbuffersLayoutBinding.descriptorCount = GBUFFER_NUM;
 	gbuffersLayoutBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
 
