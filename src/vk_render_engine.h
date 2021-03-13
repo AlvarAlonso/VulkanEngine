@@ -16,6 +16,7 @@
 const int MAX_OBJECTS = 100;
 const int MAX_MATERIALS = 100;
 const int MAX_TEXTURES = 100;
+const int GBUFFER_NUM = 3;
 
 struct RenderObject;
 class Scene;

@@ -313,9 +313,9 @@ void RenderEngine::init_deferred_attachments()
 	_albedoImage._format = VK_FORMAT_R8G8B8A8_UNORM;
 	_depthImage._format = VK_FORMAT_D32_SFLOAT;
 
-	VkImageCreateInfo position_igm = vkinit::image_create_info(_positionImage._format, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, attachmentExtent);
-	VkImageCreateInfo normal_igm = vkinit::image_create_info(_normalImage._format, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, attachmentExtent);
-	VkImageCreateInfo albedo_igm = vkinit::image_create_info(_albedoImage._format, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, attachmentExtent);
+	VkImageCreateInfo position_igm = vkinit::image_create_info(_positionImage._format, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |VK_IMAGE_USAGE_STORAGE_BIT, attachmentExtent);
+	VkImageCreateInfo normal_igm = vkinit::image_create_info(_normalImage._format, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT, attachmentExtent);
+	VkImageCreateInfo albedo_igm = vkinit::image_create_info(_albedoImage._format, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT, attachmentExtent);
 	VkImageCreateInfo depth_igm = vkinit::image_create_info(_depthImage._format, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, attachmentExtent);
 
 	VmaAllocationCreateInfo img_alloc_info = {};
@@ -476,36 +476,6 @@ void RenderEngine::init_framebuffers()
 	fb_info.layers = 1;
 
 	VK_CHECK(vkCreateFramebuffer(_device, &fb_info, nullptr, &_offscreen_framebuffer));
-
-	//SWAPCHAIN FRAMEBUFFERS
-
-	VkFramebufferCreateInfo sc_fb_info = {};
-	sc_fb_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-	sc_fb_info.pNext = nullptr;
-
-	sc_fb_info.renderPass = _defaultRenderPass;
-	sc_fb_info.attachmentCount = 1;
-	sc_fb_info.width = _windowExtent.width;
-	sc_fb_info.height = _windowExtent.height;
-	sc_fb_info.layers = 1;
-
-	const uint32_t swapchain_imagecount = _swapchainImages.size();
-	_framebuffers = std::vector<VkFramebuffer>(swapchain_imagecount);
-
-	for (int i = 0; i < swapchain_imagecount; i++)
-	{
-		std::array<VkImageView, 2> attachments = { _swapchainImageViews[i], _depthImage._view };
-
-		sc_fb_info.attachmentCount = static_cast<uint32_t>(attachments.size());
-		sc_fb_info.pAttachments = attachments.data();
-
-		VK_CHECK(vkCreateFramebuffer(_device, &sc_fb_info, nullptr, &_framebuffers[i]));
-
-		_mainDeletionQueue.push_function([=]() {
-			vkDestroyFramebuffer(_device, _framebuffers[i], nullptr);
-			vkDestroyImageView(_device, _swapchainImageViews[i], nullptr);
-			});
-	}
 }
 
 void RenderEngine::init_pipelines()
@@ -1023,71 +993,79 @@ void RenderEngine::create_raytracing_pipelines(const int& renderablesCount)
 	accelerationStructureLayoutBinding.descriptorCount = 1;
 	accelerationStructureLayoutBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
+	// G-Buffers
+	VkDescriptorSetLayoutBinding gbuffersLayoutBinding{};
+	gbuffersLayoutBinding.binding = 1;
+	gbuffersLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+	gbuffersLayoutBinding.descriptorCount = GBUFFER_NUM;
+	gbuffersLayoutBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
+
 	// Output Image
 	VkDescriptorSetLayoutBinding resultImageLayoutBinding{};
-	resultImageLayoutBinding.binding = 1;
+	resultImageLayoutBinding.binding = 2;
 	resultImageLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
 	resultImageLayoutBinding.descriptorCount = 1;
 	resultImageLayoutBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
 
 	// Camera
 	VkDescriptorSetLayoutBinding uniformBufferBinding{};
-	uniformBufferBinding.binding = 2;
+	uniformBufferBinding.binding = 3;
 	uniformBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 	uniformBufferBinding.descriptorCount = 1;
 	uniformBufferBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
 	// Vertices
 	VkDescriptorSetLayoutBinding vertexBufferBinding{};
-	vertexBufferBinding.binding = 3;
+	vertexBufferBinding.binding = 4;
 	vertexBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 	vertexBufferBinding.descriptorCount = renderablesCount;
 	vertexBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
 
 	// Indices
 	VkDescriptorSetLayoutBinding indexBufferBinding{};
-	indexBufferBinding.binding = 4;
+	indexBufferBinding.binding = 5;
 	indexBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 	indexBufferBinding.descriptorCount = renderablesCount;
 	indexBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
 
 	// Transforms
 	VkDescriptorSetLayoutBinding transformBufferBinding{};
-	transformBufferBinding.binding = 5;
+	transformBufferBinding.binding = 6;
 	transformBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 	transformBufferBinding.descriptorCount = 1;
 	transformBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
 
 	// Primitives
 	VkDescriptorSetLayoutBinding primitiveBufferBinding{};
-	primitiveBufferBinding.binding = 6;
+	primitiveBufferBinding.binding = 7;
 	primitiveBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 	primitiveBufferBinding.descriptorCount = 1;
 	primitiveBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
 
 	// Lights
 	VkDescriptorSetLayoutBinding sceneBufferBinding{};
-	sceneBufferBinding.binding = 7;
+	sceneBufferBinding.binding = 8;
 	sceneBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 	sceneBufferBinding.descriptorCount = 1;
 	sceneBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
 	// Materials
 	VkDescriptorSetLayoutBinding materialBufferBinding{};
-	materialBufferBinding.binding = 8;
+	materialBufferBinding.binding = 9;
 	materialBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 	materialBufferBinding.descriptorCount = 1;
 	materialBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
 
 	// Textures
 	VkDescriptorSetLayoutBinding textureBufferBinding{};
-	textureBufferBinding.binding = 9;
+	textureBufferBinding.binding = 10;
 	textureBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 	textureBufferBinding.descriptorCount = VKE::Texture::sTexturesLoaded.size();
 	textureBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
 
 	std::vector<VkDescriptorSetLayoutBinding> rt_bindings({
 		accelerationStructureLayoutBinding,
+		gbuffersLayoutBinding,
 		resultImageLayoutBinding,
 		uniformBufferBinding,
 		vertexBufferBinding,

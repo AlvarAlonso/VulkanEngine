@@ -108,14 +108,6 @@ void Renderer::draw_scene()
 		areAccelerationStructuresInit = true;
 	}
 	
-	if(_renderMode == RENDER_MODE_FORWARD)
-	{
-		std::cout << "FORWARD RENDERING WAS REMOVED" << std::endl;
-	}
-	else if(_renderMode == RENDER_MODE_DEFERRED)
-	{
-		render_deferred();
-	}
 	else if(_renderMode == RENDER_MODE_RAYTRACING)
 	{
 		render_raytracing();
@@ -200,12 +192,30 @@ void Renderer::create_raytracing_descriptor_sets()
 	accelerationStructureWrite.descriptorCount = 1;
 	accelerationStructureWrite.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
 
-	// Binding 1: Result Image Descriptor
+	// Binding 1: G-BUFFERS
+	// Position
+	VkDescriptorImageInfo positionImageDescriptor{};
+	positionImageDescriptor.imageView = re->_positionImage._view;
+	positionImageDescriptor.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+
+	// Normal
+	VkDescriptorImageInfo normalImageDescriptor{};
+	normalImageDescriptor.imageView = re->_normalImage._view;
+	normalImageDescriptor.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+
+	// Albedo
+	VkDescriptorImageInfo albedoImageDescriptor{};
+	albedoImageDescriptor.imageView = re->_albedoImage._view;
+	albedoImageDescriptor.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+
+	std::array<VkDescriptorImageInfo, 3> gbuffersImageInfos = { positionImageDescriptor, normalImageDescriptor, albedoImageDescriptor };
+
+	// Binding 2: Result Image Descriptor
 	VkDescriptorImageInfo storageImageDescriptor{};
 	storageImageDescriptor.imageView = re->_storageImageView;
 	storageImageDescriptor.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
 
-	// Binding 2: Camera Descriptor
+	// Binding 3: Camera Descriptor
 	VkDescriptorBufferInfo uboBufferDescriptor{};
 	uboBufferDescriptor.offset = 0;
 	uboBufferDescriptor.buffer = _ubo._buffer;
@@ -220,7 +230,7 @@ void Renderer::create_raytracing_descriptor_sets()
 	std::vector<PrimitiveToShader> primitivesInfo;
 	std::vector<glm::mat4> transforms;
 
-	// Binding 5: Transforms Descriptor
+	// Binding 6: Transforms Descriptor
 	_transformBuffer = vkutil::create_buffer(_allocator, sizeof(glm::mat4) * MAX_OBJECTS, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 
 	VkDescriptorBufferInfo transformBufferInfo{};
@@ -230,7 +240,7 @@ void Renderer::create_raytracing_descriptor_sets()
 
 	for (int i = 0; i < renderables.size(); i++)
 	{
-		// Binding 3: RTVertices Descriptor
+		// Binding 4: RTVertices Descriptor
 		VkDescriptorBufferInfo rtVertexBufferInfo{};
 		rtVertexBufferInfo.offset = 0;
 		rtVertexBufferInfo.buffer = renderables[i]._prefab->_vertices.rtvBuffer._buffer;
@@ -238,7 +248,7 @@ void Renderer::create_raytracing_descriptor_sets()
 
 		verticesBufferInfos.push_back(rtVertexBufferInfo);
 			
-		// Binding 4: Vertex Indices Descriptor
+		// Binding 5: Vertex Indices Descriptor
 		VkDescriptorBufferInfo indexBufferInfo{};
 		indexBufferInfo.offset = 0;
 		indexBufferInfo.buffer = renderables[i]._prefab->_indices.indexBuffer._buffer;
@@ -246,8 +256,7 @@ void Renderer::create_raytracing_descriptor_sets()
 
 		indicesBufferInfos.push_back(indexBufferInfo);
 
-		// Warning: Take care with how primitives are added
-		// Binding 6: Primitives Descriptor
+		// Binding 7: Primitives Descriptor
 		for(const auto& node : renderables[i]._prefab->_roots)
 		{
 			node->get_primitive_to_shader_info(renderables[i]._model, primitivesInfo, transforms, i);
@@ -266,7 +275,7 @@ void Renderer::create_raytracing_descriptor_sets()
 	memcpy(primitivesData, primitivesInfo.data(), primitivesInfo.size() * sizeof(PrimitiveToShader));
 	vmaUnmapMemory(_allocator, _primitiveInfoBuffer._allocation);
 
-	// Binding 7: Scene Lights Descriptor
+	// Binding 8: Scene Lights Descriptor
 	_sceneBuffer = vkutil::create_buffer(_allocator, currentScene->_lights.size() * sizeof(LightToShader), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 
 	std::vector<LightToShader> lightInfos;
@@ -292,7 +301,7 @@ void Renderer::create_raytracing_descriptor_sets()
 	memcpy(sceneData, lightInfos.data(), lightInfos.size() * sizeof(LightToShader));
 	vmaUnmapMemory(_allocator, _sceneBuffer._allocation);
 
-	// Binding 8: Materials Descriptor
+	// Binding 9: Materials Descriptor
 
 	// Create material infos vector
 	_materialInfos.resize(VKE::Material::sMaterials.size());
@@ -370,7 +379,7 @@ void Renderer::create_raytracing_descriptor_sets()
 	memcpy(materialData, _materialInfos.data(), _materialInfos.size() * sizeof(VKE::MaterialToShader));
 	vmaUnmapMemory(_allocator, _materialBuffer._allocation);
 
-	// Binding 9: Textures Descriptor
+	// Binding 10: Textures Descriptor
 	// Pass the texture data from a map to a vector, and order it by idx
 	std::vector<VkDescriptorImageInfo> textureImageInfos;
 	int texCount = VKE::Texture::textureCount;
@@ -397,18 +406,20 @@ void Renderer::create_raytracing_descriptor_sets()
 	}
 
 	//Descriptor Writes
-	VkWriteDescriptorSet resultImageWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, _rayTracingDescriptorSet, &storageImageDescriptor, 1);
-	VkWriteDescriptorSet uniformBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, _rayTracingDescriptorSet, &uboBufferDescriptor, 2);
-	VkWriteDescriptorSet vertexBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rayTracingDescriptorSet, verticesBufferInfos.data(), 3, renderables.size());
-	VkWriteDescriptorSet indexBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rayTracingDescriptorSet, indicesBufferInfos.data(), 4, renderables.size());
-	VkWriteDescriptorSet transformBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rayTracingDescriptorSet, &transformBufferInfo, 5);
-	VkWriteDescriptorSet primitivesInfoWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rayTracingDescriptorSet, &primitivesBufferDescriptor, 6);
-	VkWriteDescriptorSet sceneBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, _rayTracingDescriptorSet, &sceneBufferDescriptor, 7);
-	VkWriteDescriptorSet materialBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rayTracingDescriptorSet, &materialBufferDescriptor, 8);
-	VkWriteDescriptorSet textureImagesWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, _rayTracingDescriptorSet, textureImageInfos.data(), 9, textureImageInfos.size());
+	VkWriteDescriptorSet gbuffersWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, _rayTracingDescriptorSet, gbuffersImageInfos.data(), 1, gbuffersImageInfos.size());
+	VkWriteDescriptorSet resultImageWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, _rayTracingDescriptorSet, &storageImageDescriptor, 2);
+	VkWriteDescriptorSet uniformBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, _rayTracingDescriptorSet, &uboBufferDescriptor, 3);
+	VkWriteDescriptorSet vertexBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rayTracingDescriptorSet, verticesBufferInfos.data(), 4, renderables.size());
+	VkWriteDescriptorSet indexBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rayTracingDescriptorSet, indicesBufferInfos.data(), 5, renderables.size());
+	VkWriteDescriptorSet transformBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rayTracingDescriptorSet, &transformBufferInfo, 6);
+	VkWriteDescriptorSet primitivesInfoWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rayTracingDescriptorSet, &primitivesBufferDescriptor, 7);
+	VkWriteDescriptorSet sceneBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, _rayTracingDescriptorSet, &sceneBufferDescriptor, 8);
+	VkWriteDescriptorSet materialBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rayTracingDescriptorSet, &materialBufferDescriptor, 9);
+	VkWriteDescriptorSet textureImagesWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, _rayTracingDescriptorSet, textureImageInfos.data(), 10, textureImageInfos.size());
 
 	std::vector<VkWriteDescriptorSet> writeDescriptorSets = {
 		accelerationStructureWrite,
+		gbuffersWrite,
 		resultImageWrite,
 		uniformBufferWrite,
 		vertexBufferWrite,
@@ -690,15 +701,12 @@ void Renderer::init_sync_structures()
 	semaphoreCreateInfo.pNext = nullptr;
 	semaphoreCreateInfo.flags = 0;
 
-	VkSemaphoreCreateInfo offscreenSemaphoreInfo = {};
-	offscreenSemaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-	offscreenSemaphoreInfo.pNext = nullptr;
-	offscreenSemaphoreInfo.flags = 0;
-
-	VK_CHECK(vkCreateSemaphore(_device, &offscreenSemaphoreInfo, nullptr, &_offscreenSemaphore));
+	VK_CHECK(vkCreateSemaphore(_device, &semaphoreCreateInfo, nullptr, &_gbuffer_semaphore));
+	VK_CHECK(vkCreateSemaphore(_device, &semaphoreCreateInfo, nullptr, &_rt_semaphore));
 
 	re->_mainDeletionQueue.push_function([=]() {
-		vkDestroySemaphore(_device, _offscreenSemaphore, nullptr);
+		vkDestroySemaphore(_device, _gbuffer_semaphore, nullptr);
+		vkDestroySemaphore(_device, _rt_semaphore, nullptr);
 		});
 
 	for (int i = 0; i < FRAME_OVERLAP; i++)
@@ -787,6 +795,52 @@ void Renderer::record_deferred_command_buffers(RenderObject* first, int count)
 	}
 
 	vkCmdEndRenderPass(_deferredCommandBuffer);
+
+	VkImageSubresourceRange range;
+	range.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	range.baseMipLevel = 0;
+	range.levelCount = 1;
+	range.baseArrayLayer = 0;
+	range.layerCount = 1;
+
+	VkImageMemoryBarrier positionImgBarrier_toGeneral = {};
+	positionImgBarrier_toGeneral.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	positionImgBarrier_toGeneral.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	positionImgBarrier_toGeneral.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+	positionImgBarrier_toGeneral.image = re->_positionImage._image;
+	positionImgBarrier_toGeneral.subresourceRange = range;
+	positionImgBarrier_toGeneral.srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
+	positionImgBarrier_toGeneral.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+
+	VkImageMemoryBarrier normalImgBarrier_toGeneral = {};
+	normalImgBarrier_toGeneral.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	normalImgBarrier_toGeneral.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	normalImgBarrier_toGeneral.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+	normalImgBarrier_toGeneral.image = re->_normalImage._image;
+	normalImgBarrier_toGeneral.subresourceRange = range;
+	normalImgBarrier_toGeneral.srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
+	normalImgBarrier_toGeneral.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+
+	VkImageMemoryBarrier albedoImgBarrier_toGeneral = {};
+	albedoImgBarrier_toGeneral.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	albedoImgBarrier_toGeneral.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	albedoImgBarrier_toGeneral.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+	albedoImgBarrier_toGeneral.image = re->_albedoImage._image;
+	albedoImgBarrier_toGeneral.subresourceRange = range;
+	albedoImgBarrier_toGeneral.srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
+	albedoImgBarrier_toGeneral.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+
+	std::array<VkImageMemoryBarrier, 3> imageBarriers =
+	{
+		positionImgBarrier_toGeneral, normalImgBarrier_toGeneral, albedoImgBarrier_toGeneral
+	};
+
+	vkCmdPipelineBarrier(_deferredCommandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+		VK_PIPELINE_STAGE_TRANSFER_BIT,
+		0,
+		0, nullptr,
+		0, nullptr,
+		static_cast<uint32_t>(imageBarriers.size()), imageBarriers.data());
 
 	VK_CHECK(vkEndCommandBuffer(_deferredCommandBuffer));
 }
@@ -1042,7 +1096,7 @@ void Renderer::render_deferred()
 	offscreenSubmit.waitSemaphoreCount = 1;
 	offscreenSubmit.pWaitSemaphores = &_frames[get_current_frame_index()]._presentSemaphore;
 	offscreenSubmit.signalSemaphoreCount = 1;
-	offscreenSubmit.pSignalSemaphores = &_offscreenSemaphore;
+	offscreenSubmit.pSignalSemaphores = &_gbuffer_semaphore;
 
 	VK_CHECK(vkQueueSubmit(_graphicsQueue, 1, &offscreenSubmit, nullptr));
 
@@ -1052,7 +1106,7 @@ void Renderer::render_deferred()
 
 	renderSubmit.pWaitDstStageMask = &waitStage;
 	renderSubmit.waitSemaphoreCount = 1;
-	renderSubmit.pWaitSemaphores = &_offscreenSemaphore;
+	renderSubmit.pWaitSemaphores = &_gbuffer_semaphore;
 	renderSubmit.signalSemaphoreCount = 1;
 	renderSubmit.pSignalSemaphores = &_frames[get_current_frame_index()]._renderSemaphore;
 
@@ -1090,7 +1144,7 @@ void Renderer::render_raytracing()
 
 	record_deferred_command_buffers(currentScene->_renderables.data(), currentScene->_renderables.size());
 
-	// G_BUFFER PASS
+	// G-BUFFER PASS
 	VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
 
 	VkSubmitInfo submit_info_gbuffer_pass = vkinit::submit_info(&_deferredCommandBuffer);
@@ -1098,7 +1152,7 @@ void Renderer::render_raytracing()
 	submit_info_gbuffer_pass.waitSemaphoreCount = 1;
 	submit_info_gbuffer_pass.pWaitSemaphores = &_frames[get_current_frame_index()]._presentSemaphore;
 	submit_info_gbuffer_pass.signalSemaphoreCount = 1;
-	submit_info_gbuffer_pass.pSignalSemaphores = &_offscreenSemaphore;
+	submit_info_gbuffer_pass.pSignalSemaphores = &_gbuffer_semaphore;
 
 	VK_CHECK(vkQueueSubmit(_graphicsQueue, 1, &submit_info_gbuffer_pass, nullptr));
 
@@ -1108,13 +1162,15 @@ void Renderer::render_raytracing()
 	VkSubmitInfo submit_info_rt_pass = vkinit::submit_info(&_raytracingCommandBuffer);
 	submit_info_rt_pass.pWaitDstStageMask = waitStages;
 	submit_info_rt_pass.waitSemaphoreCount = 1;
-	submit_info_rt_pass.pWaitSemaphores = nullptr;
+	submit_info_rt_pass.pWaitSemaphores = &_gbuffer_semaphore;
 	submit_info_rt_pass.signalSemaphoreCount = 1;
-	submit_info_rt_pass.pSignalSemaphores = nullptr;
+	submit_info_rt_pass.pSignalSemaphores = &_rt_semaphore;
 
-	VkCommandBuffer cmd = _frames[get_current_frame_index()]._mainCommandBuffer;
+	VK_CHECK(vkQueueSubmit(_graphicsQueue, 1, &submit_info_rt_pass, nullptr));
 
 	// POSTPROCESSING PASS
+	VkCommandBuffer cmd = _frames[get_current_frame_index()]._mainCommandBuffer;
+
 	record_pospo_command_buffer(cmd, swapchainImageIndex);
 
 	VkSubmitInfo pospo_submit_info = vkinit::submit_info(&cmd);
@@ -1123,7 +1179,7 @@ void Renderer::render_raytracing()
 
 	pospo_submit_info.pWaitDstStageMask = pospoWaitStages;
 	pospo_submit_info.waitSemaphoreCount = 1;
-	pospo_submit_info.pWaitSemaphores = &_offscreenSemaphore;
+	pospo_submit_info.pWaitSemaphores = &_rt_semaphore;
 	pospo_submit_info.signalSemaphoreCount = 1;
 	pospo_submit_info.pSignalSemaphores = &_frames[get_current_frame_index()]._renderSemaphore;
 

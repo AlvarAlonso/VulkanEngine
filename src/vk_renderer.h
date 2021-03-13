@@ -69,7 +69,8 @@ public:
 
 	VkCommandBuffer _deferredCommandBuffer;
 	VkCommandBuffer _raytracingCommandBuffer;
-	VkSemaphore _offscreenSemaphore;
+	VkSemaphore _gbuffer_semaphore;
+	VkSemaphore _rt_semaphore;
 
 	VkDescriptorSet _camDescriptorSet;
 	VkDescriptorSet _objectDescriptorSet;
