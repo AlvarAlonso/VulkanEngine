@@ -308,8 +308,8 @@ void RenderEngine::init_deferred_attachments()
 		1
 	};
 
-	_positionImage._format = VK_FORMAT_R8G8B8A8_UNORM;
-	_normalImage._format = VK_FORMAT_R8G8B8A8_UNORM;
+	_positionImage._format = VK_FORMAT_R16G16B16A16_SFLOAT;
+	_normalImage._format = VK_FORMAT_R16G16B16A16_SFLOAT;
 	_albedoImage._format = VK_FORMAT_R8G8B8A8_UNORM;
 	_depthImage._format = VK_FORMAT_D32_SFLOAT;
 
@@ -351,109 +351,107 @@ void RenderEngine::init_deferred_attachments()
 
 void RenderEngine::init_render_passes()
 {
-	{
-		//DEFERRED RENDER PASS
-		//gBuffers Pass
-		VkAttachmentDescription position_attachment = {};
-		position_attachment.format = _positionImage._format;
-		position_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
-		position_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-		position_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-		position_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-		position_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		position_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		position_attachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	//DEFERRED RENDER PASS
+	//gBuffers Pass
+	VkAttachmentDescription position_attachment = {};
+	position_attachment.format = _positionImage._format;
+	position_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
+	position_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	position_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+	position_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	position_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	position_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	position_attachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-		VkAttachmentDescription normal_attachment = {};
-		normal_attachment.format = _normalImage._format;
-		normal_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
-		normal_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-		normal_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-		normal_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-		normal_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		normal_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		normal_attachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	VkAttachmentDescription normal_attachment = {};
+	normal_attachment.format = _normalImage._format;
+	normal_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
+	normal_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	normal_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+	normal_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	normal_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	normal_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	normal_attachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-		VkAttachmentDescription albedo_attachment = {};
-		albedo_attachment.format = _albedoImage._format;
-		albedo_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
-		albedo_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-		albedo_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-		albedo_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-		albedo_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		albedo_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		albedo_attachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	VkAttachmentDescription albedo_attachment = {};
+	albedo_attachment.format = _albedoImage._format;
+	albedo_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
+	albedo_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	albedo_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+	albedo_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	albedo_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	albedo_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	albedo_attachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-		VkAttachmentDescription depth_attachment = {};
-		depth_attachment.format = _depthImage._format;
-		depth_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
-		depth_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-		depth_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-		depth_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-		depth_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		depth_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		depth_attachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+	VkAttachmentDescription depth_attachment = {};
+	depth_attachment.format = _depthImage._format;
+	depth_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
+	depth_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	depth_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+	depth_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	depth_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	depth_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	depth_attachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
-		std::array<VkAttachmentDescription, 4> attachment_descriptions = { position_attachment, normal_attachment, albedo_attachment, depth_attachment };
+	std::array<VkAttachmentDescription, 4> attachment_descriptions = { position_attachment, normal_attachment, albedo_attachment, depth_attachment };
 
-		VkAttachmentReference position_ref;
-		position_ref.attachment = 0;
-		position_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	VkAttachmentReference position_ref;
+	position_ref.attachment = 0;
+	position_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-		VkAttachmentReference normal_ref;
-		normal_ref.attachment = 1;
-		normal_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	VkAttachmentReference normal_ref;
+	normal_ref.attachment = 1;
+	normal_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-		VkAttachmentReference albedo_ref;
-		albedo_ref.attachment = 2;
-		albedo_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	VkAttachmentReference albedo_ref;
+	albedo_ref.attachment = 2;
+	albedo_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-		std::array<VkAttachmentReference, 3> color_references = { position_ref, normal_ref, albedo_ref };
+	std::array<VkAttachmentReference, 3> color_references = { position_ref, normal_ref, albedo_ref };
 
-		VkAttachmentReference depth_ref;
-		depth_ref.attachment = 3;
-		depth_ref.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+	VkAttachmentReference depth_ref;
+	depth_ref.attachment = 3;
+	depth_ref.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
-		VkSubpassDescription subpass = {};
-		subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-		subpass.colorAttachmentCount = static_cast<uint32_t>(color_references.size());
-		subpass.pColorAttachments = color_references.data();
-		subpass.pDepthStencilAttachment = &depth_ref;
+	VkSubpassDescription subpass = {};
+	subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+	subpass.colorAttachmentCount = static_cast<uint32_t>(color_references.size());
+	subpass.pColorAttachments = color_references.data();
+	subpass.pDepthStencilAttachment = &depth_ref;
 
-		std::array<VkSubpassDependency, 2> dependencies;
+	std::array<VkSubpassDependency, 2> dependencies;
 
-		dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
-		dependencies[0].dstSubpass = 0;
-		dependencies[0].srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-		dependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-		dependencies[0].srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
-		dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-		dependencies[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+	dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
+	dependencies[0].dstSubpass = 0;
+	dependencies[0].srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+	dependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	dependencies[0].srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+	dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+	dependencies[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
-		dependencies[1].srcSubpass = 0;
-		dependencies[1].dstSubpass = VK_SUBPASS_EXTERNAL;
-		dependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-		dependencies[1].dstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-		dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-		dependencies[1].dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
-		dependencies[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+	dependencies[1].srcSubpass = 0;
+	dependencies[1].dstSubpass = VK_SUBPASS_EXTERNAL;
+	dependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	dependencies[1].dstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+	dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+	dependencies[1].dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+	dependencies[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
-		VkRenderPassCreateInfo deferred_pass = {};
-		deferred_pass.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-		deferred_pass.pNext = nullptr;
-		deferred_pass.attachmentCount = static_cast<uint32_t>(attachment_descriptions.size());
-		deferred_pass.pAttachments = attachment_descriptions.data();
-		deferred_pass.subpassCount = 1;
-		deferred_pass.pSubpasses = &subpass;
-		deferred_pass.dependencyCount = static_cast<uint32_t>(dependencies.size());
-		deferred_pass.pDependencies = dependencies.data();
+	VkRenderPassCreateInfo deferred_pass = {};
+	deferred_pass.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+	deferred_pass.pNext = nullptr;
+	deferred_pass.attachmentCount = static_cast<uint32_t>(attachment_descriptions.size());
+	deferred_pass.pAttachments = attachment_descriptions.data();
+	deferred_pass.subpassCount = 1;
+	deferred_pass.pSubpasses = &subpass;
+	deferred_pass.dependencyCount = static_cast<uint32_t>(dependencies.size());
+	deferred_pass.pDependencies = dependencies.data();
 
-		VK_CHECK(vkCreateRenderPass(_device, &deferred_pass, nullptr, &_deferredRenderPass));
+	VK_CHECK(vkCreateRenderPass(_device, &deferred_pass, nullptr, &_deferredRenderPass));
 
-		_mainDeletionQueue.push_function([=]() {
-			vkDestroyRenderPass(_device, _deferredRenderPass, nullptr);
-			});
-	}
+	_mainDeletionQueue.push_function([=]() {
+		vkDestroyRenderPass(_device, _deferredRenderPass, nullptr);
+		});
 }
 
 void RenderEngine::init_framebuffers()
@@ -1047,14 +1045,14 @@ void RenderEngine::create_raytracing_pipelines(const int& renderablesCount)
 	sceneBufferBinding.binding = 8;
 	sceneBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 	sceneBufferBinding.descriptorCount = 1;
-	sceneBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
+	sceneBufferBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
 	// Materials
 	VkDescriptorSetLayoutBinding materialBufferBinding{};
 	materialBufferBinding.binding = 9;
 	materialBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 	materialBufferBinding.descriptorCount = 1;
-	materialBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
+	materialBufferBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
 
 	// Textures
 	VkDescriptorSetLayoutBinding textureBufferBinding{};

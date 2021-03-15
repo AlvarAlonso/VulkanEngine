@@ -71,7 +71,7 @@ void main()
 	int occlusionTextureIdx = int(material.emissive_metRough_occlusion_normal_indices.z);
 	vec3 occlusion_texture = texture(textures[occlusionTextureIdx], uv).xyz;
 	
-	if(occlusionTextureIdx >= 0 && occlusion_texture.x < 0.2 && occlusion_texture.y < 0.2 && occlusion_texture.z < 0.2)
+	if(occlusionTextureIdx >= 0 && occlusion_texture.x < 0.001 && occlusion_texture.y < 0.001 && occlusion_texture.z < 0.001)
 	{
 		prd.color_dist.w = gl_RayTmaxEXT;
 		prd.origin.xyz = offsetPositionAlongNormal(worldPos, -N);
@@ -104,11 +104,6 @@ void main()
 
 	//COMPUTE LIGHT
 	vec3 totalLight = vec3(0);
-
-	// Update seed
-	//prd.seed = uint(renderableIndex * gl_PrimitiveID / gl_InstanceCustomIndexEXT);
-
-	//uint seed = tea(gl_LaunchIDEXT.y * gl_LaunchSizeEXT.x + gl_LaunchIDEXT.x, gl_LaunchIDEXT.x * gl_LaunchSizeEXT.y);
 
   for(int i = 0; i < 1; i++)
   {

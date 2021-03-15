@@ -15,8 +15,8 @@ layout (location = 2) out vec4 outFragColor;
 struct Material {
 	vec4 color;
 	vec4 emissive_factor;
-	vec4 rh_met_ti_color; // Color is the index to the color texture
-	vec4 emissive_metRough_occlusion_normal; // Indices to material textures
+	vec4 roughness_metallic_tilling_color_factors; // Color is the index to the color texture
+	vec4 emissive_metRough_occlusion_normal_indices; // Indices to material textures
 };
 
 layout( push_constant, std140 ) uniform ObjectIndices {
@@ -30,7 +30,20 @@ layout(set = 1, binding = 1) uniform sampler2D textures[];
 void main() 
 {	
 	int matIndex = int(objectPushConstant.matIndex.x);
-	int textureIndex = int(materials.m[matIndex].rh_met_ti_color.w);
+	Material material = materials.m[matIndex];
+
+	int textureIndex = int(materials.m[matIndex].roughness_metallic_tilling_color_factors.w);
+
+	int occlusionTextureIdx = int(material.emissive_metRough_occlusion_normal_indices.z);
+	vec3 occlusionTexture = texture(textures[occlusionTextureIdx], texCoord).xyz;
+
+	if(occlusionTextureIdx >= 0 && occlusionTexture.x < 0.001 && occlusionTexture.y < 0.001 && occlusionTexture.z < 0.001)
+	{
+		discard;
+	}
+
+	float tilling = material.roughness_metallic_tilling_color_factors.z;
+	vec2 uv = texCoord * tilling;
 
 	vec3 color;
 
@@ -40,11 +53,10 @@ void main()
 	}
 	else
 	{
-		color = texture(textures[textureIndex], texCoord).xyz;
+		color = texture(textures[textureIndex], uv).xyz;
 	}
 
 	outPosition = vec4(inPosition, 1.0);
-	outNormal = vec4(inNormal, 1.0);
-	outFragColor = vec4(color, 1.0);
-	outFragColor = vec4(1.0, 0.0, 0.0, 1.0);
+	outNormal = vec4(inNormal, 1.0) * 0.5 + vec4(0.5);
+	outFragColor = vec4(color, float(matIndex) / 100.0);
 }

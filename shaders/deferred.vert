@@ -26,8 +26,8 @@ void main()
 	mat4 transformMatrix = (cameraData.viewproj * modelMatrix);
 
 	gl_Position = transformMatrix * vec4(vPosition, 1.0f);
-	
-	outPosition = vPosition;
-	outNormal = vNormal;
+
+	outPosition = vec3(modelMatrix * vec4(vPosition, 1.0));
+	outNormal = mat3(transpose(inverse(modelMatrix))) * vNormal;
 	texCoord = vTexCoord;
 }

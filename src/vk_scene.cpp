@@ -19,18 +19,18 @@ void Scene::generate_sample_scene()
 	duckPrefab->register_prefab("pato");
 
 	RenderObject* duck = new RenderObject();
-	duck->_model = glm::translate(duck->_model, glm::vec3{ 0, 1, 0 });
+	duck->_model = glm::translate(glm::vec3{ 0, 0, 0 });
 	duck->_prefab = duckPrefab;
 	*/
-	/*
+	
 	Prefab* helmetPrefab = Prefab::get("../assets/DamagedHelmet.glb");
 	helmetPrefab->register_prefab("helmet");
 
 	RenderObject* helmet = new RenderObject();
-	helmet->_model = glm::translate(glm::vec3{5, 0, 0}); 
+	helmet->_model = glm::translate(glm::vec3{5, 2, 0}); 
 	//helmet->_model = glm::rotate(glm::mat4(1), glm::radians(90.0f), glm::vec3{1, 0, 0});
 	helmet->_prefab = helmetPrefab;
-	*/
+	
 	/*
 	Prefab* cornellPrefab = Prefab::get("../assets/cornellBox.gltf");
 	cornellPrefab->register_prefab("cornell");
@@ -94,7 +94,7 @@ void Scene::generate_sample_scene()
 
 	_renderables.push_back(*treeStem);
 	_renderables.push_back(*treeLeaves);
-
+	
 
 
 	VKE::Material* grassMaterial = new VKE::Material(Texture::get("grass"));
