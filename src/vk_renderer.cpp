@@ -575,9 +575,142 @@ void Renderer::create_raytracing_descriptor_sets()
 		});
 }
 
-void Renderer::record_raytracing_command_buffer()
+void Renderer::record_gbuffers_command_buffers(RenderObject* first, int count)
 {
-	VkCommandBuffer cmd = _raytracingCommandBuffer;
+	VkCommandBufferBeginInfo deferredCmdBeginInfo = vkinit::command_buffer_begin_info(VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
+
+	VK_CHECK(vkBeginCommandBuffer(_gbuffersCommandBuffer, &deferredCmdBeginInfo));
+
+	VkClearValue first_clearValue;
+	first_clearValue.color = { {0.2f, 0.2f, 0.2f, 1.0f} };
+
+	VkClearValue first_depthClear;
+	first_depthClear.depthStencil.depth = 1.0f;
+
+	VkRenderPassBeginInfo rpInfo = vkinit::renderpass_begin_info(re->_deferredRenderPass, re->_windowExtent, re->_offscreen_framebuffer);
+
+	std::array<VkClearValue, 4> first_clearValues = { first_clearValue, first_clearValue, first_clearValue, first_depthClear };
+
+	rpInfo.clearValueCount = static_cast<uint32_t>(first_clearValues.size());
+	rpInfo.pClearValues = first_clearValues.data();
+
+	vkCmdBeginRenderPass(_gbuffersCommandBuffer, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+	vkCmdBindPipeline(_gbuffersCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_deferredPipeline);
+
+	vkCmdBindDescriptorSets(_gbuffersCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_deferredPipelineLayout, 0, 1, &_camDescriptorSet, 0, nullptr);
+
+	vkCmdBindDescriptorSets(_gbuffersCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_deferredPipelineLayout, 1, 1, &_materialsDescriptorSet, 0, nullptr);
+
+	VKE::Prefab* lastPrefab = nullptr;
+	for (int i = 0; i < count; i++)
+	{
+		RenderObject& object = first[i];
+
+		if (object._prefab != lastPrefab)
+		{
+			VkDeviceSize offset = 0;
+			vkCmdBindVertexBuffers(_gbuffersCommandBuffer, 0, 1, &object._prefab->_vertices.vertexBuffer._buffer, &offset);
+			if (object._prefab->_indices.count > 0)
+			{
+				vkCmdBindIndexBuffer(_gbuffersCommandBuffer, object._prefab->_indices.indexBuffer._buffer, 0, VK_INDEX_TYPE_UINT32);
+			}
+		}
+
+		object._prefab->draw(object._model, _gbuffersCommandBuffer, re->_deferredPipelineLayout);
+	}
+
+	vkCmdEndRenderPass(_gbuffersCommandBuffer);
+
+	VK_CHECK(vkEndCommandBuffer(_gbuffersCommandBuffer));
+}
+
+void Renderer::record_rtShadows_command_buffer()
+{
+	VkCommandBuffer cmd = _rtShadowsCommandBuffer;
+
+	VkCommandBufferBeginInfo cmdBufInfo = vkinit::command_buffer_begin_info(VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
+
+	VkImageSubresourceRange subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+
+	VK_CHECK(vkBeginCommandBuffer(cmd, &cmdBufInfo));
+
+	/*
+		Setup the buffer regions pointing to the shaders in our shader binding table
+	*/
+
+	const uint32_t handleSizeAligned = vkutil::get_aligned_size(re->_rayTracingPipelineProperties.shaderGroupHandleSize, re->_rayTracingPipelineProperties.shaderGroupHandleAlignment);
+
+	VkBufferDeviceAddressInfoKHR raygenDeviceAddressInfo{};
+	raygenDeviceAddressInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+	raygenDeviceAddressInfo.buffer = re->_rtShadowsPipeline._raygenShaderBindingTable._buffer;
+
+	VkStridedDeviceAddressRegionKHR raygenShaderSbtEntry{};
+	raygenShaderSbtEntry.deviceAddress = vkGetBufferDeviceAddress(_device, &raygenDeviceAddressInfo);
+	raygenShaderSbtEntry.stride = handleSizeAligned;
+	raygenShaderSbtEntry.size = handleSizeAligned;
+
+	VkBufferDeviceAddressInfoKHR missDeviceAddressInfo{};
+	missDeviceAddressInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+	missDeviceAddressInfo.buffer = re->_rtShadowsPipeline._missShaderBindingTable._buffer;
+
+	VkStridedDeviceAddressRegionKHR missShaderSbtEntry{};
+	missShaderSbtEntry.deviceAddress = vkGetBufferDeviceAddress(_device, &missDeviceAddressInfo);
+	missShaderSbtEntry.stride = handleSizeAligned;
+	missShaderSbtEntry.size = handleSizeAligned;
+
+	VkBufferDeviceAddressInfoKHR hitDeviceAddressInfo{};
+	hitDeviceAddressInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+	hitDeviceAddressInfo.buffer = re->_rtShadowsPipeline._hitShaderBindingTable._buffer;
+
+	VkStridedDeviceAddressRegionKHR hitShaderSbtEntry{};
+	hitShaderSbtEntry.deviceAddress = vkGetBufferDeviceAddress(_device, &hitDeviceAddressInfo);
+	hitShaderSbtEntry.stride = handleSizeAligned;
+	hitShaderSbtEntry.size = handleSizeAligned;
+
+	VkStridedDeviceAddressRegionKHR callableShaderSbtEntry{};
+
+	/*
+		Dispatch the ray tracing commands
+	*/
+
+	vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, re->_rtShadowsPipeline._pipeline);
+	vkCmdPushConstants(cmd, re->_rtFinalPipeline._layout, VK_SHADER_STAGE_RAYGEN_BIT_KHR, 0, sizeof(RtPushConstant), &re->_rtPushConstant);
+	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, re->_rtShadowsPipeline._layout, 0, 1, &_rtShadowsDescriptorSet, 0, 0);
+
+	re->vkCmdTraceRaysKHR(
+		cmd,
+		&raygenShaderSbtEntry,
+		&missShaderSbtEntry,
+		&hitShaderSbtEntry,
+		&callableShaderSbtEntry,
+		re->_windowExtent.width,
+		re->_windowExtent.height,
+		1);
+
+	VkMemoryBarrier memoryBarrier = {};
+	memoryBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+	memoryBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+	memoryBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+	vkCmdPipelineBarrier(cmd,
+		VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
+		VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+		0,
+		1, &memoryBarrier,
+		0, nullptr,
+		0, nullptr);
+
+	// Bind the compute shader pipeline
+	vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, re->_denoiserPipeline);
+	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, re->_denoiserPipelineLayout, 0, 1, &_denoiserDescriptorSet, 0, nullptr);
+	// Run the compute shader with enough workgroups to cover the entire buffer:
+	vkCmdDispatch(cmd, (uint32_t(re->_windowExtent.width) + re->workgroup_width - 1) / re->workgroup_width,
+		(uint32_t(re->_windowExtent.height) + re->workgroup_height - 1) / re->workgroup_height, 1);
+}
+
+void Renderer::record_rtFinal_command_buffer()
+{
+	VkCommandBuffer cmd = _rtFinalCommandBuffer;
 
 	VkCommandBufferBeginInfo cmdBufInfo = vkinit::command_buffer_begin_info(VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
 
@@ -637,25 +770,6 @@ void Renderer::record_raytracing_command_buffer()
 		re->_windowExtent.width,
 		re->_windowExtent.height,
 		1);
-
-		VkMemoryBarrier memoryBarrier = {};
-		memoryBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-		memoryBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-		memoryBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-		vkCmdPipelineBarrier(cmd,
-		VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
-		VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-		0,
-		1, &memoryBarrier,
-		0, nullptr,
-		0, nullptr);
-
-		// Bind the compute shader pipeline
-		vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, re->_denoiserPipeline);
-		vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, re->_denoiserPipelineLayout, 0, 1, &_denoiserDescriptorSet, 0, nullptr);
-		// Run the compute shader with enough workgroups to cover the entire buffer:
-		vkCmdDispatch(cmd, (uint32_t(re->_windowExtent.width) + re->workgroup_width - 1) / re->workgroup_width,
-		(uint32_t(re->_windowExtent.height) + re->workgroup_height - 1) / re->workgroup_height, 1);
 
 	{
 		VkImageMemoryBarrier barrier = {};
@@ -765,10 +879,11 @@ void Renderer::init_commands()
 	VK_CHECK(vkCreateCommandPool(_device, &commandPoolInfo, nullptr, &_deferredCommandPool));
 
 	VkCommandBufferAllocateInfo cmdAllocInfo = vkinit::command_buffer_allocate_info(_deferredCommandPool, 1);
-	VK_CHECK(vkAllocateCommandBuffers(_device, &cmdAllocInfo, &_deferredCommandBuffer));
+	VK_CHECK(vkAllocateCommandBuffers(_device, &cmdAllocInfo, &_gbuffersCommandBuffer));
 
 	//raytracing command buffer
-	VK_CHECK(vkAllocateCommandBuffers(_device, &cmdAllocInfo, &_raytracingCommandBuffer));
+	VK_CHECK(vkAllocateCommandBuffers(_device, &cmdAllocInfo, &_rtShadowsCommandBuffer));
+	VK_CHECK(vkAllocateCommandBuffers(_device, &cmdAllocInfo, &_rtFinalCommandBuffer));
 
 	re->_mainDeletionQueue.push_function([=]() {
 		vkDestroyCommandPool(_device, _deferredCommandPool, nullptr);
@@ -787,12 +902,14 @@ void Renderer::init_sync_structures()
 	semaphoreCreateInfo.pNext = nullptr;
 	semaphoreCreateInfo.flags = 0;
 
-	VK_CHECK(vkCreateSemaphore(_device, &semaphoreCreateInfo, nullptr, &_gbuffer_semaphore));
-	VK_CHECK(vkCreateSemaphore(_device, &semaphoreCreateInfo, nullptr, &_rt_semaphore));
+	VK_CHECK(vkCreateSemaphore(_device, &semaphoreCreateInfo, nullptr, &_gbufferSemaphore));
+	VK_CHECK(vkCreateSemaphore(_device, &semaphoreCreateInfo, nullptr, &_rtShadowsSemaphore));
+	VK_CHECK(vkCreateSemaphore(_device, &semaphoreCreateInfo, nullptr, &_rtFinalSemaphore));
 
 	re->_mainDeletionQueue.push_function([=]() {
-		vkDestroySemaphore(_device, _gbuffer_semaphore, nullptr);
-		vkDestroySemaphore(_device, _rt_semaphore, nullptr);
+		vkDestroySemaphore(_device, _gbufferSemaphore, nullptr);
+		vkDestroySemaphore(_device, _rtShadowsSemaphore, nullptr);
+		vkDestroySemaphore(_device, _rtFinalSemaphore, nullptr);
 		});
 
 	for (int i = 0; i < FRAME_OVERLAP; i++)
@@ -830,58 +947,6 @@ void Renderer::create_descriptor_buffers()
 
 	//deferred
 	_objectBuffer = vkutil::create_buffer(_allocator, sizeof(VKE::MaterialToShader) * MAX_MATERIALS, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
-}
-
-void Renderer::record_deferred_command_buffers(RenderObject* first, int count)
-{
-	//FIRST PASS
-
-	VkCommandBufferBeginInfo deferredCmdBeginInfo = vkinit::command_buffer_begin_info(VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
-
-	VK_CHECK(vkBeginCommandBuffer(_deferredCommandBuffer, &deferredCmdBeginInfo));
-
-	VkClearValue first_clearValue;
-	first_clearValue.color = { {0.2f, 0.2f, 0.2f, 1.0f} };
-
-	VkClearValue first_depthClear;
-	first_depthClear.depthStencil.depth = 1.0f;
-
-	VkRenderPassBeginInfo rpInfo = vkinit::renderpass_begin_info(re->_deferredRenderPass, re->_windowExtent, re->_offscreen_framebuffer);
-
-	std::array<VkClearValue, 4> first_clearValues = { first_clearValue, first_clearValue, first_clearValue, first_depthClear };
-
-	rpInfo.clearValueCount = static_cast<uint32_t>(first_clearValues.size());
-	rpInfo.pClearValues = first_clearValues.data();
-
-	vkCmdBeginRenderPass(_deferredCommandBuffer, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-	vkCmdBindPipeline(_deferredCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_deferredPipeline);
-
-	vkCmdBindDescriptorSets(_deferredCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_deferredPipelineLayout, 0, 1, &_camDescriptorSet, 0, nullptr);
-
-	vkCmdBindDescriptorSets(_deferredCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_deferredPipelineLayout, 1, 1, &_materialsDescriptorSet, 0, nullptr);
-
-	VKE::Prefab* lastPrefab = nullptr;
-	for(int i = 0; i < count; i++)
-	{
-		RenderObject& object = first[i];
-
-		if(object._prefab != lastPrefab)
-		{
-			VkDeviceSize offset = 0;
-			vkCmdBindVertexBuffers(_deferredCommandBuffer, 0, 1, &object._prefab->_vertices.vertexBuffer._buffer, &offset);
-			if(object._prefab->_indices.count > 0)
-			{
-				vkCmdBindIndexBuffer(_deferredCommandBuffer, object._prefab->_indices.indexBuffer._buffer, 0, VK_INDEX_TYPE_UINT32);
-			}
-		}
-
-		object._prefab->draw(object._model, _deferredCommandBuffer, re->_deferredPipelineLayout);
-	}
-
-	vkCmdEndRenderPass(_deferredCommandBuffer);
-
-	VK_CHECK(vkEndCommandBuffer(_deferredCommandBuffer));
 }
 
 void Renderer::init_descriptors()
@@ -1125,31 +1190,43 @@ void Renderer::render_raytracing()
 	update_uniform_buffers(currentScene->_renderables.data(), currentScene->_renderables.size());
 	update_descriptors(currentScene->_renderables.data(), currentScene->_renderables.size());
 
-	record_deferred_command_buffers(currentScene->_renderables.data(), currentScene->_renderables.size());
+	record_gbuffers_command_buffers(currentScene->_renderables.data(), currentScene->_renderables.size());
 
 	// G-BUFFER PASS
 	VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
 
-	VkSubmitInfo submit_info_gbuffer_pass = vkinit::submit_info(&_deferredCommandBuffer);
+	VkSubmitInfo submit_info_gbuffer_pass = vkinit::submit_info(&_gbuffersCommandBuffer);
 	submit_info_gbuffer_pass.pWaitDstStageMask = waitStages;
 	submit_info_gbuffer_pass.waitSemaphoreCount = 1;
 	submit_info_gbuffer_pass.pWaitSemaphores = &_frames[get_current_frame_index()]._presentSemaphore;
 	submit_info_gbuffer_pass.signalSemaphoreCount = 1;
-	submit_info_gbuffer_pass.pSignalSemaphores = &_gbuffer_semaphore;
+	submit_info_gbuffer_pass.pSignalSemaphores = &_gbufferSemaphore;
 
 	VK_CHECK(vkQueueSubmit(_graphicsQueue, 1, &submit_info_gbuffer_pass, nullptr));
 
+	// RT SHADOWS & DENOISING PASS
+	record_rtShadows_command_buffer();
+
+	VkSubmitInfo submit_info_rtShadows_pass = vkinit::submit_info(&_rtShadowsCommandBuffer);
+	submit_info_rtShadows_pass.pWaitDstStageMask = waitStages;
+	submit_info_rtShadows_pass.waitSemaphoreCount = 1;
+	submit_info_rtShadows_pass.pWaitSemaphores = &_gbufferSemaphore;
+	submit_info_rtShadows_pass.signalSemaphoreCount = 1;
+	submit_info_rtShadows_pass.pSignalSemaphores = &_rtShadowsSemaphore;
+
+	VK_CHECK(vkQueueSubmit(_graphicsQueue, 1, &submit_info_rtShadows_pass, nullptr));
+
 	// RT PASS
-	record_raytracing_command_buffer();
+	record_rtFinal_command_buffer();
 
-	VkSubmitInfo submit_info_rt_pass = vkinit::submit_info(&_raytracingCommandBuffer);
-	submit_info_rt_pass.pWaitDstStageMask = waitStages;
-	submit_info_rt_pass.waitSemaphoreCount = 1;
-	submit_info_rt_pass.pWaitSemaphores = &_gbuffer_semaphore;
-	submit_info_rt_pass.signalSemaphoreCount = 1;
-	submit_info_rt_pass.pSignalSemaphores = &_rt_semaphore;
+	VkSubmitInfo submit_info_rtFinal_pass = vkinit::submit_info(&_rtFinalCommandBuffer);
+	submit_info_rtFinal_pass.pWaitDstStageMask = waitStages;
+	submit_info_rtFinal_pass.waitSemaphoreCount = 1;
+	submit_info_rtFinal_pass.pWaitSemaphores = &_rtShadowsSemaphore;
+	submit_info_rtFinal_pass.signalSemaphoreCount = 1;
+	submit_info_rtFinal_pass.pSignalSemaphores = &_rtFinalSemaphore;
 
-	VK_CHECK(vkQueueSubmit(_graphicsQueue, 1, &submit_info_rt_pass, nullptr));
+	VK_CHECK(vkQueueSubmit(_graphicsQueue, 1, &submit_info_rtFinal_pass, nullptr));
 
 	// POSTPROCESSING PASS
 	VkCommandBuffer cmd = _frames[get_current_frame_index()]._mainCommandBuffer;
@@ -1162,7 +1239,7 @@ void Renderer::render_raytracing()
 
 	pospo_submit_info.pWaitDstStageMask = pospoWaitStages;
 	pospo_submit_info.waitSemaphoreCount = 1;
-	pospo_submit_info.pWaitSemaphores = &_rt_semaphore;
+	pospo_submit_info.pWaitSemaphores = &_rtFinalSemaphore;
 	pospo_submit_info.signalSemaphoreCount = 1;
 	pospo_submit_info.pSignalSemaphores = &_frames[get_current_frame_index()]._renderSemaphore;
 
@@ -1184,54 +1261,6 @@ void Renderer::render_raytracing()
 
 
 	_frameNumber++;
-}
-
-void Renderer::draw_deferred(VkCommandBuffer cmd, int imageIndex)
-{
-	//SECOND PASS
-
-	VK_CHECK(vkResetCommandBuffer(cmd, 0));
-
-	VkCommandBufferBeginInfo cmdBeginInfo = vkinit::command_buffer_begin_info(VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT);
-
-	VK_CHECK(vkBeginCommandBuffer(cmd, &cmdBeginInfo));
-
-	VkClearValue clearValue;
-	float flash = abs(sin(_frameNumber / 120.0f));
-	clearValue.color = { {0.0f, 0.0f, flash, 1.0f} };
-
-	VkClearValue depthClear;
-	depthClear.depthStencil.depth = 1.0f;
-
-	VkRenderPassBeginInfo light_rpInfo = vkinit::renderpass_begin_info(re->_defaultRenderPass, re->_windowExtent, re->_framebuffers[imageIndex]);
-
-	std::array<VkClearValue, 2> clearValues = { clearValue, depthClear };
-
-	light_rpInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
-	light_rpInfo.pClearValues = clearValues.data();
-
-	vkCmdBeginRenderPass(cmd, &light_rpInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-	vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_lightPipeline);
-
-	int frameIndex = _frameNumber % FRAME_OVERLAP;
-	uint32_t uniform_offset = vkutil::get_aligned_size(sizeof(GPUSceneData) * frameIndex, re->_gpuProperties.limits.minUniformBufferOffsetAlignment);
-	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_lightPipelineLayout, 0, 1, &_frames[get_current_frame_index()].globalDescriptor, 1, &uniform_offset);
-
-	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_lightPipelineLayout, 1, 1, &re->_gbuffersDescriptorSet, 0, nullptr);
-
-	//deferred quad
-	VkDeviceSize offset = 0;
-	vkCmdBindVertexBuffers(cmd, 0, 1, &render_quad._vertexBuffer._buffer, &offset);
-	vkCmdBindIndexBuffer(cmd, render_quad._indexBuffer._buffer, 0, VK_INDEX_TYPE_UINT32);
-
-	vkCmdDrawIndexed(cmd, static_cast<uint32_t>(render_quad._indices.size()), 1, 0, 0, 0);
-
-	ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
-
-	vkCmdEndRenderPass(cmd);
-
-	VK_CHECK(vkEndCommandBuffer(cmd));
 }
 
 FrameData& Renderer::get_current_frame()

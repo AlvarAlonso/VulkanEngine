@@ -67,10 +67,12 @@ public:
 	VkCommandPool _forwardCommandPool;
 	VkCommandPool _deferredCommandPool;
 
-	VkCommandBuffer _deferredCommandBuffer;
-	VkCommandBuffer _raytracingCommandBuffer;
-	VkSemaphore _gbuffer_semaphore;
-	VkSemaphore _rt_semaphore;
+	VkCommandBuffer _gbuffersCommandBuffer;
+	VkCommandBuffer _rtShadowsCommandBuffer;
+	VkCommandBuffer _rtFinalCommandBuffer;
+	VkSemaphore		_gbufferSemaphore;
+	VkSemaphore		_rtShadowsSemaphore;
+	VkSemaphore		_rtFinalSemaphore;
 
 	VkDescriptorSet _camDescriptorSet;
 	VkDescriptorSet _objectDescriptorSet;
@@ -125,7 +127,11 @@ private:
 
 	void create_raytracing_descriptor_sets();
 
-	void record_raytracing_command_buffer();
+	void record_gbuffers_command_buffers(RenderObject* first, int count);
+
+	void record_rtShadows_command_buffer();
+
+	void record_rtFinal_command_buffer();
 
 	void record_pospo_command_buffer(VkCommandBuffer cmd, uint32_t swapchainImageIndex);
 
@@ -137,8 +143,6 @@ private:
 
 	void create_descriptor_buffers();
 
-	void record_deferred_command_buffers(RenderObject* first, int count);
-
 	void init_descriptors();
 
 	//update descriptors
@@ -147,12 +151,7 @@ private:
 
 	//draw functions
 
-	void render_deferred();
-
 	void render_raytracing();
-
-
-	void draw_deferred(VkCommandBuffer cmd, int imageIndex);		
 
 	FrameData& get_current_frame();
 
