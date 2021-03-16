@@ -15,20 +15,19 @@ layout(location = 1) rayPayloadEXT ShadowRayPayload shadowPrd;
 
 // Descriptors
 layout(binding = 0, set = 0) uniform accelerationStructureEXT topLevelAS;
-layout(binding = 3, set = 0) uniform CameraProperties 
+layout(binding = 1, set = 0) uniform CameraProperties 
 {
 	mat4 viewInverse;
 	mat4 projInverse;
 	vec4 position;
 } cam;
-
-layout(binding = 4, set = 0, scalar) buffer Vertices { Vertex v[]; } vertices[];
-layout(binding = 5, set = 0) buffer Indices { uint i[]; } indices[];
-layout(binding = 6, set = 0) buffer Transforms { mat4 t[]; } transforms;
-layout(binding = 7, set = 0) buffer Primitives { Primitive p[]; } primitives;
-layout(binding = 8, set = 0) uniform Lights { Light l[5]; } lights;
-layout(binding = 9, set = 0) buffer Materials { Material m[]; } materials;
-layout(binding = 10, set = 0) uniform sampler2D textures[];
+layout(binding = 3, set = 0, scalar) buffer Vertices { Vertex v[]; } vertices[];
+layout(binding = 4, set = 0) buffer Indices { uint i[]; } indices[];
+layout(binding = 5, set = 0) buffer Transforms { mat4 t[]; } transforms;
+layout(binding = 6, set = 0) buffer Primitives { Primitive p[]; } primitives;
+layout(binding = 7, set = 0) uniform Lights { Light l[5]; } lights;
+layout(binding = 8, set = 0) buffer Materials { Material m[]; } materials;
+layout(binding = 9, set = 0) uniform sampler2D textures[];
 
 void main()
 {

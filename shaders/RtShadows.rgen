@@ -1,0 +1,141 @@
+#version 460
+#extension GL_EXT_ray_tracing : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_GOOGLE_include_directive : require
+
+#include "random.h"
+#include "shaderCommon.h"
+
+const int MAX_MATERIALS = 100;
+
+layout(binding = 0, set = 0) uniform accelerationStructureEXT topLevelAS;
+layout(binding = 2, set = 0) uniform sampler2D gbuffers[]; // 0 = position, 1 = normal, 2 = albedo
+layout(binding = 7, set = 0) uniform Lights { Light l[5]; } lights;
+layout(binding = 8, set = 0) buffer Materials { Material m[]; } materials;
+layout(binding = 9, set = 0) uniform sampler2D textures[];
+layout(binding = 10, set = 0, rgba8) uniform image2D shadowTextures[];
+
+layout( push_constant ) uniform RtPushConstant {
+	int frame;
+} pushConstant;
+
+// Payload
+layout(location = 0) rayPayloadEXT RayPayload prd;
+layout(location = 1) rayPayloadEXT ShadowRayPayload shadowPrd;
+
+const uint MAX_RECURSION = 10;
+
+void main() 
+{
+	prd.seed = tea(gl_LaunchIDEXT.y * gl_LaunchSizeEXT.x + gl_LaunchIDEXT.x, pushConstant.frame);
+	
+	const vec2 pixelCenter = vec2(gl_LaunchIDEXT.xy) + vec2(0.5);
+	vec2 gbufferUV = vec2(pixelCenter.x / gl_LaunchSizeEXT.x, pixelCenter.y / gl_LaunchSizeEXT.y);
+	
+	vec3 worldPos = texture(gbuffers[0], gbufferUV).xyz;
+	vec3 N = normalize(texture(gbuffers[1], gbufferUV).xyz * 2.0 - vec3(1.0));
+	vec3 albedo = texture(gbuffers[2], gbufferUV).xyz;
+	int matIdx = int(texture(gbuffers[2], gbufferUV).w * MAX_MATERIALS);
+
+	Material material = materials.m[matIdx];
+
+	for(int i = 0; i < 1; i++)
+	{
+		// light info
+		float lightMaxDist  = lights.l[i].position_maxDist.w;
+		vec3 lightPosition = lights.l[i].position_maxDist.xyz;
+		float radius = lights.l[i].radius;
+
+		// Point light
+		vec3 lDir      = lightPosition - worldPos;
+		float lightDistance  = length(lDir);
+
+		vec3 L = normalize(lDir);
+		float NdotL = clamp( dot( N, L ), 0.0, 1.0 );
+
+		float shadowFactor = 1.0;
+		
+		// Tracing shadow ray only if the light is visible from the surface
+		if(NdotL > 0.0)
+		{
+			// Calculates the angle of a cone that starts at position worldPosition and perfectly
+			// encapsulates a sphere at position light.position with radius light.radius
+			vec3 perpL = cross(L, vec3(0.0, 1.0, 0.0));
+			// Handle case where L = up -> perpL should then be (1, 0, 0)
+			if(perpL == vec3(0))
+			{
+			perpL.x = 1.0;
+			}
+			// Use perpL to get a vector from worldPosition to the edge of the light sphere
+			vec3 toLightEdge = normalize((lightPosition + perpL * radius) - worldPos); // radius
+			// Angle between L and toLightEdge. Used as the cone angle when sampling shadow rays
+			float coneAngle = acos(dot(L, toLightEdge)) * 2.0f;
+
+			vec3 sampledDirection = normalize(getConeSample(prd.seed, L, coneAngle));
+
+			float tMin   = 0.001;
+			float tMax   = length(lightDistance + 100);
+			uint  flags = gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsOpaqueEXT | gl_RayFlagsSkipClosestHitShaderEXT;
+			shadowPrd.alpha = 0.0f;
+			shadowPrd.hardShadowed = true;
+			
+			vec3 origin = worldPos - sampledDirection * 0.01;
+
+			// trace to the first opaque surface
+			traceRayEXT(topLevelAS,
+			flags,
+			0xFE,
+			0,
+			0,
+			1,
+			origin,
+			tMin,
+			-sampledDirection,
+			tMax,
+			1);
+			
+			if(shadowPrd.hardShadowed == true)
+			{
+				continue;
+			}
+			
+			flags = gl_RayFlagsSkipClosestHitShaderEXT;
+
+			traceRayEXT(topLevelAS,  // acceleration structure
+			flags,       // rayFlags
+			0xFD,        // cullMask TODO: 0xFD
+			1,           // sbtRecordOffset
+			0,           // sbtRecordStride
+			1,           // missIndex
+			origin,      // ray origin
+			tMin,        // ray min range
+			-sampledDirection,          // ray direction
+			tMax,        // ray max range
+			1            // payload (location = 1)
+			);
+
+		clamp(shadowPrd.alpha, 0.0, 1.0);
+		shadowFactor = 1.0 - shadowPrd.alpha;
+		if(shadowFactor < 0.0001) continue;
+	}
+
+	// TODO: Store shadow value to the corresponding texture
+}
+
+	/*
+	// Do accumulation over time
+	if(pushConstant.frame > 0)
+	{
+		float a         = 1.0f / float(pushConstant.frame + 1);
+		vec3  old_color = imageLoad(image, ivec2(gl_LaunchIDEXT.xy)).xyz;
+		imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(mix(old_color, finalColor, a), 1.0f));
+	}
+	else
+	{
+		// First frame, replace the value in the buffer
+		imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(finalColor, 1.0f));
+	}
+	*/
+
+	//imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(finalColor, 1.0f));
+}

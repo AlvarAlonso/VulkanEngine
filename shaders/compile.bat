@@ -13,5 +13,6 @@ C:\Tools\glslang\bin\glslangValidator.exe miss.rmiss -o miss.rmiss.spv --target-
 C:\Tools\glslang\bin\glslangValidator.exe raytraceShadow.rmiss -o raytraceShadow.rmiss.spv --target-env vulkan1.2
 C:\Tools\glslang\bin\glslangValidator.exe raytrace.rahit -o raytrace.rahit.spv --target-env vulkan1.2
 C:\Tools\glslang\bin\glslangValidator.exe denoiser.comp -o denoiser.comp.spv --target-env vulkan1.2
+C:\Tools\glslang\bin\glslangValidator.exe RtShadows.rgen -o RtShadows.rgen.spv --target-env vulkan1.2
 
 pause

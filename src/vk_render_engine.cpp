@@ -991,10 +991,10 @@ void RenderEngine::create_shadow_images(const int& lightsCount)
 		barriers[i] = barrier;
 	}
 
-	for (size_t i = _shadowImages.size(); i < barriers.size(); i++)
+	for (size_t i = 0; i < _denoisedShadowImages.size(); i++)
 	{
 		barrier.image = _denoisedShadowImages[i]._image;
-		barriers[i] = barrier;
+		barriers[_shadowImages.size() + i] = barrier;
 	}
 
 	vkupload::immediate_submit([&](VkCommandBuffer cmd) {
@@ -1033,59 +1033,66 @@ void RenderEngine::create_raytracing_pipelines(const Scene& scene)
 	accelerationStructureLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
 	accelerationStructureLayoutBinding.descriptorCount = 1;
 	accelerationStructureLayoutBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
+	
+	// Camera
+	VkDescriptorSetLayoutBinding uniformBufferBinding{};
+	uniformBufferBinding.binding = 1;
+	uniformBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	uniformBufferBinding.descriptorCount = 1;
+	uniformBufferBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
 	// G-Buffers
 	VkDescriptorSetLayoutBinding gbuffersLayoutBinding{};
-	gbuffersLayoutBinding.binding = 1;
+	gbuffersLayoutBinding.binding = 2;
 	gbuffersLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 	gbuffersLayoutBinding.descriptorCount = GBUFFER_NUM;
 	gbuffersLayoutBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
 
 	// Vertices
 	VkDescriptorSetLayoutBinding vertexBufferBinding{};
-	vertexBufferBinding.binding = 2;
+	vertexBufferBinding.binding = 3;
 	vertexBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 	vertexBufferBinding.descriptorCount = static_cast<uint32_t>(scene._renderables.size());
 	vertexBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
 
 	// Indices
 	VkDescriptorSetLayoutBinding indexBufferBinding{};
-	indexBufferBinding.binding = 3;
+	indexBufferBinding.binding = 4;
 	indexBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 	indexBufferBinding.descriptorCount = static_cast<uint32_t>(scene._renderables.size());
 	indexBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
 
 	// Transforms
 	VkDescriptorSetLayoutBinding transformBufferBinding{};
-	transformBufferBinding.binding = 4;
+	transformBufferBinding.binding = 5;
 	transformBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 	transformBufferBinding.descriptorCount = 1;
 	transformBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
 
 	// Primitives
 	VkDescriptorSetLayoutBinding primitiveBufferBinding{};
-	primitiveBufferBinding.binding = 5;
+	primitiveBufferBinding.binding = 6;
 	primitiveBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 	primitiveBufferBinding.descriptorCount = 1;
 	primitiveBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
 
 	// Lights
 	VkDescriptorSetLayoutBinding sceneBufferBinding{};
-	sceneBufferBinding.binding = 6;
+	sceneBufferBinding.binding = 7;
 	sceneBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 	sceneBufferBinding.descriptorCount = 1;
 	sceneBufferBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
 	// Materials
 	VkDescriptorSetLayoutBinding materialBufferBinding{};
-	materialBufferBinding.binding = 7;
+	materialBufferBinding.binding = 8;
 	materialBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 	materialBufferBinding.descriptorCount = 1;
 	materialBufferBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
 
 	// Textures
 	VkDescriptorSetLayoutBinding textureBufferBinding{};
-	textureBufferBinding.binding = 8;
+	textureBufferBinding.binding = 9;
 	textureBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 	textureBufferBinding.descriptorCount = VKE::Texture::sTexturesLoaded.size();
 	textureBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
@@ -1095,7 +1102,7 @@ void RenderEngine::create_raytracing_pipelines(const Scene& scene)
 		// Layout Bindings
 		// Shadow Images
 		VkDescriptorSetLayoutBinding shadowImagesBinding{};
-		shadowImagesBinding.binding = 9;
+		shadowImagesBinding.binding = 10;
 		shadowImagesBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
 		shadowImagesBinding.descriptorCount = static_cast<uint32_t>(scene._lights.size());
 		shadowImagesBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
@@ -1103,6 +1110,7 @@ void RenderEngine::create_raytracing_pipelines(const Scene& scene)
 		std::vector<VkDescriptorSetLayoutBinding> shadow_bindings =
 		{
 			accelerationStructureLayoutBinding,
+			uniformBufferBinding,
 			gbuffersLayoutBinding,
 			vertexBufferBinding,
 			indexBufferBinding,
@@ -1208,7 +1216,7 @@ void RenderEngine::create_raytracing_pipelines(const Scene& scene)
 				std::cout << "Shadow any hit shader succesfully loaded" << std::endl;
 			}
 
-			VkPipelineShaderStageCreateInfo chit_shader_stage_info = vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_ANY_HIT_BIT_KHR, closestHitShader);
+			VkPipelineShaderStageCreateInfo chit_shader_stage_info = vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, closestHitShader);
 			VkPipelineShaderStageCreateInfo ahit_shader_stage_info = vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_ANY_HIT_BIT_KHR, shadowsAnyHitShader);
 
 			shaderStages.push_back(chit_shader_stage_info);
@@ -1302,12 +1310,6 @@ void RenderEngine::create_raytracing_pipelines(const Scene& scene)
 	{
 #pragma region Raytracing Final Pass
 		// Layout Bindings
-		// Camera
-		VkDescriptorSetLayoutBinding uniformBufferBinding{};
-		uniformBufferBinding.binding = 9;
-		uniformBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-		uniformBufferBinding.descriptorCount = 1;
-		uniformBufferBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
 		// Output Image
 		VkDescriptorSetLayoutBinding resultImageLayoutBinding{};
@@ -1325,6 +1327,7 @@ void RenderEngine::create_raytracing_pipelines(const Scene& scene)
 
 		std::vector<VkDescriptorSetLayoutBinding> rt_bindings({
 			accelerationStructureLayoutBinding,
+			uniformBufferBinding,
 			gbuffersLayoutBinding,
 			vertexBufferBinding,
 			indexBufferBinding,
@@ -1333,7 +1336,6 @@ void RenderEngine::create_raytracing_pipelines(const Scene& scene)
 			sceneBufferBinding,
 			materialBufferBinding,
 			textureBufferBinding,
-			uniformBufferBinding,
 			resultImageLayoutBinding,
 			denoisedShadowsImagesBinding
 			});
@@ -1679,25 +1681,19 @@ void RenderEngine::create_raytracing_descriptor_pool()
 {
 	//used by raytracing and also pospo
 	std::vector<VkDescriptorPoolSize> poolSizes = {
-	{VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1},
-	{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1},
-	{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1},
-	{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1},
-	{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1},
-	{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1},
-	{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1},
-	{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1},
-	{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1},
-	{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1},
-	{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 10},
-	{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 10},
+	{VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 2},
+	{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 100},
+	{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 5},
+	{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 10},
 	};
+
+	VkResult result;
 
 	VkDescriptorPoolCreateInfo dp_info = {};
 	dp_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
 	dp_info.pNext = nullptr;
 	dp_info.flags = 0;
-	dp_info.maxSets = 3;
+	dp_info.maxSets = 4;
 	dp_info.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
 	dp_info.pPoolSizes = poolSizes.data();
 

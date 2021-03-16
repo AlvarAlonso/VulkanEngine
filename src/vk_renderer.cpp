@@ -173,8 +173,13 @@ void Renderer::create_raytracing_descriptor_sets()
 	descriptorAccelerationStructureInfo.accelerationStructureCount = 1;
 	descriptorAccelerationStructureInfo.pAccelerationStructures = &re->_topLevelAS._handle;
 
-	// Binding 1: G-BUFFERS
+	// Binding 1: Camera Descriptor
+	VkDescriptorBufferInfo uboBufferDescriptor{};
+	uboBufferDescriptor.offset = 0;
+	uboBufferDescriptor.buffer = _ubo._buffer;
+	uboBufferDescriptor.range = sizeof(uniformData);
 
+	// Binding 2: G-BUFFERS
 	// Position
 	VkDescriptorImageInfo positionImageDescriptor{};
 	positionImageDescriptor.imageView = re->_positionImage._view;
@@ -204,7 +209,7 @@ void Renderer::create_raytracing_descriptor_sets()
 	std::vector<PrimitiveToShader> primitivesInfo;
 	std::vector<glm::mat4> transforms;
 
-	// Binding 4: Transforms Descriptor
+	// Binding 5: Transforms Descriptor
 	_transformBuffer = vkutil::create_buffer(_allocator, sizeof(glm::mat4) * MAX_OBJECTS, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 
 	VkDescriptorBufferInfo transformBufferInfo{};
@@ -214,7 +219,7 @@ void Renderer::create_raytracing_descriptor_sets()
 
 	for (int i = 0; i < renderables.size(); i++)
 	{
-		// Binding 2: RTVertices Descriptor
+		// Binding 3: RTVertices Descriptor
 		VkDescriptorBufferInfo rtVertexBufferInfo{};
 		rtVertexBufferInfo.offset = 0;
 		rtVertexBufferInfo.buffer = renderables[i]._prefab->_vertices.rtvBuffer._buffer;
@@ -222,7 +227,7 @@ void Renderer::create_raytracing_descriptor_sets()
 
 		verticesBufferInfos.push_back(rtVertexBufferInfo);
 
-		// Binding 3: Vertex Indices Descriptor
+		// Binding 4: Vertex Indices Descriptor
 		VkDescriptorBufferInfo indexBufferInfo{};
 		indexBufferInfo.offset = 0;
 		indexBufferInfo.buffer = renderables[i]._prefab->_indices.indexBuffer._buffer;
@@ -230,7 +235,7 @@ void Renderer::create_raytracing_descriptor_sets()
 
 		indicesBufferInfos.push_back(indexBufferInfo);
 
-		// Binding 5: Primitives Descriptor
+		// Binding 6: Primitives Descriptor
 		for (const auto& node : renderables[i]._prefab->_roots)
 		{
 			node->get_primitive_to_shader_info(renderables[i]._model, primitivesInfo, transforms, i);
@@ -249,7 +254,7 @@ void Renderer::create_raytracing_descriptor_sets()
 	memcpy(primitivesData, primitivesInfo.data(), primitivesInfo.size() * sizeof(PrimitiveToShader));
 	vmaUnmapMemory(_allocator, _primitiveInfoBuffer._allocation);
 
-	// Binding 6: Scene Lights Descriptor
+	// Binding 7: Scene Lights Descriptor
 	_sceneBuffer = vkutil::create_buffer(_allocator, currentScene->_lights.size() * sizeof(LightToShader), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 
 	std::vector<LightToShader> lightInfos;
@@ -275,7 +280,7 @@ void Renderer::create_raytracing_descriptor_sets()
 	memcpy(sceneData, lightInfos.data(), lightInfos.size() * sizeof(LightToShader));
 	vmaUnmapMemory(_allocator, _sceneBuffer._allocation);
 
-	// Binding 7: Materials Descriptor
+	// Binding 8: Materials Descriptor
 
 	// Create material infos vector
 	_materialInfos.resize(VKE::Material::sMaterials.size());
@@ -353,7 +358,7 @@ void Renderer::create_raytracing_descriptor_sets()
 	memcpy(materialData, _materialInfos.data(), _materialInfos.size() * sizeof(VKE::MaterialToShader));
 	vmaUnmapMemory(_allocator, _materialBuffer._allocation);
 
-	// Binding 8: Textures Descriptor
+	// Binding 9: Textures Descriptor
 	// Pass the texture data from a map to a vector, and order it by idx
 	std::vector<VkDescriptorImageInfo> textureImageInfos;
 	int texCount = VKE::Texture::textureCount;
@@ -381,7 +386,16 @@ void Renderer::create_raytracing_descriptor_sets()
 
 	// RT SHADOWS PASS DESCRIPTORS
 	{
-		// Binding 9: Shadow Images
+		VkDescriptorSetAllocateInfo alloc_info = {};
+		alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+		alloc_info.pNext = nullptr;
+		alloc_info.descriptorPool = re->_rayTracingDescriptorPool;
+		alloc_info.descriptorSetCount = 1;
+		alloc_info.pSetLayouts = &re->_rtShadowsPipeline._setLayout;
+
+		VK_CHECK(vkAllocateDescriptorSets(_device, &alloc_info, &_rtShadowsDescriptorSet));
+
+		// Binding 10: Shadow Images
 		std::vector<VkDescriptorImageInfo> shadowImageInfos;
 		shadowImageInfos.reserve(re->_shadowImages.size());
 
@@ -397,7 +411,7 @@ void Renderer::create_raytracing_descriptor_sets()
 
 		//Descriptor Writes		
 
-//		Acceleration Structure Write
+		//	Acceleration Structure Write
 		VkWriteDescriptorSet accelerationStructureWrite{};
 		accelerationStructureWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 		// The specialized acceleration structure descriptor has to be chained
@@ -407,18 +421,20 @@ void Renderer::create_raytracing_descriptor_sets()
 		accelerationStructureWrite.descriptorCount = 1;
 		accelerationStructureWrite.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
 
-		VkWriteDescriptorSet gbuffersWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, _rtShadowsDescriptorSet, gbuffersImageInfos.data(), 1, static_cast<uint32_t>(gbuffersImageInfos.size()));
-		VkWriteDescriptorSet vertexBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rtShadowsDescriptorSet, verticesBufferInfos.data(), 2, renderables.size());
-		VkWriteDescriptorSet indexBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rtShadowsDescriptorSet, indicesBufferInfos.data(), 3, renderables.size());
-		VkWriteDescriptorSet transformBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rtShadowsDescriptorSet, &transformBufferInfo, 4);
-		VkWriteDescriptorSet primitivesInfoWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rtShadowsDescriptorSet, &primitivesBufferDescriptor, 5);
-		VkWriteDescriptorSet sceneBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, _rtShadowsDescriptorSet, &sceneBufferDescriptor, 6);
-		VkWriteDescriptorSet materialBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rtShadowsDescriptorSet, &materialBufferDescriptor, 7);
-		VkWriteDescriptorSet textureImagesWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, _rtShadowsDescriptorSet, textureImageInfos.data(), 8, textureImageInfos.size());
-		VkWriteDescriptorSet shadowImagesWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, _rtFinalDescriptorSet, shadowImageInfos.data(), 9, static_cast<uint32_t>(shadowImageInfos.size()));
+		VkWriteDescriptorSet uniformBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, _rtShadowsDescriptorSet, &uboBufferDescriptor, 1);
+		VkWriteDescriptorSet gbuffersWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, _rtShadowsDescriptorSet, gbuffersImageInfos.data(), 2, static_cast<uint32_t>(gbuffersImageInfos.size()));
+		VkWriteDescriptorSet vertexBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rtShadowsDescriptorSet, verticesBufferInfos.data(), 3, renderables.size());
+		VkWriteDescriptorSet indexBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rtShadowsDescriptorSet, indicesBufferInfos.data(), 4, renderables.size());
+		VkWriteDescriptorSet transformBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rtShadowsDescriptorSet, &transformBufferInfo, 5);
+		VkWriteDescriptorSet primitivesInfoWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rtShadowsDescriptorSet, &primitivesBufferDescriptor, 6);
+		VkWriteDescriptorSet sceneBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, _rtShadowsDescriptorSet, &sceneBufferDescriptor, 7);
+		VkWriteDescriptorSet materialBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rtShadowsDescriptorSet, &materialBufferDescriptor, 8);
+		VkWriteDescriptorSet textureImagesWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, _rtShadowsDescriptorSet, textureImageInfos.data(), 9, textureImageInfos.size());
+		VkWriteDescriptorSet shadowImagesWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, _rtShadowsDescriptorSet, shadowImageInfos.data(), 10, static_cast<uint32_t>(shadowImageInfos.size()));
 
 		std::vector<VkWriteDescriptorSet> writeDescriptorSets = {
 			accelerationStructureWrite,
+			uniformBufferWrite,
 			gbuffersWrite,
 			vertexBufferWrite,
 			indexBufferWrite,
@@ -481,12 +497,6 @@ void Renderer::create_raytracing_descriptor_sets()
 
 		VK_CHECK(vkAllocateDescriptorSets(_device, &alloc_info, &_rtFinalDescriptorSet));
 
-		// Binding 9: Camera Descriptor
-		VkDescriptorBufferInfo uboBufferDescriptor{};
-		uboBufferDescriptor.offset = 0;
-		uboBufferDescriptor.buffer = _ubo._buffer;
-		uboBufferDescriptor.range = sizeof(uniformData);
-
 		// Binding 10: Result Image Descriptor
 		VkDescriptorImageInfo storageImageDescriptor{};
 		storageImageDescriptor.imageView = re->_storageImageView;
@@ -518,20 +528,21 @@ void Renderer::create_raytracing_descriptor_sets()
 		accelerationStructureWrite.descriptorCount = 1;
 		accelerationStructureWrite.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
 
-		VkWriteDescriptorSet gbuffersWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, _rtFinalDescriptorSet, gbuffersImageInfos.data(), 1, static_cast<uint32_t>(gbuffersImageInfos.size()));
-		VkWriteDescriptorSet vertexBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rtFinalDescriptorSet, verticesBufferInfos.data(), 2, renderables.size());
-		VkWriteDescriptorSet indexBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rtFinalDescriptorSet, indicesBufferInfos.data(), 3, renderables.size());
-		VkWriteDescriptorSet transformBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rtFinalDescriptorSet, &transformBufferInfo, 4);
-		VkWriteDescriptorSet primitivesInfoWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rtFinalDescriptorSet, &primitivesBufferDescriptor, 5);
-		VkWriteDescriptorSet sceneBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, _rtFinalDescriptorSet, &sceneBufferDescriptor, 6);
-		VkWriteDescriptorSet materialBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rtFinalDescriptorSet, &materialBufferDescriptor, 7);
-		VkWriteDescriptorSet textureImagesWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, _rtFinalDescriptorSet, textureImageInfos.data(), 8, textureImageInfos.size());
-		VkWriteDescriptorSet uniformBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, _rtFinalDescriptorSet, &uboBufferDescriptor, 9);
+		VkWriteDescriptorSet uniformBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, _rtFinalDescriptorSet, &uboBufferDescriptor, 1);
+		VkWriteDescriptorSet gbuffersWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, _rtFinalDescriptorSet, gbuffersImageInfos.data(), 2, static_cast<uint32_t>(gbuffersImageInfos.size()));
+		VkWriteDescriptorSet vertexBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rtFinalDescriptorSet, verticesBufferInfos.data(), 3, renderables.size());
+		VkWriteDescriptorSet indexBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rtFinalDescriptorSet, indicesBufferInfos.data(), 4, renderables.size());
+		VkWriteDescriptorSet transformBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rtFinalDescriptorSet, &transformBufferInfo, 5);
+		VkWriteDescriptorSet primitivesInfoWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rtFinalDescriptorSet, &primitivesBufferDescriptor, 6);
+		VkWriteDescriptorSet sceneBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, _rtFinalDescriptorSet, &sceneBufferDescriptor, 7);
+		VkWriteDescriptorSet materialBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rtFinalDescriptorSet, &materialBufferDescriptor, 8);
+		VkWriteDescriptorSet textureImagesWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, _rtFinalDescriptorSet, textureImageInfos.data(), 9, textureImageInfos.size());
 		VkWriteDescriptorSet resultImageWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, _rtFinalDescriptorSet, &storageImageDescriptor, 10);
 		VkWriteDescriptorSet denoisedShadowImagesWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, _rtFinalDescriptorSet, denoisedShadowImageInfos.data(), 11, static_cast<uint32_t>(denoisedShadowImageInfos.size()));
 
 		std::vector<VkWriteDescriptorSet> writeDescriptorSets = {
 			accelerationStructureWrite,
+			uniformBufferWrite,
 			gbuffersWrite,
 			vertexBufferWrite,
 			indexBufferWrite,
@@ -539,8 +550,7 @@ void Renderer::create_raytracing_descriptor_sets()
 			primitivesInfoWrite,
 			sceneBufferWrite,
 			materialBufferWrite,
-			textureImagesWrite,
-			uniformBufferWrite,		
+			textureImagesWrite,		
 			resultImageWrite,
 			denoisedShadowImagesWrite
 		};
@@ -706,6 +716,8 @@ void Renderer::record_rtShadows_command_buffer()
 	// Run the compute shader with enough workgroups to cover the entire buffer:
 	vkCmdDispatch(cmd, (uint32_t(re->_windowExtent.width) + re->workgroup_width - 1) / re->workgroup_width,
 		(uint32_t(re->_windowExtent.height) + re->workgroup_height - 1) / re->workgroup_height, 1);
+
+	VK_CHECK(vkEndCommandBuffer(cmd));
 }
 
 void Renderer::record_rtFinal_command_buffer()

@@ -9,16 +9,17 @@
 const int MAX_MATERIALS = 100;
 
 layout(binding = 0, set = 0) uniform accelerationStructureEXT topLevelAS;
-layout(binding = 1, set = 0) uniform sampler2D gbuffers[]; // 0 = position, 1 = normal, 2 = albedo
-layout(binding = 2, set = 0, rgba8) uniform image2D image;
-layout(binding = 3, set = 0) uniform CameraProperties 
+layout(binding = 1, set = 0) uniform CameraProperties
 {
 	mat4 viewInverse;
 	mat4 projInverse;
 	vec4 position;
 } cam;
-layout(binding = 8, set = 0) uniform Lights { Light l[5]; } lights;
-layout(binding = 9, set = 0) buffer Materials { Material m[]; } materials;
+layout(binding = 2, set = 0) uniform sampler2D gbuffers[]; // 0 = position, 1 = normal, 2 = albedo
+layout(binding = 7, set = 0) uniform Lights { Light l[5]; } lights;
+layout(binding = 8, set = 0) buffer Materials { Material m[]; } materials;
+layout(binding = 10, set = 0, rgba8) uniform image2D image;
+layout(binding = 11, set = 0, rgba8) uniform image2D denoisedShadowTextures[];
 
 layout( push_constant ) uniform RtPushConstant {
 	int frame;
@@ -158,9 +159,10 @@ void main()
 
     vec3 finalColor = vec3(0.0);
 	finalColor = albedo * totalLight;
+	finalColor = albedo;
 
-	
 	// Do accumulation over time
+	
 	if(pushConstant.frame > 0)
 	{
 		float a         = 1.0f / float(pushConstant.frame + 1);
@@ -173,6 +175,5 @@ void main()
 		imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(finalColor, 1.0f));
 	}
 	
-
 	//imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(finalColor, 1.0f));
 }
