@@ -166,33 +166,15 @@ void Renderer::create_raytracing_descriptor_sets()
 {
 	std::vector<RenderObject>& renderables = currentScene->_renderables;
 
-	// Allocation of raytracing DescriptorSet
-	VkDescriptorSetAllocateInfo alloc_info = {};
-	alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-	alloc_info.pNext = nullptr;
-	alloc_info.descriptorPool = re->_rayTracingDescriptorPool;
-	alloc_info.descriptorSetCount = 1;
-	alloc_info.pSetLayouts = &re->_rayTracingSetLayout;
-
-	VK_CHECK(vkAllocateDescriptorSets(_device, &alloc_info, &_rayTracingDescriptorSet));
-
+	// RT SHARED DESCRIPTORS
 	// Binding 0 : Acceleration Structure Descriptor
 	VkWriteDescriptorSetAccelerationStructureKHR descriptorAccelerationStructureInfo{};
 	descriptorAccelerationStructureInfo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR;
 	descriptorAccelerationStructureInfo.accelerationStructureCount = 1;
 	descriptorAccelerationStructureInfo.pAccelerationStructures = &re->_topLevelAS._handle;
 
-	VkWriteDescriptorSet accelerationStructureWrite{};
-	accelerationStructureWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-	// The specialized acceleration structure descriptor has to be chained
-	accelerationStructureWrite.pNext = &descriptorAccelerationStructureInfo;
-	accelerationStructureWrite.dstSet = _rayTracingDescriptorSet;
-	accelerationStructureWrite.dstBinding = 0;
-	accelerationStructureWrite.descriptorCount = 1;
-	accelerationStructureWrite.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
-
 	// Binding 1: G-BUFFERS
-	
+
 	// Position
 	VkDescriptorImageInfo positionImageDescriptor{};
 	positionImageDescriptor.imageView = re->_positionImage._view;
@@ -204,7 +186,7 @@ void Renderer::create_raytracing_descriptor_sets()
 	normalImageDescriptor.imageView = re->_normalImage._view;
 	normalImageDescriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 	normalImageDescriptor.sampler = re->_defaultSampler;
-	
+
 	// Albedo
 	VkDescriptorImageInfo albedoImageDescriptor{};
 	albedoImageDescriptor.imageView = re->_albedoImage._view;
@@ -212,18 +194,7 @@ void Renderer::create_raytracing_descriptor_sets()
 	albedoImageDescriptor.sampler = re->_defaultSampler;
 
 	std::array<VkDescriptorImageInfo, 3> gbuffersImageInfos = { positionImageDescriptor, normalImageDescriptor, albedoImageDescriptor };
-
-	// Binding 2: Result Image Descriptor
-	VkDescriptorImageInfo storageImageDescriptor{};
-	storageImageDescriptor.imageView = re->_storageImageView;
-	storageImageDescriptor.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-
-	// Binding 3: Camera Descriptor
-	VkDescriptorBufferInfo uboBufferDescriptor{};
-	uboBufferDescriptor.offset = 0;
-	uboBufferDescriptor.buffer = _ubo._buffer;
-	uboBufferDescriptor.range = sizeof(uniformData);
-
+	
 	// ----------------------------------------------------
 	std::vector<VkDescriptorBufferInfo> verticesBufferInfos;
 	std::vector<VkDescriptorBufferInfo> indicesBufferInfos;
@@ -233,7 +204,7 @@ void Renderer::create_raytracing_descriptor_sets()
 	std::vector<PrimitiveToShader> primitivesInfo;
 	std::vector<glm::mat4> transforms;
 
-	// Binding 6: Transforms Descriptor
+	// Binding 4: Transforms Descriptor
 	_transformBuffer = vkutil::create_buffer(_allocator, sizeof(glm::mat4) * MAX_OBJECTS, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 
 	VkDescriptorBufferInfo transformBufferInfo{};
@@ -243,15 +214,15 @@ void Renderer::create_raytracing_descriptor_sets()
 
 	for (int i = 0; i < renderables.size(); i++)
 	{
-		// Binding 4: RTVertices Descriptor
+		// Binding 2: RTVertices Descriptor
 		VkDescriptorBufferInfo rtVertexBufferInfo{};
 		rtVertexBufferInfo.offset = 0;
 		rtVertexBufferInfo.buffer = renderables[i]._prefab->_vertices.rtvBuffer._buffer;
 		rtVertexBufferInfo.range = renderables[i]._prefab->_vertices.count * sizeof(rtVertex);
 
 		verticesBufferInfos.push_back(rtVertexBufferInfo);
-			
-		// Binding 5: Vertex Indices Descriptor
+
+		// Binding 3: Vertex Indices Descriptor
 		VkDescriptorBufferInfo indexBufferInfo{};
 		indexBufferInfo.offset = 0;
 		indexBufferInfo.buffer = renderables[i]._prefab->_indices.indexBuffer._buffer;
@@ -259,8 +230,8 @@ void Renderer::create_raytracing_descriptor_sets()
 
 		indicesBufferInfos.push_back(indexBufferInfo);
 
-		// Binding 7: Primitives Descriptor
-		for(const auto& node : renderables[i]._prefab->_roots)
+		// Binding 5: Primitives Descriptor
+		for (const auto& node : renderables[i]._prefab->_roots)
 		{
 			node->get_primitive_to_shader_info(renderables[i]._model, primitivesInfo, transforms, i);
 		}
@@ -278,14 +249,14 @@ void Renderer::create_raytracing_descriptor_sets()
 	memcpy(primitivesData, primitivesInfo.data(), primitivesInfo.size() * sizeof(PrimitiveToShader));
 	vmaUnmapMemory(_allocator, _primitiveInfoBuffer._allocation);
 
-	// Binding 8: Scene Lights Descriptor
+	// Binding 6: Scene Lights Descriptor
 	_sceneBuffer = vkutil::create_buffer(_allocator, currentScene->_lights.size() * sizeof(LightToShader), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 
 	std::vector<LightToShader> lightInfos;
 	lightInfos.reserve(currentScene->_lights.size());
 
 	// Pass Lights to LightToShader
-	for(const auto& light : currentScene->_lights)
+	for (const auto& light : currentScene->_lights)
 	{
 		LightToShader lightInfo;
 		lightInfo._position_dist = glm::vec4(glm::vec3(light._model[3]), light._maxDist);
@@ -304,7 +275,7 @@ void Renderer::create_raytracing_descriptor_sets()
 	memcpy(sceneData, lightInfos.data(), lightInfos.size() * sizeof(LightToShader));
 	vmaUnmapMemory(_allocator, _sceneBuffer._allocation);
 
-	// Binding 9: Materials Descriptor
+	// Binding 7: Materials Descriptor
 
 	// Create material infos vector
 	_materialInfos.resize(VKE::Material::sMaterials.size());
@@ -371,7 +342,7 @@ void Renderer::create_raytracing_descriptor_sets()
 	}
 
 	_materialBuffer = vkutil::create_buffer(_allocator, _materialInfos.size() * sizeof(VKE::MaterialToShader), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
-	
+
 	VkDescriptorBufferInfo materialBufferDescriptor{};
 	materialBufferDescriptor.offset = 0;
 	materialBufferDescriptor.buffer = _materialBuffer._buffer;
@@ -382,7 +353,7 @@ void Renderer::create_raytracing_descriptor_sets()
 	memcpy(materialData, _materialInfos.data(), _materialInfos.size() * sizeof(VKE::MaterialToShader));
 	vmaUnmapMemory(_allocator, _materialBuffer._allocation);
 
-	// Binding 10: Textures Descriptor
+	// Binding 8: Textures Descriptor
 	// Pass the texture data from a map to a vector, and order it by idx
 	std::vector<VkDescriptorImageInfo> textureImageInfos;
 	int texCount = VKE::Texture::textureCount;
@@ -408,62 +379,176 @@ void Renderer::create_raytracing_descriptor_sets()
 		textureImageInfos.push_back(textureImageDescriptor);
 	}
 
-	//Descriptor Writes
-	VkWriteDescriptorSet gbuffersWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, _rayTracingDescriptorSet, gbuffersImageInfos.data(), 1, static_cast<uint32_t>(gbuffersImageInfos.size()));
-	VkWriteDescriptorSet resultImageWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, _rayTracingDescriptorSet, &storageImageDescriptor, 2);
-	VkWriteDescriptorSet uniformBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, _rayTracingDescriptorSet, &uboBufferDescriptor, 3);
-	VkWriteDescriptorSet vertexBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rayTracingDescriptorSet, verticesBufferInfos.data(), 4, renderables.size());
-	VkWriteDescriptorSet indexBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rayTracingDescriptorSet, indicesBufferInfos.data(), 5, renderables.size());
-	VkWriteDescriptorSet transformBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rayTracingDescriptorSet, &transformBufferInfo, 6);
-	VkWriteDescriptorSet primitivesInfoWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rayTracingDescriptorSet, &primitivesBufferDescriptor, 7);
-	VkWriteDescriptorSet sceneBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, _rayTracingDescriptorSet, &sceneBufferDescriptor, 8);
-	VkWriteDescriptorSet materialBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rayTracingDescriptorSet, &materialBufferDescriptor, 9);
-	VkWriteDescriptorSet textureImagesWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, _rayTracingDescriptorSet, textureImageInfos.data(), 10, textureImageInfos.size());
+	// RT SHADOWS PASS DESCRIPTORS
+	{
+		// Binding 9: Shadow Images
+		std::vector<VkDescriptorImageInfo> shadowImageInfos;
+		shadowImageInfos.reserve(re->_shadowImages.size());
 
-	std::vector<VkWriteDescriptorSet> writeDescriptorSets = {
-		accelerationStructureWrite,
-		gbuffersWrite,
-		resultImageWrite,
-		uniformBufferWrite,
-		vertexBufferWrite,
-		indexBufferWrite,
-		transformBufferWrite,
-		primitivesInfoWrite,
-		sceneBufferWrite,
-		materialBufferWrite,
-		textureImagesWrite,
-	};
+		for (const auto& shadowImage : re->_shadowImages)
+		{
+			VkDescriptorImageInfo shadowDescriptor{};
+			shadowDescriptor.sampler = VK_NULL_HANDLE;
+			shadowDescriptor.imageView = shadowImage._view;
+			shadowDescriptor.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
 
-	vkUpdateDescriptorSets(_device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, VK_NULL_HANDLE);
+			shadowImageInfos.push_back(shadowDescriptor);
+		}
 
-	// denoiser descriptor
-	VkDescriptorSetAllocateInfo denoiser_set_alloc_info = {};
-	denoiser_set_alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-	denoiser_set_alloc_info.pNext = nullptr;
-	denoiser_set_alloc_info.descriptorPool = re->_rayTracingDescriptorPool;
-	denoiser_set_alloc_info.descriptorSetCount = 1;
-	denoiser_set_alloc_info.pSetLayouts = &re->_denoiserSetLayout;
+		//Descriptor Writes		
 
-	VK_CHECK(vkAllocateDescriptorSets(_device, &denoiser_set_alloc_info, &re->_denoiserSet));
+//		Acceleration Structure Write
+		VkWriteDescriptorSet accelerationStructureWrite{};
+		accelerationStructureWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		// The specialized acceleration structure descriptor has to be chained
+		accelerationStructureWrite.pNext = &descriptorAccelerationStructureInfo;
+		accelerationStructureWrite.dstSet = _rtShadowsDescriptorSet;
+		accelerationStructureWrite.dstBinding = 0;
+		accelerationStructureWrite.descriptorCount = 1;
+		accelerationStructureWrite.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
 
-	VkDescriptorImageInfo colorImageInfo = {};
-	colorImageInfo.sampler = VK_NULL_HANDLE;
-	colorImageInfo.imageView = re->_storageImageView;
-	colorImageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+		VkWriteDescriptorSet gbuffersWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, _rtShadowsDescriptorSet, gbuffersImageInfos.data(), 1, static_cast<uint32_t>(gbuffersImageInfos.size()));
+		VkWriteDescriptorSet vertexBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rtShadowsDescriptorSet, verticesBufferInfos.data(), 2, renderables.size());
+		VkWriteDescriptorSet indexBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rtShadowsDescriptorSet, indicesBufferInfos.data(), 3, renderables.size());
+		VkWriteDescriptorSet transformBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rtShadowsDescriptorSet, &transformBufferInfo, 4);
+		VkWriteDescriptorSet primitivesInfoWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rtShadowsDescriptorSet, &primitivesBufferDescriptor, 5);
+		VkWriteDescriptorSet sceneBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, _rtShadowsDescriptorSet, &sceneBufferDescriptor, 6);
+		VkWriteDescriptorSet materialBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rtShadowsDescriptorSet, &materialBufferDescriptor, 7);
+		VkWriteDescriptorSet textureImagesWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, _rtShadowsDescriptorSet, textureImageInfos.data(), 8, textureImageInfos.size());
+		VkWriteDescriptorSet shadowImagesWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, _rtFinalDescriptorSet, shadowImageInfos.data(), 9, static_cast<uint32_t>(shadowImageInfos.size()));
 
-	VkDescriptorImageInfo shadowImageInfo = {};
-	shadowImageInfo.sampler = VK_NULL_HANDLE;
-	shadowImageInfo.imageView = re->_shadowImage._view;
-	shadowImageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+		std::vector<VkWriteDescriptorSet> writeDescriptorSets = {
+			accelerationStructureWrite,
+			gbuffersWrite,
+			vertexBufferWrite,
+			indexBufferWrite,
+			transformBufferWrite,
+			primitivesInfoWrite,
+			sceneBufferWrite,
+			materialBufferWrite,
+			textureImagesWrite,
+			shadowImagesWrite
+		};
 
-	VkWriteDescriptorSet colorImageWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, re->_denoiserSet, &colorImageInfo, 0);
-	VkWriteDescriptorSet shadowImageWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, re->_denoiserSet, &shadowImageInfo, 1);
+		vkUpdateDescriptorSets(_device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, VK_NULL_HANDLE);
+	}
 
-	std::array<VkWriteDescriptorSet, 2> denoiser_set_writes = { colorImageWrite, shadowImageWrite };
+	// DENOISER PASS DESCRIPTORS
+	{
+		VkDescriptorSetAllocateInfo denoiser_set_alloc_info = {};
+		denoiser_set_alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+		denoiser_set_alloc_info.pNext = nullptr;
+		denoiser_set_alloc_info.descriptorPool = re->_rayTracingDescriptorPool;
+		denoiser_set_alloc_info.descriptorSetCount = 1;
+		denoiser_set_alloc_info.pSetLayouts = &re->_denoiserSetLayout;
 
-	vkUpdateDescriptorSets(_device, static_cast<uint32_t>(denoiser_set_writes.size()), denoiser_set_writes.data(), 0, VK_NULL_HANDLE);
+		VK_CHECK(vkAllocateDescriptorSets(_device, &denoiser_set_alloc_info, &_denoiserDescriptorSet));
 
-	// pospo descriptor
+		VkDescriptorImageInfo colorImageInfo = {};
+		colorImageInfo.sampler = VK_NULL_HANDLE;
+		colorImageInfo.imageView = re->_storageImageView;
+		colorImageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+
+		std::vector<VkDescriptorImageInfo> shadowImageInfos;
+		shadowImageInfos.resize(re->_shadowImages.size());
+
+		VkDescriptorImageInfo shadowImageInfo = {};
+		shadowImageInfo.sampler = VK_NULL_HANDLE;
+		shadowImageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+
+		for (size_t i = 0; i < re->_shadowImages.size(); i++)
+		{
+			shadowImageInfo.imageView = re->_shadowImages[i]._view;
+			shadowImageInfos[i] = shadowImageInfo;
+		}
+
+		VkWriteDescriptorSet colorImageWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, _denoiserDescriptorSet, &colorImageInfo, 0);
+		VkWriteDescriptorSet shadowImagesWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, _denoiserDescriptorSet, shadowImageInfos.data(), 1, static_cast<uint32_t>(shadowImageInfos.size()));
+
+		std::array<VkWriteDescriptorSet, 2> denoiser_set_writes = { colorImageWrite, shadowImagesWrite };
+
+		vkUpdateDescriptorSets(_device, static_cast<uint32_t>(denoiser_set_writes.size()), denoiser_set_writes.data(), 0, VK_NULL_HANDLE);
+	}
+
+	// FINAL RT PASS DESCRIPTORS
+	{
+		VkDescriptorSetAllocateInfo alloc_info = {};
+		alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+		alloc_info.pNext = nullptr;
+		alloc_info.descriptorPool = re->_rayTracingDescriptorPool;
+		alloc_info.descriptorSetCount = 1;
+		alloc_info.pSetLayouts = &re->_rtFinalPipeline._setLayout;
+
+		VK_CHECK(vkAllocateDescriptorSets(_device, &alloc_info, &_rtFinalDescriptorSet));
+
+		// Binding 9: Camera Descriptor
+		VkDescriptorBufferInfo uboBufferDescriptor{};
+		uboBufferDescriptor.offset = 0;
+		uboBufferDescriptor.buffer = _ubo._buffer;
+		uboBufferDescriptor.range = sizeof(uniformData);
+
+		// Binding 10: Result Image Descriptor
+		VkDescriptorImageInfo storageImageDescriptor{};
+		storageImageDescriptor.imageView = re->_storageImageView;
+		storageImageDescriptor.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+		
+		// Binding 11: Denoised Shadow Images
+		std::vector<VkDescriptorImageInfo> denoisedShadowImageInfos;
+		denoisedShadowImageInfos.reserve(re->_denoisedShadowImages.size());
+
+		for(const auto& shadowImage : re->_denoisedShadowImages)
+		{
+			VkDescriptorImageInfo denoisedShadowDescriptor{};
+			denoisedShadowDescriptor.sampler = VK_NULL_HANDLE;
+			denoisedShadowDescriptor.imageView = shadowImage._view;
+			denoisedShadowDescriptor.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+
+			denoisedShadowImageInfos.push_back(denoisedShadowDescriptor);
+		}
+
+		//Descriptor Writes		
+
+		// Acceleration Structure Write
+		VkWriteDescriptorSet accelerationStructureWrite{};
+		accelerationStructureWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		// The specialized acceleration structure descriptor has to be chained
+		accelerationStructureWrite.pNext = &descriptorAccelerationStructureInfo;
+		accelerationStructureWrite.dstSet = _rtFinalDescriptorSet;
+		accelerationStructureWrite.dstBinding = 0;
+		accelerationStructureWrite.descriptorCount = 1;
+		accelerationStructureWrite.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+
+		VkWriteDescriptorSet gbuffersWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, _rtFinalDescriptorSet, gbuffersImageInfos.data(), 1, static_cast<uint32_t>(gbuffersImageInfos.size()));
+		VkWriteDescriptorSet vertexBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rtFinalDescriptorSet, verticesBufferInfos.data(), 2, renderables.size());
+		VkWriteDescriptorSet indexBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rtFinalDescriptorSet, indicesBufferInfos.data(), 3, renderables.size());
+		VkWriteDescriptorSet transformBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rtFinalDescriptorSet, &transformBufferInfo, 4);
+		VkWriteDescriptorSet primitivesInfoWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rtFinalDescriptorSet, &primitivesBufferDescriptor, 5);
+		VkWriteDescriptorSet sceneBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, _rtFinalDescriptorSet, &sceneBufferDescriptor, 6);
+		VkWriteDescriptorSet materialBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rtFinalDescriptorSet, &materialBufferDescriptor, 7);
+		VkWriteDescriptorSet textureImagesWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, _rtFinalDescriptorSet, textureImageInfos.data(), 8, textureImageInfos.size());
+		VkWriteDescriptorSet uniformBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, _rtFinalDescriptorSet, &uboBufferDescriptor, 9);
+		VkWriteDescriptorSet resultImageWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, _rtFinalDescriptorSet, &storageImageDescriptor, 10);
+		VkWriteDescriptorSet denoisedShadowImagesWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, _rtFinalDescriptorSet, denoisedShadowImageInfos.data(), 11, static_cast<uint32_t>(denoisedShadowImageInfos.size()));
+
+		std::vector<VkWriteDescriptorSet> writeDescriptorSets = {
+			accelerationStructureWrite,
+			gbuffersWrite,
+			vertexBufferWrite,
+			indexBufferWrite,
+			transformBufferWrite,
+			primitivesInfoWrite,
+			sceneBufferWrite,
+			materialBufferWrite,
+			textureImagesWrite,
+			uniformBufferWrite,		
+			resultImageWrite,
+			denoisedShadowImagesWrite
+		};
+
+		vkUpdateDescriptorSets(_device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, VK_NULL_HANDLE);
+	}
+
+	// POSPO PASS DESCRIPTORS
 	VkDescriptorSetAllocateInfo pospo_alloc_info = {};
 	pospo_alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
 	pospo_alloc_info.pNext = nullptr;
@@ -508,7 +593,7 @@ void Renderer::record_raytracing_command_buffer()
 
 	VkBufferDeviceAddressInfoKHR raygenDeviceAddressInfo{};
 	raygenDeviceAddressInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
-	raygenDeviceAddressInfo.buffer = re->_raygenShaderBindingTable._buffer;
+	raygenDeviceAddressInfo.buffer = re->_rtFinalPipeline._raygenShaderBindingTable._buffer;
 
 	VkStridedDeviceAddressRegionKHR raygenShaderSbtEntry{};
 	raygenShaderSbtEntry.deviceAddress = vkGetBufferDeviceAddress(_device, &raygenDeviceAddressInfo);
@@ -517,7 +602,7 @@ void Renderer::record_raytracing_command_buffer()
 
 	VkBufferDeviceAddressInfoKHR missDeviceAddressInfo{};
 	missDeviceAddressInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
-	missDeviceAddressInfo.buffer = re->_missShaderBindingTable._buffer;
+	missDeviceAddressInfo.buffer = re->_rtFinalPipeline._missShaderBindingTable._buffer;
 
 	VkStridedDeviceAddressRegionKHR missShaderSbtEntry{};
 	missShaderSbtEntry.deviceAddress = vkGetBufferDeviceAddress(_device, &missDeviceAddressInfo);
@@ -526,7 +611,7 @@ void Renderer::record_raytracing_command_buffer()
 
 	VkBufferDeviceAddressInfoKHR hitDeviceAddressInfo{};
 	hitDeviceAddressInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
-	hitDeviceAddressInfo.buffer = re->_hitShaderBindingTable._buffer;
+	hitDeviceAddressInfo.buffer = re->_rtFinalPipeline._hitShaderBindingTable._buffer;
 
 	VkStridedDeviceAddressRegionKHR hitShaderSbtEntry{};
 	hitShaderSbtEntry.deviceAddress = vkGetBufferDeviceAddress(_device, &hitDeviceAddressInfo);
@@ -539,9 +624,9 @@ void Renderer::record_raytracing_command_buffer()
 		Dispatch the ray tracing commands
 	*/
 	
-	vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, re->_rayTracingPipeline);
-	vkCmdPushConstants(cmd, re->_rayTracingPipelineLayout, VK_SHADER_STAGE_RAYGEN_BIT_KHR, 0, sizeof(RtPushConstant), &re->_rtPushConstant);
-	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, re->_rayTracingPipelineLayout, 0, 1, &_rayTracingDescriptorSet, 0, 0);
+	vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, re->_rtFinalPipeline._pipeline);
+	vkCmdPushConstants(cmd, re->_rtFinalPipeline._layout, VK_SHADER_STAGE_RAYGEN_BIT_KHR, 0, sizeof(RtPushConstant), &re->_rtPushConstant);
+	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, re->_rtFinalPipeline._layout, 0, 1, &_rtFinalDescriptorSet, 0, 0);
 	
 	re->vkCmdTraceRaysKHR(
 		cmd,
@@ -567,7 +652,7 @@ void Renderer::record_raytracing_command_buffer()
 
 		// Bind the compute shader pipeline
 		vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, re->_denoiserPipeline);
-		vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, re->_denoiserPipelineLayout, 0, 1, &re->_denoiserSet, 0, nullptr);
+		vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, re->_denoiserPipelineLayout, 0, 1, &_denoiserDescriptorSet, 0, nullptr);
 		// Run the compute shader with enough workgroups to cover the entire buffer:
 		vkCmdDispatch(cmd, (uint32_t(re->_windowExtent.width) + re->workgroup_width - 1) / re->workgroup_width,
 		(uint32_t(re->_windowExtent.height) + re->workgroup_height - 1) / re->workgroup_height, 1);
@@ -657,8 +742,6 @@ void Renderer::record_pospo_command_buffer(VkCommandBuffer cmd, uint32_t swapcha
 
 	VK_CHECK(vkEndCommandBuffer(cmd));
 }
-
-//raster
 
 void Renderer::init_commands()
 {

@@ -930,7 +930,7 @@ void RenderEngine::create_storage_image()
 		});
 }
 
-void RenderEngine::create_shadow_images()
+void RenderEngine::create_shadow_images(const int& lightsCount)
 {
 	VkExtent3D extent =
 	{
@@ -939,51 +939,94 @@ void RenderEngine::create_shadow_images()
 		1
 	};
 	
-	// TODO: Create an image for each light
 	VkImageCreateInfo image_info = vkinit::image_create_info(VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, extent);
 	
 	VmaAllocationCreateInfo img_alloc_info = {};
 	img_alloc_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
 	img_alloc_info.requiredFlags = VkMemoryPropertyFlagBits(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	
-	VK_CHECK(vmaCreateImage(_allocator, &image_info, &img_alloc_info, &_shadowImage._image, &_shadowImage._allocation, nullptr));
 
-	VkImageViewCreateInfo image_view_info = vkinit::imageview_create_info(VK_FORMAT_R8G8B8A8_UNORM, _shadowImage._image, VK_IMAGE_ASPECT_COLOR_BIT);
-	VK_CHECK(vkCreateImageView(_device, &image_view_info, nullptr, &_shadowImage._view));
+	_shadowImages.resize(lightsCount);
+	_denoisedShadowImages.resize(lightsCount);
+
+	// Raw Shadow Images
+	for(size_t i = 0; i < _shadowImages.size(); i++)
+	{
+		VK_CHECK(vmaCreateImage(_allocator, &image_info, &img_alloc_info, &_shadowImages[i]._image, &_shadowImages[i]._allocation, nullptr));
+
+		VkImageViewCreateInfo image_view_info = vkinit::imageview_create_info(VK_FORMAT_R8G8B8A8_UNORM, _shadowImages[i]._image, VK_IMAGE_ASPECT_COLOR_BIT);
+		VK_CHECK(vkCreateImageView(_device, &image_view_info, nullptr, &_shadowImages[i]._view));
+	}
+
+	// Denoised Shadow Images
+	for (size_t i = 0; i < _denoisedShadowImages.size(); i++)
+	{
+		VK_CHECK(vmaCreateImage(_allocator, &image_info, &img_alloc_info, &_denoisedShadowImages[i]._image, &_denoisedShadowImages[i]._allocation, nullptr));
+
+		VkImageViewCreateInfo image_view_info = vkinit::imageview_create_info(VK_FORMAT_R8G8B8A8_UNORM, _denoisedShadowImages[i]._image, VK_IMAGE_ASPECT_COLOR_BIT);
+		VK_CHECK(vkCreateImageView(_device, &image_view_info, nullptr, &_denoisedShadowImages[i]._view));
+	}
+
+
+	// Change layout to GENERAL to use the images as storage descriptors
+	std::vector<VkImageMemoryBarrier> barriers;
+	barriers.resize(_shadowImages.size() + _denoisedShadowImages.size());
+
+	VkImageMemoryBarrier barrier = {};
+	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	barrier.subresourceRange.baseMipLevel = 0;
+	barrier.subresourceRange.levelCount = 1;
+	barrier.subresourceRange.baseArrayLayer = 0;
+	barrier.subresourceRange.layerCount = 1;
+	barrier.srcAccessMask = 0;
+	barrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+
+	for(size_t i = 0; i < _shadowImages.size(); i++)
+	{
+		barrier.image = _shadowImages[i]._image;
+		barriers[i] = barrier;
+	}
+
+	for (size_t i = _shadowImages.size(); i < barriers.size(); i++)
+	{
+		barrier.image = _denoisedShadowImages[i]._image;
+		barriers[i] = barrier;
+	}
 
 	vkupload::immediate_submit([&](VkCommandBuffer cmd) {
-		VkImageMemoryBarrier barrier = {};
-		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-		barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
-		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		barrier.image = _storageImage;
-		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		barrier.subresourceRange.baseMipLevel = 0;
-		barrier.subresourceRange.levelCount = 1;
-		barrier.subresourceRange.baseArrayLayer = 0;
-		barrier.subresourceRange.layerCount = 1;
-
-		barrier.srcAccessMask = 0;
-		barrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-
 		vkCmdPipelineBarrier(
 			cmd,
 			VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
 			0,
 			0, nullptr,
 			0, nullptr,
-			1, &barrier
+			static_cast<uint32_t>(barriers.size()), barriers.data()
 		);
 
 		});
+
+	_mainDeletionQueue.push_function([=]() {
+		for(const auto& image : _shadowImages)
+		{
+			vkDestroyImageView(_device, image._view, nullptr);
+			vmaDestroyImage(_allocator, image._image, image._allocation);
+		}
+
+		for (const auto& image : _denoisedShadowImages)
+		{
+			vkDestroyImageView(_device, image._view, nullptr);
+			vmaDestroyImage(_allocator, image._image, image._allocation);
+		}
+	});
 }
 
-void RenderEngine::create_raytracing_pipelines(const int& renderablesCount)
+void RenderEngine::create_raytracing_pipelines(const Scene& scene)
 {
-#pragma region Raytracing pass
-	// Layout Bindings
+	// RT Shared Layout Bindings
 	// TLAS
 	VkDescriptorSetLayoutBinding accelerationStructureLayoutBinding{};
 	accelerationStructureLayoutBinding.binding = 0;
@@ -998,296 +1041,414 @@ void RenderEngine::create_raytracing_pipelines(const int& renderablesCount)
 	gbuffersLayoutBinding.descriptorCount = GBUFFER_NUM;
 	gbuffersLayoutBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
 
-	// Output Image
-	VkDescriptorSetLayoutBinding resultImageLayoutBinding{};
-	resultImageLayoutBinding.binding = 2;
-	resultImageLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-	resultImageLayoutBinding.descriptorCount = 1;
-	resultImageLayoutBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
-
-	// Camera
-	VkDescriptorSetLayoutBinding uniformBufferBinding{};
-	uniformBufferBinding.binding = 3;
-	uniformBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-	uniformBufferBinding.descriptorCount = 1;
-	uniformBufferBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
-
 	// Vertices
 	VkDescriptorSetLayoutBinding vertexBufferBinding{};
-	vertexBufferBinding.binding = 4;
+	vertexBufferBinding.binding = 2;
 	vertexBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-	vertexBufferBinding.descriptorCount = renderablesCount;
+	vertexBufferBinding.descriptorCount = static_cast<uint32_t>(scene._renderables.size());
 	vertexBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
 
 	// Indices
 	VkDescriptorSetLayoutBinding indexBufferBinding{};
-	indexBufferBinding.binding = 5;
+	indexBufferBinding.binding = 3;
 	indexBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-	indexBufferBinding.descriptorCount = renderablesCount;
+	indexBufferBinding.descriptorCount = static_cast<uint32_t>(scene._renderables.size());
 	indexBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
 
 	// Transforms
 	VkDescriptorSetLayoutBinding transformBufferBinding{};
-	transformBufferBinding.binding = 6;
+	transformBufferBinding.binding = 4;
 	transformBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 	transformBufferBinding.descriptorCount = 1;
 	transformBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
 
 	// Primitives
 	VkDescriptorSetLayoutBinding primitiveBufferBinding{};
-	primitiveBufferBinding.binding = 7;
+	primitiveBufferBinding.binding = 5;
 	primitiveBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 	primitiveBufferBinding.descriptorCount = 1;
 	primitiveBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
 
 	// Lights
 	VkDescriptorSetLayoutBinding sceneBufferBinding{};
-	sceneBufferBinding.binding = 8;
+	sceneBufferBinding.binding = 6;
 	sceneBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 	sceneBufferBinding.descriptorCount = 1;
 	sceneBufferBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
 	// Materials
 	VkDescriptorSetLayoutBinding materialBufferBinding{};
-	materialBufferBinding.binding = 9;
+	materialBufferBinding.binding = 7;
 	materialBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 	materialBufferBinding.descriptorCount = 1;
 	materialBufferBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
 
 	// Textures
 	VkDescriptorSetLayoutBinding textureBufferBinding{};
-	textureBufferBinding.binding = 10;
+	textureBufferBinding.binding = 8;
 	textureBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 	textureBufferBinding.descriptorCount = VKE::Texture::sTexturesLoaded.size();
 	textureBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
 
-	std::vector<VkDescriptorSetLayoutBinding> rt_bindings({
-		accelerationStructureLayoutBinding,
-		gbuffersLayoutBinding,
-		resultImageLayoutBinding,
-		uniformBufferBinding,
-		vertexBufferBinding,
-		indexBufferBinding,
-		transformBufferBinding,
-		primitiveBufferBinding,
-		sceneBufferBinding,
-		materialBufferBinding,
-		textureBufferBinding,
-		});
-
-	VkDescriptorSetLayoutCreateInfo desc_set_layout_info{};
-	desc_set_layout_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-	desc_set_layout_info.bindingCount = static_cast<uint32_t>(rt_bindings.size());
-	desc_set_layout_info.pBindings = rt_bindings.data();
-	VK_CHECK(vkCreateDescriptorSetLayout(_device, &desc_set_layout_info, nullptr, &_rayTracingSetLayout));
-
-	VkPushConstantRange pushConstant = {};
-	pushConstant.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
-	pushConstant.offset = 0;
-	pushConstant.size = sizeof(RtPushConstant);
-
-	VkPipelineLayoutCreateInfo pipeline_layout_info{};
-	pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-	pipeline_layout_info.setLayoutCount = 1;
-	pipeline_layout_info.pSetLayouts = &_rayTracingSetLayout;
-	pipeline_layout_info.pushConstantRangeCount = 1;
-	pipeline_layout_info.pPushConstantRanges = &pushConstant;
-	VK_CHECK(vkCreatePipelineLayout(_device, &pipeline_layout_info, nullptr, &_rayTracingPipelineLayout));
-
-	/*
-		Setup ray tracing shader groups
-	*/
-	std::vector<VkPipelineShaderStageCreateInfo> shaderStages;
-
-	// Ray generation group
 	{
-		VkShaderModule raygenShader;
-		if (!vkutil::load_shader_module(_device, "../shaders/raygen.rgen.spv", &raygenShader))
+#pragma region Raytracing Shadow Pass
+		// Layout Bindings
+		// Shadow Images
+		VkDescriptorSetLayoutBinding shadowImagesBinding{};
+		shadowImagesBinding.binding = 9;
+		shadowImagesBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+		shadowImagesBinding.descriptorCount = static_cast<uint32_t>(scene._lights.size());
+		shadowImagesBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
+
+		std::vector<VkDescriptorSetLayoutBinding> shadow_bindings =
 		{
-			std::cout << "Error when building the ray generation shader module" << std::endl;
-		}
-		else {
-			std::cout << "Ray generation shader succesfully loaded" << std::endl;
-		}
+			accelerationStructureLayoutBinding,
+			gbuffersLayoutBinding,
+			vertexBufferBinding,
+			indexBufferBinding,
+			transformBufferBinding,
+			primitiveBufferBinding,
+			sceneBufferBinding,
+			materialBufferBinding,
+			textureBufferBinding,
+			shadowImagesBinding
+		};
 
-		VkPipelineShaderStageCreateInfo shader_stage_info = vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_RAYGEN_BIT_KHR, raygenShader);
+		VkDescriptorSetLayoutCreateInfo desc_set_layout_info{};
+		desc_set_layout_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+		desc_set_layout_info.bindingCount = static_cast<uint32_t>(shadow_bindings.size());
+		desc_set_layout_info.pBindings = shadow_bindings.data();
+		VK_CHECK(vkCreateDescriptorSetLayout(_device, &desc_set_layout_info, nullptr, &_rtShadowsPipeline._setLayout));
 
-		shaderStages.push_back(shader_stage_info);
-		VkRayTracingShaderGroupCreateInfoKHR shaderGroup{};
-		shaderGroup.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
-		shaderGroup.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
-		shaderGroup.generalShader = static_cast<uint32_t>(shaderStages.size()) - 1;
-		shaderGroup.closestHitShader = VK_SHADER_UNUSED_KHR;
-		shaderGroup.anyHitShader = VK_SHADER_UNUSED_KHR;
-		shaderGroup.intersectionShader = VK_SHADER_UNUSED_KHR;
-		_shaderGroups.push_back(shaderGroup);
-	}
+		VkPushConstantRange pushConstant = {};
+		pushConstant.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
+		pushConstant.offset = 0;
+		pushConstant.size = sizeof(RtPushConstant);
 
-	// Miss group
-	{
-		VkShaderModule missShader;
-		if (!vkutil::load_shader_module(_device, "../shaders/miss.rmiss.spv", &missShader))
+		VkPipelineLayoutCreateInfo pipeline_layout_info{};
+		pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+		pipeline_layout_info.setLayoutCount = 1;
+		pipeline_layout_info.pSetLayouts = &_rtShadowsPipeline._setLayout;
+		pipeline_layout_info.pushConstantRangeCount = 1;
+		pipeline_layout_info.pPushConstantRanges = &pushConstant;
+		VK_CHECK(vkCreatePipelineLayout(_device, &pipeline_layout_info, nullptr, &_rtShadowsPipeline._layout));
+
+		/*
+			Setup ray tracing shader groups
+		*/
+		std::vector<VkPipelineShaderStageCreateInfo> shaderStages;
+
+		// Ray generation group
 		{
-			std::cout << "Error when building the miss shader module" << std::endl;
+			VkShaderModule raygenShader;
+			if (!vkutil::load_shader_module(_device, "../shaders/RtShadows.rgen.spv", &raygenShader))
+			{
+				std::cout << "Error when building the shadows ray generation shader module" << std::endl;
+			}
+			else {
+				std::cout << "Shadows ray generation shader succesfully loaded" << std::endl;
+			}
+
+			VkPipelineShaderStageCreateInfo shader_stage_info = vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_RAYGEN_BIT_KHR, raygenShader);
+
+			shaderStages.push_back(shader_stage_info);
+			VkRayTracingShaderGroupCreateInfoKHR shaderGroup{};
+			shaderGroup.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
+			shaderGroup.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
+			shaderGroup.generalShader = static_cast<uint32_t>(shaderStages.size()) - 1;
+			shaderGroup.closestHitShader = VK_SHADER_UNUSED_KHR;
+			shaderGroup.anyHitShader = VK_SHADER_UNUSED_KHR;
+			shaderGroup.intersectionShader = VK_SHADER_UNUSED_KHR;
+			_rtShadowsPipeline._shaderGroups.push_back(shaderGroup);
 		}
-		else {
-			std::cout << "Miss shader succesfully loaded" << std::endl;
-		}
 
-		VkPipelineShaderStageCreateInfo shader_stage_info = vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_MISS_BIT_KHR, missShader);
-
-		shaderStages.push_back(shader_stage_info);
-		VkRayTracingShaderGroupCreateInfoKHR shaderGroup{};
-		shaderGroup.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
-		shaderGroup.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
-		shaderGroup.generalShader = static_cast<uint32_t>(shaderStages.size()) - 1;
-		shaderGroup.closestHitShader = VK_SHADER_UNUSED_KHR;
-		shaderGroup.anyHitShader = VK_SHADER_UNUSED_KHR;
-		shaderGroup.intersectionShader = VK_SHADER_UNUSED_KHR;
-		_shaderGroups.push_back(shaderGroup);
-	}
-
-	//Shadow miss group
-	{
-		VkShaderModule shadowMissShader;
-		if (!vkutil::load_shader_module(_device, "../shaders/raytraceShadow.rmiss.spv", &shadowMissShader))
+		// Shadow miss group
 		{
-			std::cout << "Error when building the shadow miss shader module" << std::endl;
+			VkShaderModule shadowMissShader;
+			if (!vkutil::load_shader_module(_device, "../shaders/raytraceShadow.rmiss.spv", &shadowMissShader))
+			{
+				std::cout << "Error when building the shadow miss shader module" << std::endl;
+			}
+			else {
+				std::cout << "Shadw miss shader succesfully loaded" << std::endl;
+			}
+			VkPipelineShaderStageCreateInfo shader_stage_info = vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_MISS_BIT_KHR, shadowMissShader);
+
+			shaderStages.push_back(shader_stage_info);
+			VkRayTracingShaderGroupCreateInfoKHR shaderGroup{};
+			shaderGroup.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
+			shaderGroup.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
+			shaderGroup.generalShader = static_cast<uint32_t>(shaderStages.size()) - 1;
+			shaderGroup.closestHitShader = VK_SHADER_UNUSED_KHR;
+			shaderGroup.anyHitShader = VK_SHADER_UNUSED_KHR;
+			shaderGroup.intersectionShader = VK_SHADER_UNUSED_KHR;
+			_rtShadowsPipeline._shaderGroups.push_back(shaderGroup);
 		}
-		else {
-			std::cout << "Shadw miss shader succesfully loaded" << std::endl;
-		}
-		VkPipelineShaderStageCreateInfo shader_stage_info = vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_MISS_BIT_KHR, shadowMissShader);
 
-		shaderStages.push_back(shader_stage_info);
-		VkRayTracingShaderGroupCreateInfoKHR shaderGroup{};
-		shaderGroup.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
-		shaderGroup.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
-		shaderGroup.generalShader = static_cast<uint32_t>(shaderStages.size()) - 1;
-		shaderGroup.closestHitShader = VK_SHADER_UNUSED_KHR;
-		shaderGroup.anyHitShader = VK_SHADER_UNUSED_KHR;
-		shaderGroup.intersectionShader = VK_SHADER_UNUSED_KHR;
-		_shaderGroups.push_back(shaderGroup);
-	}
-
-	// Closest hit shader shared between different hit groups
-	VkShaderModule closestHitShader;
-	if (!vkutil::load_shader_module(_device, "../shaders/closestHit.rchit.spv", &closestHitShader))
-	{
-		std::cout << "Error when building the closest hit shader module" << std::endl;
-	}
-	else {
-		std::cout << "Closest hit shader succesfully loaded" << std::endl;
-	}
-
-	VkPipelineShaderStageCreateInfo chit_shader_stage_info = vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, closestHitShader);
-	shaderStages.push_back(chit_shader_stage_info);
-	uint32_t chitIdx = static_cast<uint32_t>(shaderStages.size() - 1);
-
-	// Closest hit group 0
-	{
-		VkRayTracingShaderGroupCreateInfoKHR shaderGroup{};
-		shaderGroup.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
-		shaderGroup.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
-		shaderGroup.generalShader = VK_SHADER_UNUSED_KHR;
-		shaderGroup.closestHitShader = chitIdx;
-		shaderGroup.anyHitShader = VK_SHADER_UNUSED_KHR;
-		shaderGroup.intersectionShader = VK_SHADER_UNUSED_KHR;
-		_shaderGroups.push_back(shaderGroup);
-	}
-
-	// Closest hit group 1
-	{
-		// Any Hit Shader for shadows
-		VkShaderModule shadowsAnyHitShader;
-		if (!vkutil::load_shader_module(_device, "../shaders/raytrace.rahit.spv", &shadowsAnyHitShader))
+		// Shadow closest hit group
 		{
-			std::cout << "Error when building the shadow any hit shader module" << std::endl;
+			// Closest hit shader shared between different hit groups
+			VkShaderModule closestHitShader;
+			if (!vkutil::load_shader_module(_device, "../shaders/closestHit.rchit.spv", &closestHitShader))
+			{
+				std::cout << "Error when building the closest hit shader module" << std::endl;
+			}
+			else {
+				std::cout << "Closest hit shader succesfully loaded" << std::endl;
+			}
+
+			// Any Hit Shader for shadows
+			VkShaderModule shadowsAnyHitShader;
+			if (!vkutil::load_shader_module(_device, "../shaders/raytrace.rahit.spv", &shadowsAnyHitShader))
+			{
+				std::cout << "Error when building the shadow any hit shader module" << std::endl;
+			}
+			else
+			{
+				std::cout << "Shadow any hit shader succesfully loaded" << std::endl;
+			}
+
+			VkPipelineShaderStageCreateInfo chit_shader_stage_info = vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_ANY_HIT_BIT_KHR, closestHitShader);
+			VkPipelineShaderStageCreateInfo ahit_shader_stage_info = vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_ANY_HIT_BIT_KHR, shadowsAnyHitShader);
+
+			shaderStages.push_back(chit_shader_stage_info);
+			shaderStages.push_back(ahit_shader_stage_info);
+			VkRayTracingShaderGroupCreateInfoKHR shaderGroup{};
+			shaderGroup.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
+			shaderGroup.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
+			shaderGroup.generalShader = VK_SHADER_UNUSED_KHR;
+			shaderGroup.closestHitShader = static_cast<uint32_t>(shaderStages.size() - 2);
+			shaderGroup.anyHitShader = static_cast<uint32_t>(shaderStages.size() - 1);
+			shaderGroup.intersectionShader = VK_SHADER_UNUSED_KHR;
+			_rtShadowsPipeline._shaderGroups.push_back(shaderGroup);
+		}
+
+		/*
+			Create the ray tracing pipeline
+		*/
+		VkRayTracingPipelineCreateInfoKHR rt_shadows_pipeline_info{};
+		rt_shadows_pipeline_info.sType = VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR;
+		rt_shadows_pipeline_info.stageCount = static_cast<uint32_t>(shaderStages.size());
+		rt_shadows_pipeline_info.pStages = shaderStages.data();
+		rt_shadows_pipeline_info.groupCount = static_cast<uint32_t>(_rtShadowsPipeline._shaderGroups.size());
+		rt_shadows_pipeline_info.pGroups = _rtShadowsPipeline._shaderGroups.data();
+		rt_shadows_pipeline_info.maxPipelineRayRecursionDepth = 10;
+		rt_shadows_pipeline_info.layout = _rtShadowsPipeline._layout;
+
+		VK_CHECK(vkCreateRayTracingPipelinesKHR(_device, VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &rt_shadows_pipeline_info, nullptr, &_rtShadowsPipeline._pipeline));
+
+#pragma endregion
+	}
+	{
+#pragma region Shadow Denoising Pass
+		VkShaderModule denoiseShader;
+		if (!vkutil::load_shader_module(_device, "../shaders/denoiser.comp.spv", &denoiseShader))
+		{
+			std::cout << "Error when building the denoiser compute shader module" << std::endl;
 		}
 		else
 		{
-			std::cout << "Shadow any hit shader succesfully loaded" << std::endl;
+			std::cout << "Denoiser compute shader succesfully loaded" << std::endl;
 		}
 
-		VkPipelineShaderStageCreateInfo shader_stage_info = vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_ANY_HIT_BIT_KHR, shadowsAnyHitShader);
+		VkPipelineShaderStageCreateInfo shader_stage = vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_COMPUTE_BIT, denoiseShader);
 
-		shaderStages.push_back(shader_stage_info);
-		VkRayTracingShaderGroupCreateInfoKHR shaderGroup{};
-		shaderGroup.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
-		shaderGroup.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
-		shaderGroup.generalShader = VK_SHADER_UNUSED_KHR;
-		shaderGroup.closestHitShader = chitIdx;
-		shaderGroup.anyHitShader = static_cast<uint32_t>(shaderStages.size() - 1);
-		shaderGroup.intersectionShader = VK_SHADER_UNUSED_KHR;
-		_shaderGroups.push_back(shaderGroup);
-	}
+		// Layout bindings
+		// Color Image
+		VkDescriptorSetLayoutBinding colorImageBinding = {};
+		colorImageBinding.binding = 0;
+		colorImageBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+		colorImageBinding.descriptorCount = 1;
+		colorImageBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 
-	/*
-		Create the ray tracing pipeline
-	*/
-	VkRayTracingPipelineCreateInfoKHR raytracing_pipeline_info{};
-	raytracing_pipeline_info.sType = VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR;
-	raytracing_pipeline_info.stageCount = static_cast<uint32_t>(shaderStages.size());
-	raytracing_pipeline_info.pStages = shaderStages.data();
-	raytracing_pipeline_info.groupCount = static_cast<uint32_t>(_shaderGroups.size());
-	raytracing_pipeline_info.pGroups = _shaderGroups.data();
-	raytracing_pipeline_info.maxPipelineRayRecursionDepth = 10;
-	raytracing_pipeline_info.layout = _rayTracingPipelineLayout;
+		// Shadow Images
+		VkDescriptorSetLayoutBinding shadowImageBinding = {};
+		shadowImageBinding.binding = 1;
+		shadowImageBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+		shadowImageBinding.descriptorCount = static_cast<uint32_t>(scene._lights.size());
+		shadowImageBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 
-	VK_CHECK(vkCreateRayTracingPipelinesKHR(_device, VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &raytracing_pipeline_info, nullptr, &_rayTracingPipeline));
+		// Denoised Shadow Images
+		VkDescriptorSetLayoutBinding denoisedShadowImageBinding = {};
+		denoisedShadowImageBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+		denoisedShadowImageBinding.descriptorCount = static_cast<uint32_t>(scene._lights.size());
+		denoisedShadowImageBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
+		std::array<VkDescriptorSetLayoutBinding, 2> denoiser_bindings = { colorImageBinding, shadowImageBinding };
+
+		// DescriptorSet Layout
+		VkDescriptorSetLayoutCreateInfo denoiser_descriptor_set_layout = {};
+		denoiser_descriptor_set_layout.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+		denoiser_descriptor_set_layout.bindingCount = static_cast<uint32_t>(denoiser_bindings.size());
+		denoiser_descriptor_set_layout.pBindings = denoiser_bindings.data();
+		VK_CHECK(vkCreateDescriptorSetLayout(_device, &denoiser_descriptor_set_layout, nullptr, &_denoiserSetLayout));
+
+		// Pipeline layout
+		VkPipelineLayoutCreateInfo denoiser_pipeline_layout_info = vkinit::pipeline_layout_create_info();
+		denoiser_pipeline_layout_info.setLayoutCount = 1;
+		denoiser_pipeline_layout_info.pSetLayouts = &_denoiserSetLayout;
+		VK_CHECK(vkCreatePipelineLayout(_device, &denoiser_pipeline_layout_info, nullptr, &_denoiserPipelineLayout));
+
+		// Compute pipeline
+		VkComputePipelineCreateInfo compute_pipeline_info = {};
+		compute_pipeline_info.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+		compute_pipeline_info.stage = shader_stage;
+		compute_pipeline_info.layout = _denoiserPipelineLayout;
+
+		VK_CHECK(vkCreateComputePipelines(_device, VK_NULL_HANDLE, 1, &compute_pipeline_info, nullptr, &_denoiserPipeline));
 #pragma endregion
-
-#pragma region Denoising pass
-	VkShaderModule denoiseShader;
-	if(!vkutil::load_shader_module(_device, "../shaders/denoiser.comp.spv", &denoiseShader))
-	{
-		std::cout << "Error when building the denoiser compute shader module" << std::endl;
-	}
-	else
-	{
-		std::cout << "Denoiser compute shader succesfully loaded" << std::endl;
 	}
 
-	VkPipelineShaderStageCreateInfo shader_stage = vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_COMPUTE_BIT, denoiseShader);
-	
-	// Layout bindings
-	// Color Image
-	VkDescriptorSetLayoutBinding colorImageBinding = {};
-	colorImageBinding.binding = 0;
-	colorImageBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-	colorImageBinding.descriptorCount = 1;
-	colorImageBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+	{
+#pragma region Raytracing Final Pass
+		// Layout Bindings
+		// Camera
+		VkDescriptorSetLayoutBinding uniformBufferBinding{};
+		uniformBufferBinding.binding = 9;
+		uniformBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		uniformBufferBinding.descriptorCount = 1;
+		uniformBufferBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
-	// Shadow Image
-	VkDescriptorSetLayoutBinding shadowImageBinding = {};
-	shadowImageBinding.binding = 1;
-	shadowImageBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-	shadowImageBinding.descriptorCount = 1;
-	shadowImageBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+		// Output Image
+		VkDescriptorSetLayoutBinding resultImageLayoutBinding{};
+		resultImageLayoutBinding.binding = 10;
+		resultImageLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+		resultImageLayoutBinding.descriptorCount = 1;
+		resultImageLayoutBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
 
-	std::array<VkDescriptorSetLayoutBinding, 2> denoiser_bindings = { colorImageBinding, shadowImageBinding };
+		// Shadow Textures
+		VkDescriptorSetLayoutBinding denoisedShadowsImagesBinding{};
+		denoisedShadowsImagesBinding.binding = 11;
+		denoisedShadowsImagesBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+		denoisedShadowsImagesBinding.descriptorCount = static_cast<uint32_t>(scene._lights.size());
+		denoisedShadowsImagesBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
-	// DescriptorSet Layout
-	VkDescriptorSetLayoutCreateInfo denoiser_descriptor_set_layout = {};
-	denoiser_descriptor_set_layout.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-	denoiser_descriptor_set_layout.bindingCount = static_cast<uint32_t>(denoiser_bindings.size());
-	denoiser_descriptor_set_layout.pBindings = denoiser_bindings.data();
-	VK_CHECK(vkCreateDescriptorSetLayout(_device, &denoiser_descriptor_set_layout, nullptr, &_denoiserSetLayout));
+		std::vector<VkDescriptorSetLayoutBinding> rt_bindings({
+			accelerationStructureLayoutBinding,
+			gbuffersLayoutBinding,
+			vertexBufferBinding,
+			indexBufferBinding,
+			transformBufferBinding,
+			primitiveBufferBinding,
+			sceneBufferBinding,
+			materialBufferBinding,
+			textureBufferBinding,
+			uniformBufferBinding,
+			resultImageLayoutBinding,
+			denoisedShadowsImagesBinding
+			});
 
-	// Pipeline layout
-	VkPipelineLayoutCreateInfo denoiser_pipeline_layout_info = vkinit::pipeline_layout_create_info();
-	denoiser_pipeline_layout_info.setLayoutCount = 1;
-	denoiser_pipeline_layout_info.pSetLayouts = &_denoiserSetLayout;
-	VK_CHECK(vkCreatePipelineLayout(_device, &denoiser_pipeline_layout_info, nullptr, &_denoiserPipelineLayout));
+		VkDescriptorSetLayoutCreateInfo desc_set_layout_info{};
+		desc_set_layout_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+		desc_set_layout_info.bindingCount = static_cast<uint32_t>(rt_bindings.size());
+		desc_set_layout_info.pBindings = rt_bindings.data();
+		VK_CHECK(vkCreateDescriptorSetLayout(_device, &desc_set_layout_info, nullptr, &_rtFinalPipeline._setLayout));
 
-	// Compute pipeline
-	VkComputePipelineCreateInfo compute_pipeline_info = {};
-	compute_pipeline_info.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
-	compute_pipeline_info.stage = shader_stage;
-	compute_pipeline_info.layout = _denoiserPipelineLayout;
+		VkPushConstantRange pushConstant = {};
+		pushConstant.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
+		pushConstant.offset = 0;
+		pushConstant.size = sizeof(RtPushConstant);
 
-	VK_CHECK(vkCreateComputePipelines(_device, VK_NULL_HANDLE, 1, &compute_pipeline_info, nullptr, &_denoiserPipeline));
+		VkPipelineLayoutCreateInfo pipeline_layout_info{};
+		pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+		pipeline_layout_info.setLayoutCount = 1;
+		pipeline_layout_info.pSetLayouts = &_rtFinalPipeline._setLayout;
+		pipeline_layout_info.pushConstantRangeCount = 1;
+		pipeline_layout_info.pPushConstantRanges = &pushConstant;
+		VK_CHECK(vkCreatePipelineLayout(_device, &pipeline_layout_info, nullptr, &_rtFinalPipeline._layout));
+
+		/*
+			Setup ray tracing shader groups
+		*/
+		std::vector<VkPipelineShaderStageCreateInfo> shaderStages;
+
+		// Ray generation group
+		{
+			VkShaderModule raygenShader;
+			if (!vkutil::load_shader_module(_device, "../shaders/raygen.rgen.spv", &raygenShader))
+			{
+				std::cout << "Error when building the ray generation shader module" << std::endl;
+			}
+			else {
+				std::cout << "Ray generation shader succesfully loaded" << std::endl;
+			}
+
+			VkPipelineShaderStageCreateInfo shader_stage_info = vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_RAYGEN_BIT_KHR, raygenShader);
+
+			shaderStages.push_back(shader_stage_info);
+			VkRayTracingShaderGroupCreateInfoKHR shaderGroup{};
+			shaderGroup.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
+			shaderGroup.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
+			shaderGroup.generalShader = static_cast<uint32_t>(shaderStages.size()) - 1;
+			shaderGroup.closestHitShader = VK_SHADER_UNUSED_KHR;
+			shaderGroup.anyHitShader = VK_SHADER_UNUSED_KHR;
+			shaderGroup.intersectionShader = VK_SHADER_UNUSED_KHR;
+			_rtFinalPipeline._shaderGroups.push_back(shaderGroup);
+		}
+
+		// Miss group
+		{
+			VkShaderModule missShader;
+			if (!vkutil::load_shader_module(_device, "../shaders/miss.rmiss.spv", &missShader))
+			{
+				std::cout << "Error when building the miss shader module" << std::endl;
+			}
+			else {
+				std::cout << "Miss shader succesfully loaded" << std::endl;
+			}
+
+			VkPipelineShaderStageCreateInfo shader_stage_info = vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_MISS_BIT_KHR, missShader);
+
+			shaderStages.push_back(shader_stage_info);
+			VkRayTracingShaderGroupCreateInfoKHR shaderGroup{};
+			shaderGroup.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
+			shaderGroup.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
+			shaderGroup.generalShader = static_cast<uint32_t>(shaderStages.size()) - 1;
+			shaderGroup.closestHitShader = VK_SHADER_UNUSED_KHR;
+			shaderGroup.anyHitShader = VK_SHADER_UNUSED_KHR;
+			shaderGroup.intersectionShader = VK_SHADER_UNUSED_KHR;
+			_rtFinalPipeline._shaderGroups.push_back(shaderGroup);
+		}
+
+		// Closest hit group
+		{
+			VkShaderModule closestHitShader;
+			if (!vkutil::load_shader_module(_device, "../shaders/closestHit.rchit.spv", &closestHitShader))
+			{
+				std::cout << "Error when building the closest hit shader module" << std::endl;
+			}
+			else {
+				std::cout << "Closest hit shader succesfully loaded" << std::endl;
+			}
+
+			VkPipelineShaderStageCreateInfo chit_shader_stage_info = vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, closestHitShader);
+			
+			shaderStages.push_back(chit_shader_stage_info);
+			VkRayTracingShaderGroupCreateInfoKHR shaderGroup{};
+			shaderGroup.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
+			shaderGroup.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
+			shaderGroup.generalShader = VK_SHADER_UNUSED_KHR;
+			shaderGroup.closestHitShader = static_cast<uint32_t>(shaderStages.size() - 1);
+			shaderGroup.anyHitShader = VK_SHADER_UNUSED_KHR;
+			shaderGroup.intersectionShader = VK_SHADER_UNUSED_KHR;
+			_rtFinalPipeline._shaderGroups.push_back(shaderGroup);
+		}
+
+		/*
+			Create the ray tracing pipeline
+		*/
+		VkRayTracingPipelineCreateInfoKHR raytracing_pipeline_info{};
+		raytracing_pipeline_info.sType = VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR;
+		raytracing_pipeline_info.stageCount = static_cast<uint32_t>(shaderStages.size());
+		raytracing_pipeline_info.pStages = shaderStages.data();
+		raytracing_pipeline_info.groupCount = static_cast<uint32_t>(_rtFinalPipeline._shaderGroups.size());
+		raytracing_pipeline_info.pGroups = _rtFinalPipeline._shaderGroups.data();
+		raytracing_pipeline_info.maxPipelineRayRecursionDepth = 10;
+		raytracing_pipeline_info.layout = _rtFinalPipeline._layout;
+
+		VK_CHECK(vkCreateRayTracingPipelinesKHR(_device, VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &raytracing_pipeline_info, nullptr, &_rtFinalPipeline._pipeline));
 #pragma endregion
+	}
 }
 
 void RenderEngine::create_pospo_structures()
@@ -1438,39 +1599,80 @@ void RenderEngine::create_shader_binding_table()
 {
 	const uint32_t handleSize = _rayTracingPipelineProperties.shaderGroupHandleSize;
 	const uint32_t handleSizeAligned = vkutil::get_aligned_size(_rayTracingPipelineProperties.shaderGroupHandleSize, _rayTracingPipelineProperties.shaderGroupHandleAlignment);
-	const uint32_t groupCount = static_cast<uint32_t>(_shaderGroups.size());
-	const uint32_t sbtSize = groupCount * handleSizeAligned;
 
-	std::vector<uint8_t> shaderHandleStorage(sbtSize);
-	VK_CHECK(vkGetRayTracingShaderGroupHandlesKHR(_device, _rayTracingPipeline, 0, groupCount, sbtSize, shaderHandleStorage.data()));
+	// SBT for Shadow Pipeline
+	{
+		const uint32_t groupCount = static_cast<uint32_t>(_rtShadowsPipeline._shaderGroups.size());
+		const uint32_t sbtSize = groupCount * handleSizeAligned;
 
-	const VkBufferUsageFlags bufferUsageFlags = VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-	const VmaMemoryUsage memoryUsageFlags = VMA_MEMORY_USAGE_CPU_TO_GPU;
+		std::vector<uint8_t> shaderHandleStorage(sbtSize);
+		VK_CHECK(vkGetRayTracingShaderGroupHandlesKHR(_device, _rtShadowsPipeline._pipeline, 0, groupCount, sbtSize, shaderHandleStorage.data()));
 
-	_raygenShaderBindingTable = vkutil::create_buffer(
-		_allocator, handleSize, bufferUsageFlags, memoryUsageFlags);
+		const VkBufferUsageFlags bufferUsageFlags = VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+		const VmaMemoryUsage memoryUsageFlags = VMA_MEMORY_USAGE_CPU_TO_GPU;
 
-	_missShaderBindingTable = vkutil::create_buffer(
-		_allocator, handleSize * 2, bufferUsageFlags, memoryUsageFlags);
+		_rtShadowsPipeline._raygenShaderBindingTable = vkutil::create_buffer(
+			_allocator, handleSize, bufferUsageFlags, memoryUsageFlags);
 
-	_hitShaderBindingTable = vkutil::create_buffer(
-		_allocator, handleSize * 2, bufferUsageFlags, memoryUsageFlags);
+		_rtShadowsPipeline._missShaderBindingTable = vkutil::create_buffer(
+			_allocator, handleSize, bufferUsageFlags, memoryUsageFlags);
 
-	// Copy handles
-	void* raygen_data;
-	vmaMapMemory(_allocator, _raygenShaderBindingTable._allocation, &raygen_data);
-	memcpy(raygen_data, shaderHandleStorage.data(), handleSize);
-	vmaUnmapMemory(_allocator, _raygenShaderBindingTable._allocation);
+		_rtShadowsPipeline._hitShaderBindingTable = vkutil::create_buffer(
+			_allocator, handleSize, bufferUsageFlags, memoryUsageFlags);
 
-	void* miss_data;
-	vmaMapMemory(_allocator, _missShaderBindingTable._allocation, &miss_data);
-	memcpy(miss_data, shaderHandleStorage.data() + handleSizeAligned, handleSize * 2);
-	vmaUnmapMemory(_allocator, _missShaderBindingTable._allocation);
+		// Copy handles
+		void* raygen_data;
+		vmaMapMemory(_allocator, _rtShadowsPipeline._raygenShaderBindingTable._allocation, &raygen_data);
+		memcpy(raygen_data, shaderHandleStorage.data(), handleSize);
+		vmaUnmapMemory(_allocator, _rtShadowsPipeline._raygenShaderBindingTable._allocation);
 
-	void* hit_data;
-	vmaMapMemory(_allocator, _hitShaderBindingTable._allocation, &hit_data);
-	memcpy(hit_data, shaderHandleStorage.data() + handleSizeAligned * 3, handleSize * 2);
-	vmaUnmapMemory(_allocator, _hitShaderBindingTable._allocation);
+		void* miss_data;
+		vmaMapMemory(_allocator, _rtShadowsPipeline._missShaderBindingTable._allocation, &miss_data);
+		memcpy(miss_data, shaderHandleStorage.data() + handleSizeAligned, handleSize);
+		vmaUnmapMemory(_allocator, _rtShadowsPipeline._missShaderBindingTable._allocation);
+
+		void* hit_data;
+		vmaMapMemory(_allocator, _rtShadowsPipeline._hitShaderBindingTable._allocation, &hit_data);
+		memcpy(hit_data, shaderHandleStorage.data() + handleSizeAligned * 2, handleSize);
+		vmaUnmapMemory(_allocator, _rtShadowsPipeline._hitShaderBindingTable._allocation);
+	}
+
+	// SBT for Final Pipeline
+	{
+		const uint32_t groupCount = static_cast<uint32_t>(_rtFinalPipeline._shaderGroups.size());
+		const uint32_t sbtSize = groupCount * handleSizeAligned;
+
+		std::vector<uint8_t> shaderHandleStorage(sbtSize);
+		VK_CHECK(vkGetRayTracingShaderGroupHandlesKHR(_device, _rtFinalPipeline._pipeline, 0, groupCount, sbtSize, shaderHandleStorage.data()));
+
+		const VkBufferUsageFlags bufferUsageFlags = VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+		const VmaMemoryUsage memoryUsageFlags = VMA_MEMORY_USAGE_CPU_TO_GPU;
+
+		_rtFinalPipeline._raygenShaderBindingTable = vkutil::create_buffer(
+			_allocator, handleSize, bufferUsageFlags, memoryUsageFlags);
+
+		_rtFinalPipeline._missShaderBindingTable = vkutil::create_buffer(
+			_allocator, handleSize, bufferUsageFlags, memoryUsageFlags);
+
+		_rtFinalPipeline._hitShaderBindingTable = vkutil::create_buffer(
+			_allocator, handleSize, bufferUsageFlags, memoryUsageFlags);
+
+		// Copy handles
+		void* raygen_data;
+		vmaMapMemory(_allocator, _rtFinalPipeline._raygenShaderBindingTable._allocation, &raygen_data);
+		memcpy(raygen_data, shaderHandleStorage.data(), handleSize);
+		vmaUnmapMemory(_allocator, _rtFinalPipeline._raygenShaderBindingTable._allocation);
+
+		void* miss_data;
+		vmaMapMemory(_allocator, _rtFinalPipeline._missShaderBindingTable._allocation, &miss_data);
+		memcpy(miss_data, shaderHandleStorage.data() + handleSizeAligned, handleSize);
+		vmaUnmapMemory(_allocator, _rtFinalPipeline._missShaderBindingTable._allocation);
+
+		void* hit_data;
+		vmaMapMemory(_allocator, _rtFinalPipeline._hitShaderBindingTable._allocation, &hit_data);
+		memcpy(hit_data, shaderHandleStorage.data() + handleSizeAligned * 2, handleSize);
+		vmaUnmapMemory(_allocator, _rtFinalPipeline._hitShaderBindingTable._allocation);
+	}
 }
 
 void RenderEngine::create_raytracing_descriptor_pool()
@@ -1671,9 +1873,9 @@ void RenderEngine::get_enabled_features()
 
 void RenderEngine::create_raytracing_scene_structures(const Scene& scene)
 {
-	create_shadow_images();
+	create_shadow_images(scene._lights.size());
 
-	create_raytracing_pipelines(scene._renderables.size());
+	create_raytracing_pipelines(scene);
 	create_shader_binding_table();
 
 	create_bottom_level_acceleration_structure(scene);

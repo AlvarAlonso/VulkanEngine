@@ -81,7 +81,9 @@ public:
 
 	//RAY TRACING PIPELINE
 
-	VkDescriptorSet _rayTracingDescriptorSet;
+	VkDescriptorSet _rtFinalDescriptorSet;
+	VkDescriptorSet _rtShadowsDescriptorSet;
+	VkDescriptorSet	_denoiserDescriptorSet;
 	AllocatedBuffer _ubo;
 
 	struct UniformData {

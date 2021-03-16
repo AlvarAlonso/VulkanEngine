@@ -181,5 +181,8 @@
     <None Include="..\shaders\denoiser.comp">
       <Filter>Shaders</Filter>
     </None>
+    <None Include="..\shaders\RtShadows.rgen">
+      <Filter>Shaders</Filter>
+    </None>
   </ItemGroup>
 </Project>

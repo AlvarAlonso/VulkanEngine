@@ -205,6 +205,7 @@
     <None Include="..\shaders\raygen.rgen" />
     <None Include="..\shaders\raytrace.rahit" />
     <None Include="..\shaders\raytraceShadow.rmiss" />
+    <None Include="..\shaders\RtShadows.rgen" />
     <None Include="..\shaders\textured_lit.frag" />
     <None Include="..\shaders\tri_mesh.vert" />
   </ItemGroup>

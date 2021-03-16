@@ -65,3 +65,16 @@ struct RtPushConstant
 {
 	int frame{ 0 };
 };
+
+struct RtPipeline
+{
+	VkPipeline _pipeline;
+	VkPipelineLayout _layout;
+	VkDescriptorSetLayout _setLayout;
+
+	std::vector<VkRayTracingShaderGroupCreateInfoKHR>	_shaderGroups{};
+
+	AllocatedBuffer _raygenShaderBindingTable;
+	AllocatedBuffer	_missShaderBindingTable;
+	AllocatedBuffer	_hitShaderBindingTable;
+};

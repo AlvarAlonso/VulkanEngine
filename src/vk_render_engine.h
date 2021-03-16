@@ -194,24 +194,17 @@ public:
 	std::vector<AccelerationStructure> _bottomLevelAS{};
 
 	std::vector<AllocatedBuffer>						_transformBuffers; //for bottom AS
-	std::vector<VkRayTracingShaderGroupCreateInfoKHR>	_shaderGroups{};
-	
-	AllocatedBuffer _raygenShaderBindingTable;
-	AllocatedBuffer	_missShaderBindingTable;
-	AllocatedBuffer	_hitShaderBindingTable;
 
-	Pospo pospo;
+	RtPipeline				_rtShadowsPipeline;
+	RtPipeline				_rtFinalPipeline;
 
-	VkPipeline				_rayTracingPipeline;
 	VkPipeline				_denoiserPipeline;
 	RtPushConstant			_rtPushConstant;
-	VkPipelineLayout		_rayTracingPipelineLayout;
 	VkPipelineLayout		_denoiserPipelineLayout;
-	VkDescriptorPool		_rayTracingDescriptorPool;
-	VkDescriptorSetLayout	_rayTracingSetLayout;
 	VkDescriptorSetLayout	_denoiserSetLayout;
-	VkDescriptorSet			_denoiserSet;
+	VkDescriptorPool		_rayTracingDescriptorPool;
 
+	Pospo pospo;
 
 	struct UniformData {
 		glm::mat4 viewInverse;
@@ -224,7 +217,8 @@ public:
 	VkImageView _storageImageView;
 
 	//shadow images
-	Image _shadowImage;
+	std::vector<Image> _shadowImages;
+	std::vector<Image> _denoisedShadowImages;
 
 
 	//init the render engine
@@ -282,9 +276,9 @@ private:
 
 	void create_storage_image();
 
-	void create_shadow_images();
+	void create_shadow_images(const int& lightsCount);
 
-	void create_raytracing_pipelines(const int& renderablesCount);
+	void create_raytracing_pipelines(const Scene& scene);
 
 	void create_pospo_structures();
 
