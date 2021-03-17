@@ -20,6 +20,7 @@ layout(binding = 7, set = 0) uniform Lights { Light l[5]; } lights;
 layout(binding = 8, set = 0) buffer Materials { Material m[]; } materials;
 layout(binding = 10, set = 0, rgba8) uniform image2D image;
 layout(binding = 11, set = 0, rgba8) uniform image2D denoisedShadowTextures[];
+layout(binding = 12, set = 0, rgba8) uniform image2D shadowImages[];
 
 layout( push_constant ) uniform RtPushConstant {
 	int frame;
@@ -80,78 +81,14 @@ void main()
 		float attenuation = computeAttenuation( lightDistance,  lightMaxDist );
 		float shadowFactor = 1.0;
 		
-		// Tracing shadow ray only if the light is visible from the surface
-		if(NdotL > 0.0)
-		{
-			// Calculates the angle of a cone that starts at position worldPosition and perfectly
-			// encapsulates a sphere at position light.position with radius light.radius
-			vec3 perpL = cross(L, vec3(0.0, 1.0, 0.0));
-			// Handle case where L = up -> perpL should then be (1, 0, 0)
-			if(perpL == vec3(0))
-			{
-			perpL.x = 1.0;
-			}
-			// Use perpL to get a vector from worldPosition to the edge of the light sphere
-			vec3 toLightEdge = normalize((lightPosition + perpL * radius) - worldPos); // radius
-			// Angle between L and toLightEdge. Used as the cone angle when sampling shadow rays
-			float coneAngle = acos(dot(L, toLightEdge)) * 2.0f;
+		//calulate the specular and diffuse
+		vec3 diffuse = ( 1.0 - metal ) * albedo * color_material;	//the more metalness the less diffuse color
+		vec3 ks = specularBRDF( roughness, f0, NdotH, NdotV, NdotL, LdotH );
+		vec3 kd = diffuse * NdotL;
+		vec3 direct = kd + ks;
 
-			vec3 sampledDirection = normalize(getConeSample(prd.seed, L, coneAngle));
-
-			float tMin   = 0.001;
-			float tMax   = length(lightDistance + 100);
-			uint  flags = gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsOpaqueEXT | gl_RayFlagsSkipClosestHitShaderEXT;
-			shadowPrd.alpha = 0.0f;
-			shadowPrd.hardShadowed = true;
-			
-			vec3 origin = worldPos - sampledDirection * 0.01;
-
-			// trace to the first opaque surface
-			traceRayEXT(topLevelAS,
-			flags,
-			0xFE,
-			0,
-			0,
-			1,
-			origin,
-			tMin,
-			-sampledDirection,
-			tMax,
-			1);
-			
-			if(shadowPrd.hardShadowed == true)
-			{
-				continue;
-			}
-			
-			flags = gl_RayFlagsSkipClosestHitShaderEXT;
-
-			traceRayEXT(topLevelAS,  // acceleration structure
-			flags,       // rayFlags
-			0xFD,        // cullMask TODO: 0xFD
-			1,           // sbtRecordOffset
-			0,           // sbtRecordStride
-			1,           // missIndex
-			origin,      // ray origin
-			tMin,        // ray min range
-			-sampledDirection,          // ray direction
-			tMax,        // ray max range
-			1            // payload (location = 1)
-			);
-
-		clamp(shadowPrd.alpha, 0.0, 1.0);
-		shadowFactor = 1.0 - shadowPrd.alpha;
-		if(shadowFactor < 0.0001) continue;
+		totalLight += direct * lights.l[i].color_intensity.xyz * lightIntensity * attenuation * shadowFactor;
 	}
-	
-	//calulate the specular and diffuse
-	vec3 diffuse = ( 1.0 - metal ) * albedo * color_material;	//the more metalness the less diffuse color
-	vec3 ks = specularBRDF( roughness, f0, NdotH, NdotV, NdotL, LdotH );
-	vec3 kd = diffuse * NdotL;
-	vec3 direct = kd + ks;
-
-	totalLight += direct * lights.l[i].color_intensity.xyz * lightIntensity * attenuation * shadowFactor;
-}
 
 	prd.direction.xyz = vec3(0);
 
@@ -162,7 +99,7 @@ void main()
 	finalColor = albedo;
 
 	// Do accumulation over time
-	
+	/*
 	if(pushConstant.frame > 0)
 	{
 		float a         = 1.0f / float(pushConstant.frame + 1);
@@ -174,6 +111,9 @@ void main()
 		// First frame, replace the value in the buffer
 		imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(finalColor, 1.0f));
 	}
-	
-	//imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(finalColor, 1.0f));
+	*/
+
+	vec3 shadowColor = imageLoad(shadowImages[0], ivec2(gl_LaunchIDEXT.xy)).xyz;
+
+	imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(shadowColor, 1.0f));
 }

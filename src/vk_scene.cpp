@@ -22,7 +22,15 @@ void Scene::generate_sample_scene()
 	duck->_model = glm::translate(glm::vec3{ 0, 0, 0 });
 	duck->_prefab = duckPrefab;
 	*/
-	
+	/*
+	Prefab* sponzaPrefab = Prefab::get("../assets/sponza/Sponza.gltf");
+	sponzaPrefab->register_prefab("sponza");
+
+	RenderObject* sponza = new RenderObject();
+	sponza->_model = glm::translate(glm::vec3{ 0, 0, 0 });
+	sponza->_prefab = sponzaPrefab;
+
+
 	Prefab* helmetPrefab = Prefab::get("../assets/DamagedHelmet.glb");
 	helmetPrefab->register_prefab("helmet");
 
@@ -30,7 +38,7 @@ void Scene::generate_sample_scene()
 	helmet->_model = glm::translate(glm::vec3{5, 2, 0}); 
 	//helmet->_model = glm::rotate(glm::mat4(1), glm::radians(90.0f), glm::vec3{1, 0, 0});
 	helmet->_prefab = helmetPrefab;
-	
+	*/
 	/*
 	Prefab* cornellPrefab = Prefab::get("../assets/cornellBox.gltf");
 	cornellPrefab->register_prefab("cornell");
@@ -94,7 +102,6 @@ void Scene::generate_sample_scene()
 
 	_renderables.push_back(*treeStem);
 	_renderables.push_back(*treeLeaves);
-	
 
 
 	VKE::Material* grassMaterial = new VKE::Material(Texture::get("grass"));
@@ -140,6 +147,7 @@ void Scene::generate_sample_scene()
 	//_renderables.push_back(*duck);
 	//_renderables.push_back(*fox);
 	//_renderables.push_back(*helmet);
+	//_renderables.push_back(*sponza);
 
 	//_renderables.push_back(*cornellBox);
 	//_renderables.push_back(*car);

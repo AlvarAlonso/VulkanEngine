@@ -952,7 +952,7 @@ void RenderEngine::create_shadow_images(const int& lightsCount)
 	for(size_t i = 0; i < _shadowImages.size(); i++)
 	{
 		VK_CHECK(vmaCreateImage(_allocator, &image_info, &img_alloc_info, &_shadowImages[i]._image, &_shadowImages[i]._allocation, nullptr));
-
+		
 		VkImageViewCreateInfo image_view_info = vkinit::imageview_create_info(VK_FORMAT_R8G8B8A8_UNORM, _shadowImages[i]._image, VK_IMAGE_ASPECT_COLOR_BIT);
 		VK_CHECK(vkCreateImageView(_device, &image_view_info, nullptr, &_shadowImages[i]._view));
 	}
@@ -1262,27 +1262,21 @@ void RenderEngine::create_raytracing_pipelines(const Scene& scene)
 		VkPipelineShaderStageCreateInfo shader_stage = vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_COMPUTE_BIT, denoiseShader);
 
 		// Layout bindings
-		// Color Image
-		VkDescriptorSetLayoutBinding colorImageBinding = {};
-		colorImageBinding.binding = 0;
-		colorImageBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-		colorImageBinding.descriptorCount = 1;
-		colorImageBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
-
 		// Shadow Images
 		VkDescriptorSetLayoutBinding shadowImageBinding = {};
-		shadowImageBinding.binding = 1;
+		shadowImageBinding.binding = 0;
 		shadowImageBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
 		shadowImageBinding.descriptorCount = static_cast<uint32_t>(scene._lights.size());
 		shadowImageBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 
 		// Denoised Shadow Images
 		VkDescriptorSetLayoutBinding denoisedShadowImageBinding = {};
+		denoisedShadowImageBinding.binding = 1;
 		denoisedShadowImageBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
 		denoisedShadowImageBinding.descriptorCount = static_cast<uint32_t>(scene._lights.size());
 		denoisedShadowImageBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 
-		std::array<VkDescriptorSetLayoutBinding, 2> denoiser_bindings = { colorImageBinding, shadowImageBinding };
+		std::array<VkDescriptorSetLayoutBinding, 2> denoiser_bindings = { shadowImageBinding, denoisedShadowImageBinding };
 
 		// DescriptorSet Layout
 		VkDescriptorSetLayoutCreateInfo denoiser_descriptor_set_layout = {};
@@ -1325,6 +1319,13 @@ void RenderEngine::create_raytracing_pipelines(const Scene& scene)
 		denoisedShadowsImagesBinding.descriptorCount = static_cast<uint32_t>(scene._lights.size());
 		denoisedShadowsImagesBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
+		// Shadow Images
+		VkDescriptorSetLayoutBinding shadowImagesBinding{};
+		shadowImagesBinding.binding = 12;
+		shadowImagesBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+		shadowImagesBinding.descriptorCount = static_cast<uint32_t>(scene._lights.size());
+		shadowImagesBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
+
 		std::vector<VkDescriptorSetLayoutBinding> rt_bindings({
 			accelerationStructureLayoutBinding,
 			uniformBufferBinding,
@@ -1337,7 +1338,8 @@ void RenderEngine::create_raytracing_pipelines(const Scene& scene)
 			materialBufferBinding,
 			textureBufferBinding,
 			resultImageLayoutBinding,
-			denoisedShadowsImagesBinding
+			denoisedShadowsImagesBinding,
+			shadowImagesBinding
 			});
 
 		VkDescriptorSetLayoutCreateInfo desc_set_layout_info{};

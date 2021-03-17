@@ -460,11 +460,7 @@ void Renderer::create_raytracing_descriptor_sets()
 
 		VK_CHECK(vkAllocateDescriptorSets(_device, &denoiser_set_alloc_info, &_denoiserDescriptorSet));
 
-		VkDescriptorImageInfo colorImageInfo = {};
-		colorImageInfo.sampler = VK_NULL_HANDLE;
-		colorImageInfo.imageView = re->_storageImageView;
-		colorImageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-
+		// Binding 0: Shadow Images
 		std::vector<VkDescriptorImageInfo> shadowImageInfos;
 		shadowImageInfos.resize(re->_shadowImages.size());
 
@@ -478,10 +474,24 @@ void Renderer::create_raytracing_descriptor_sets()
 			shadowImageInfos[i] = shadowImageInfo;
 		}
 
-		VkWriteDescriptorSet colorImageWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, _denoiserDescriptorSet, &colorImageInfo, 0);
-		VkWriteDescriptorSet shadowImagesWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, _denoiserDescriptorSet, shadowImageInfos.data(), 1, static_cast<uint32_t>(shadowImageInfos.size()));
+		// Binding 1: Denoised Shadow Images
+		std::vector<VkDescriptorImageInfo> denoisedShadowImageInfos;
+		denoisedShadowImageInfos.resize(re->_denoisedShadowImages.size());
 
-		std::array<VkWriteDescriptorSet, 2> denoiser_set_writes = { colorImageWrite, shadowImagesWrite };
+		VkDescriptorImageInfo denoisedShadowImageInfo = {};
+		denoisedShadowImageInfo.sampler = VK_NULL_HANDLE;
+		denoisedShadowImageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+
+		for(size_t i = 0; i < re->_denoisedShadowImages.size(); i++)
+		{
+			denoisedShadowImageInfo.imageView = re->_denoisedShadowImages[i]._view;
+			denoisedShadowImageInfos[i] = denoisedShadowImageInfo;
+		}
+
+		VkWriteDescriptorSet shadowImagesWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, _denoiserDescriptorSet, shadowImageInfos.data(), 0, static_cast<uint32_t>(shadowImageInfos.size()));
+		VkWriteDescriptorSet denoisedShadowImagesWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, _denoiserDescriptorSet, denoisedShadowImageInfos.data(), 1, static_cast<uint32_t>(denoisedShadowImageInfos.size()));
+
+		std::array<VkWriteDescriptorSet, 2> denoiser_set_writes = { shadowImagesWrite, denoisedShadowImagesWrite };
 
 		vkUpdateDescriptorSets(_device, static_cast<uint32_t>(denoiser_set_writes.size()), denoiser_set_writes.data(), 0, VK_NULL_HANDLE);
 	}
@@ -516,6 +526,20 @@ void Renderer::create_raytracing_descriptor_sets()
 			denoisedShadowImageInfos.push_back(denoisedShadowDescriptor);
 		}
 
+		// Binding 12: Shadow Images
+		std::vector<VkDescriptorImageInfo> shadowImageInfos;
+		shadowImageInfos.reserve(re->_shadowImages.size());
+
+		for (const auto& shadowImage : re->_shadowImages)
+		{
+			VkDescriptorImageInfo shadowDescriptor{};
+			shadowDescriptor.sampler = VK_NULL_HANDLE;
+			shadowDescriptor.imageView = shadowImage._view;
+			shadowDescriptor.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+
+			shadowImageInfos.push_back(shadowDescriptor);
+		}
+
 		//Descriptor Writes		
 
 		// Acceleration Structure Write
@@ -539,6 +563,7 @@ void Renderer::create_raytracing_descriptor_sets()
 		VkWriteDescriptorSet textureImagesWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, _rtFinalDescriptorSet, textureImageInfos.data(), 9, textureImageInfos.size());
 		VkWriteDescriptorSet resultImageWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, _rtFinalDescriptorSet, &storageImageDescriptor, 10);
 		VkWriteDescriptorSet denoisedShadowImagesWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, _rtFinalDescriptorSet, denoisedShadowImageInfos.data(), 11, static_cast<uint32_t>(denoisedShadowImageInfos.size()));
+		VkWriteDescriptorSet shadowImagesWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, _rtFinalDescriptorSet, shadowImageInfos.data(), 12, static_cast<uint32_t>(shadowImageInfos.size()));
 
 		std::vector<VkWriteDescriptorSet> writeDescriptorSets = {
 			accelerationStructureWrite,
@@ -552,7 +577,8 @@ void Renderer::create_raytracing_descriptor_sets()
 			materialBufferWrite,
 			textureImagesWrite,		
 			resultImageWrite,
-			denoisedShadowImagesWrite
+			denoisedShadowImagesWrite,
+			shadowImagesWrite
 		};
 
 		vkUpdateDescriptorSets(_device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, VK_NULL_HANDLE);
@@ -1142,7 +1168,7 @@ void Renderer::init_descriptors()
 // Update descriptors for deferred
 void Renderer::update_descriptors(RenderObject* first, size_t count)
 {
-	glm::mat4 projection = glm::perspective(glm::radians(70.0f), 1700.0f / 900.0f, 0.1f, 200.0f);
+	glm::mat4 projection = glm::perspective(glm::radians(70.0f), 1700.0f / 900.0f, 0.1f, 500.0f);
 	projection[1][1] *= -1;
 
 	GPUCameraData camData;
