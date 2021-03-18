@@ -41,5 +41,5 @@ struct LightToShader
 {
 	glm::vec4 _position_dist;
 	glm::vec4 _color_intensity;
-	float _radius;
+	glm::vec4 _radius;
 };

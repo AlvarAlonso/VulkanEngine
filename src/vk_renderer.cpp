@@ -266,7 +266,7 @@ void Renderer::create_raytracing_descriptor_sets()
 		LightToShader lightInfo;
 		lightInfo._position_dist = glm::vec4(glm::vec3(light._model[3]), light._maxDist);
 		lightInfo._color_intensity = glm::vec4(light._color, light._intensity);
-		lightInfo._radius = light._radius;
+		lightInfo._radius.x = light._radius;
 		lightInfos.emplace_back(lightInfo);
 	}
 

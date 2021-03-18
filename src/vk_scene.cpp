@@ -22,23 +22,7 @@ void Scene::generate_sample_scene()
 	duck->_model = glm::translate(glm::vec3{ 0, 0, 0 });
 	duck->_prefab = duckPrefab;
 	*/
-	/*
-	Prefab* sponzaPrefab = Prefab::get("../assets/sponza/Sponza.gltf");
-	sponzaPrefab->register_prefab("sponza");
 
-	RenderObject* sponza = new RenderObject();
-	sponza->_model = glm::translate(glm::vec3{ 0, 0, 0 });
-	sponza->_prefab = sponzaPrefab;
-
-
-	Prefab* helmetPrefab = Prefab::get("../assets/DamagedHelmet.glb");
-	helmetPrefab->register_prefab("helmet");
-
-	RenderObject* helmet = new RenderObject();
-	helmet->_model = glm::translate(glm::vec3{5, 2, 0}); 
-	//helmet->_model = glm::rotate(glm::mat4(1), glm::radians(90.0f), glm::vec3{1, 0, 0});
-	helmet->_prefab = helmetPrefab;
-	*/
 	/*
 	Prefab* cornellPrefab = Prefab::get("../assets/cornellBox.gltf");
 	cornellPrefab->register_prefab("cornell");
@@ -142,6 +126,13 @@ void Scene::generate_sample_scene()
 	point_light1._radius = 1.0f;
 	point_light1._intensity = 1.0f;
 	point_light1._maxDist = 300.0f;
+
+	Light point_light2;
+	point_light2._model = glm::translate(glm::vec3{ -50, 100, 0 });
+	point_light2._color = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
+	point_light2._radius = 1.0f;
+	point_light2._intensity = 1.0f;
+	point_light2._maxDist = 300.0f;
 	
 	//_renderables.push_back(*box);
 	//_renderables.push_back(*duck);
@@ -154,4 +145,5 @@ void Scene::generate_sample_scene()
 	_renderables.push_back(*plane);
 
 	_lights.push_back(point_light1);
+	_lights.push_back(point_light2);
 }                                
