@@ -9,6 +9,7 @@ using namespace VKE;
 
 Scene::Scene()
 {
+	_skybox = nullptr;
 }
 
 void Scene::generate_sample_scene()
@@ -23,17 +24,8 @@ void Scene::generate_sample_scene()
 	duck->_prefab = duckPrefab;
 	*/
 
-	/*
-	Prefab* cornellPrefab = Prefab::get("../assets/cornellBox.gltf");
-	cornellPrefab->register_prefab("cornell");
-
-	RenderObject* cornellBox = new RenderObject();
-	cornellBox->_model = glm::translate(glm::vec3{ 0, 5, 0 });
-	cornellBox->_model = glm::rotate(cornellBox->_model, glm::radians(-45.0f), glm::vec3{ 0.0, 1.0, 0.0 });
-	cornellBox->_prefab = cornellPrefab;
-	*/
 	// TODO: Rework renderables created on code to work with raytracing
-	
+	/*
 	VKE::Material* stemMaterial = new VKE::Material(Texture::get("bark"));
 	stemMaterial->_type = VKE::DIFFUSE;
 	stemMaterial->_id = VKE::Material::sMaterials.size();
@@ -86,7 +78,11 @@ void Scene::generate_sample_scene()
 
 	_renderables.push_back(*treeStem);
 	_renderables.push_back(*treeLeaves);
+	*/
 
+	VKE::Material* skyboxMaterial = new VKE::Material(Texture::get("skybox"));
+	skyboxMaterial->_id = VKE::Material::sMaterials.size();
+	skyboxMaterial->register_material("skybox");
 
 	VKE::Material* grassMaterial = new VKE::Material(Texture::get("grass"));
 	grassMaterial->_tilling_factor = 10.0f;
@@ -95,7 +91,8 @@ void Scene::generate_sample_scene()
 	
 	VKE::Mesh* planeMesh = new VKE::Mesh();
 	planeMesh->create_quad();
-	Prefab* planePrefab = new VKE::Prefab(*planeMesh, "grass");
+
+	Prefab* planePrefab = new VKE::Prefab(*planeMesh, "skybox");
 
 	RenderObject* plane = new RenderObject();
 	plane->_model = glm::translate(glm::mat4(1), glm::vec3{ 0.0, 0.0, 0.0 });
@@ -145,5 +142,4 @@ void Scene::generate_sample_scene()
 	_renderables.push_back(*plane);
 
 	_lights.push_back(point_light1);
-	_lights.push_back(point_light2);
 }                                

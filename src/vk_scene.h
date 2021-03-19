@@ -2,6 +2,11 @@
 
 #include "vk_entity.h"
 
+namespace VKE
+{
+	class Texture;
+}
+
 struct GPUSceneData {
 	glm::vec4 fogColor;
 	glm::vec4 fogDistances;
@@ -22,6 +27,7 @@ public:
 	int primitiveCount;
 	std::vector<RenderObject> _renderables;
 	std::vector<Light> _lights;
+	VKE::Texture* _skybox;
 
 	GPUSceneData _sceneData;
 };

@@ -63,17 +63,22 @@ public:
 
 	FrameData _frames[FRAME_OVERLAP];
 
+	glm::mat4 _lastFrame_viewProj;
+
 	//Commands
 	VkCommandPool _forwardCommandPool;
 	VkCommandPool _deferredCommandPool;
 
+	VkCommandBuffer _skyboxCommandBuffer;
 	VkCommandBuffer _gbuffersCommandBuffer;
 	VkCommandBuffer _rtShadowsCommandBuffer;
 	VkCommandBuffer _rtFinalCommandBuffer;
+	VkSemaphore		_skyboxSemaphore;
 	VkSemaphore		_gbufferSemaphore;
 	VkSemaphore		_rtShadowsSemaphore;
 	VkSemaphore		_rtFinalSemaphore;
 
+	VkDescriptorSet _skyboxDescriptorSet;
 	VkDescriptorSet _camDescriptorSet;
 	VkDescriptorSet _objectDescriptorSet;
 	VkDescriptorSet _materialsDescriptorSet;
@@ -126,6 +131,8 @@ private:
 	void update_uniform_buffers(RenderObject* first, size_t count);
 
 	void create_raytracing_descriptor_sets();
+
+	void record_skybox_command_buffer();
 
 	void record_gbuffers_command_buffers(RenderObject* first, int count);
 

@@ -2,15 +2,23 @@
 #version 450
 #extension GL_EXT_nonuniform_qualifier : enable
 
+struct ClipPositions
+{
+	vec4 lastFrame;
+	vec4 currentFrame;
+};
+
 //shader input
 layout (location = 0) in vec3 inPosition;
 layout (location = 1) in vec3 inNormal;
 layout (location = 2) in vec2 texCoord;
+layout (location = 3) in ClipPositions clipPositions;
 
 //output write
 layout (location = 0) out vec4 outPosition;
 layout (location = 1) out vec4 outNormal;
 layout (location = 2) out vec4 outFragColor;
+layout (location = 3) out vec4 outMotionVector;
 
 struct Material {
 	vec4 color;
@@ -56,7 +64,11 @@ void main()
 		color = texture(textures[textureIndex], uv).xyz;
 	}
 
+	vec2 position = clipPositions.currentFrame.xy / clipPositions.currentFrame.w * 0.5f + 0.5f;
+	vec2 lastFramePosition = clipPositions.lastFrame.xy / clipPositions.lastFrame.w * 0.5f + 0.5f;
+
 	outPosition = vec4(inPosition, 1.0);
 	outNormal = vec4(inNormal, 1.0) * 0.5 + vec4(0.5);
 	outFragColor = vec4(color, float(matIndex) / 100.0);
+	outMotionVector = vec4((position - lastFramePosition) * 0.5f + 0.5f, 0.0, 1.0);
 }

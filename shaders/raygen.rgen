@@ -16,12 +16,11 @@ layout(binding = 1, set = 0) uniform CameraProperties
 	mat4 projInverse;
 	vec4 position;
 } cam;
-layout(binding = 2, set = 0) uniform sampler2D gbuffers[]; // 0 = position, 1 = normal, 2 = albedo
+layout(binding = 2, set = 0) uniform sampler2D gbuffers[]; // 0 = position, 1 = normal, 2 = albedo, 3 = motion vector
 layout(binding = 7, set = 0, std140) uniform Lights { Light l[5]; } lights;
 layout(binding = 8, set = 0) buffer Materials { Material m[]; } materials;
 layout(binding = 10, set = 0, rgba8) uniform image2D image;
 layout(binding = 11, set = 0, rgba8) uniform image2D denoisedShadowImages[];
-layout(binding = 12, set = 0, rgba8) uniform image2D shadowImages[];
 
 layout( push_constant ) uniform RtPushConstant {
 	int frame;

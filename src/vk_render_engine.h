@@ -16,7 +16,7 @@
 const int MAX_OBJECTS = 100;
 const int MAX_MATERIALS = 100;
 const int MAX_TEXTURES = 100;
-const int GBUFFER_NUM = 3;
+const int GBUFFER_NUM = 4;
 
 struct RenderObject;
 class Scene;
@@ -127,39 +127,44 @@ public:
 	static VkDescriptorSetLayout	_materialsSetLayout;
 	VkDescriptorSetLayout			_singleTextureSetLayout;
 	VkDescriptorSetLayout			_camSetLayout;
+	VkDescriptorSetLayout			_skyboxSetLayout;
 
 	// - Pipeline Layouts
-	VkPipelineLayout _forwardPipelineLayout;
 	VkPipelineLayout _texPipelineLayout;
-	VkPipelineLayout _deferredPipelineLayout;
+	VkPipelineLayout _gbuffersPipelineLayout;
 	VkPipelineLayout _lightPipelineLayout;
+	VkPipelineLayout _skyboxPipelineLayout;
 
 	// Pipelines
-	VkPipeline	_forwardPipeline;
 	VkPipeline	_texPipeline;
-	VkPipeline _deferredPipeline;
-	VkPipeline _lightPipeline;
+	VkPipeline	_gbuffersPipeline;
+	VkPipeline	_skyboxPipeline;
 
 	//Depth Buffer
 	Image _depthImage;
 
-	// Deferred
-	// - Deferred attachments
+	// Skybox pass
+
+	// G-Buffers
+	// - G-Buffers attachments
 	Image _positionImage;
 	Image _normalImage;
 	Image _albedoImage;
+	Image _motionVectorImage;
 
-	// - Deferred Descriptors
+	// - G-Buffers Descriptors
 	VkDescriptorPool _gbuffersPool;
 	VkDescriptorSetLayout _gbuffersSetLayout;
 	VkDescriptorSet _gbuffersDescriptorSet;
 
 	// Render passes
 	VkRenderPass _defaultRenderPass;
-	VkRenderPass _deferredRenderPass;
+	VkRenderPass _gbuffersRenderPass;
+	VkRenderPass _skyboxRenderPass;
 
 	// Framebuffers
 	std::vector<VkFramebuffer> _framebuffers;
+	VkFramebuffer _skybox_framebuffer;
 	VkFramebuffer _offscreen_framebuffer;
 
 	//FEATURES

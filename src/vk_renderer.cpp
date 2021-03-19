@@ -96,6 +96,7 @@ void Renderer::draw_scene()
 	{
 		re->create_raster_scene_structures();
 		init_descriptors();
+		record_skybox_command_buffer();
 		isDeferredCommandInit = true;
 	}
 
@@ -198,7 +199,13 @@ void Renderer::create_raytracing_descriptor_sets()
 	albedoImageDescriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 	albedoImageDescriptor.sampler = re->_defaultSampler;
 
-	std::array<VkDescriptorImageInfo, 3> gbuffersImageInfos = { positionImageDescriptor, normalImageDescriptor, albedoImageDescriptor };
+	// Motion Vector
+	VkDescriptorImageInfo motionImageDescriptor{};
+	motionImageDescriptor.imageView = re->_motionVectorImage._view;
+	motionImageDescriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	motionImageDescriptor.sampler = re->_defaultSampler;
+
+	std::array<VkDescriptorImageInfo, 4> gbuffersImageInfos = { positionImageDescriptor, normalImageDescriptor, albedoImageDescriptor, motionImageDescriptor };
 	
 	// ----------------------------------------------------
 	std::vector<VkDescriptorBufferInfo> verticesBufferInfos;
@@ -526,20 +533,6 @@ void Renderer::create_raytracing_descriptor_sets()
 			denoisedShadowImageInfos.push_back(denoisedShadowDescriptor);
 		}
 
-		// Binding 12: Shadow Images
-		std::vector<VkDescriptorImageInfo> shadowImageInfos;
-		shadowImageInfos.reserve(re->_shadowImages.size());
-
-		for (const auto& shadowImage : re->_shadowImages)
-		{
-			VkDescriptorImageInfo shadowDescriptor{};
-			shadowDescriptor.sampler = VK_NULL_HANDLE;
-			shadowDescriptor.imageView = shadowImage._view;
-			shadowDescriptor.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-
-			shadowImageInfos.push_back(shadowDescriptor);
-		}
-
 		//Descriptor Writes		
 
 		// Acceleration Structure Write
@@ -563,7 +556,6 @@ void Renderer::create_raytracing_descriptor_sets()
 		VkWriteDescriptorSet textureImagesWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, _rtFinalDescriptorSet, textureImageInfos.data(), 9, textureImageInfos.size());
 		VkWriteDescriptorSet resultImageWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, _rtFinalDescriptorSet, &storageImageDescriptor, 10);
 		VkWriteDescriptorSet denoisedShadowImagesWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, _rtFinalDescriptorSet, denoisedShadowImageInfos.data(), 11, static_cast<uint32_t>(denoisedShadowImageInfos.size()));
-		VkWriteDescriptorSet shadowImagesWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, _rtFinalDescriptorSet, shadowImageInfos.data(), 12, static_cast<uint32_t>(shadowImageInfos.size()));
 
 		std::vector<VkWriteDescriptorSet> writeDescriptorSets = {
 			accelerationStructureWrite,
@@ -577,8 +569,7 @@ void Renderer::create_raytracing_descriptor_sets()
 			materialBufferWrite,
 			textureImagesWrite,		
 			resultImageWrite,
-			denoisedShadowImagesWrite,
-			shadowImagesWrite
+			denoisedShadowImagesWrite
 		};
 
 		vkUpdateDescriptorSets(_device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, VK_NULL_HANDLE);
@@ -608,14 +599,40 @@ void Renderer::create_raytracing_descriptor_sets()
 		vmaDestroyBuffer(_allocator, _primitiveInfoBuffer._buffer, _primitiveInfoBuffer._allocation);
 		vmaDestroyBuffer(_allocator, _sceneBuffer._buffer, _sceneBuffer._allocation);
 		vmaDestroyBuffer(_allocator, _materialBuffer._buffer, _materialBuffer._allocation);
-		});
+	});
+}
+
+void Renderer::record_skybox_command_buffer()
+{
+	VkCommandBufferBeginInfo skyboxCmdBeginInfo = vkinit::command_buffer_begin_info(VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
+
+	VK_CHECK(vkBeginCommandBuffer(_skyboxCommandBuffer, &skyboxCmdBeginInfo));
+
+	VkClearValue clearValue;
+	clearValue.color = { {0.2f, 0.4f, 0.9f, 1.0f} };
+
+	VkRenderPassBeginInfo rpInfo = vkinit::renderpass_begin_info(re->_skyboxRenderPass, re->_windowExtent, re->_skybox_framebuffer);
+	rpInfo.clearValueCount = 1;
+	rpInfo.pClearValues = &clearValue;
+
+	vkCmdBeginRenderPass(_skyboxCommandBuffer, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+	vkCmdBindPipeline(_skyboxCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_skyboxPipeline);
+
+	vkCmdBindDescriptorSets(_skyboxCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_skyboxPipelineLayout, 0, 1, &_skyboxDescriptorSet, 0, nullptr);
+
+	// TODO: draw skybox
+
+	vkCmdEndRenderPass(_skyboxCommandBuffer);
+
+	VK_CHECK(vkEndCommandBuffer(_skyboxCommandBuffer));
 }
 
 void Renderer::record_gbuffers_command_buffers(RenderObject* first, int count)
 {
-	VkCommandBufferBeginInfo deferredCmdBeginInfo = vkinit::command_buffer_begin_info(VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
+	VkCommandBufferBeginInfo gbuffersCmdBeginInfo = vkinit::command_buffer_begin_info(VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
 
-	VK_CHECK(vkBeginCommandBuffer(_gbuffersCommandBuffer, &deferredCmdBeginInfo));
+	VK_CHECK(vkBeginCommandBuffer(_gbuffersCommandBuffer, &gbuffersCmdBeginInfo));
 
 	VkClearValue first_clearValue;
 	first_clearValue.color = { {0.2f, 0.2f, 0.2f, 1.0f} };
@@ -623,20 +640,20 @@ void Renderer::record_gbuffers_command_buffers(RenderObject* first, int count)
 	VkClearValue first_depthClear;
 	first_depthClear.depthStencil.depth = 1.0f;
 
-	VkRenderPassBeginInfo rpInfo = vkinit::renderpass_begin_info(re->_deferredRenderPass, re->_windowExtent, re->_offscreen_framebuffer);
+	VkRenderPassBeginInfo rpInfo = vkinit::renderpass_begin_info(re->_gbuffersRenderPass, re->_windowExtent, re->_offscreen_framebuffer);
 
-	std::array<VkClearValue, 4> first_clearValues = { first_clearValue, first_clearValue, first_clearValue, first_depthClear };
+	std::array<VkClearValue, 5> first_clearValues = { first_clearValue, first_clearValue, first_clearValue, first_clearValue, first_depthClear };
 
 	rpInfo.clearValueCount = static_cast<uint32_t>(first_clearValues.size());
 	rpInfo.pClearValues = first_clearValues.data();
 
 	vkCmdBeginRenderPass(_gbuffersCommandBuffer, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-	vkCmdBindPipeline(_gbuffersCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_deferredPipeline);
+	vkCmdBindPipeline(_gbuffersCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_gbuffersPipeline);
 
-	vkCmdBindDescriptorSets(_gbuffersCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_deferredPipelineLayout, 0, 1, &_camDescriptorSet, 0, nullptr);
+	vkCmdBindDescriptorSets(_gbuffersCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_gbuffersPipelineLayout, 0, 1, &_camDescriptorSet, 0, nullptr);
 
-	vkCmdBindDescriptorSets(_gbuffersCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_deferredPipelineLayout, 1, 1, &_materialsDescriptorSet, 0, nullptr);
+	vkCmdBindDescriptorSets(_gbuffersCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_gbuffersPipelineLayout, 1, 1, &_materialsDescriptorSet, 0, nullptr);
 
 	VKE::Prefab* lastPrefab = nullptr;
 	for (int i = 0; i < count; i++)
@@ -653,7 +670,7 @@ void Renderer::record_gbuffers_command_buffers(RenderObject* first, int count)
 			}
 		}
 
-		object._prefab->draw(object._model, _gbuffersCommandBuffer, re->_deferredPipelineLayout);
+		object._prefab->draw(object._model, _gbuffersCommandBuffer, re->_gbuffersPipelineLayout);
 	}
 
 	vkCmdEndRenderPass(_gbuffersCommandBuffer);
@@ -917,6 +934,7 @@ void Renderer::init_commands()
 	VK_CHECK(vkCreateCommandPool(_device, &commandPoolInfo, nullptr, &_deferredCommandPool));
 
 	VkCommandBufferAllocateInfo cmdAllocInfo = vkinit::command_buffer_allocate_info(_deferredCommandPool, 1);
+	VK_CHECK(vkAllocateCommandBuffers(_device, &cmdAllocInfo, &_skyboxCommandBuffer));
 	VK_CHECK(vkAllocateCommandBuffers(_device, &cmdAllocInfo, &_gbuffersCommandBuffer));
 
 	//raytracing command buffer
@@ -940,6 +958,7 @@ void Renderer::init_sync_structures()
 	semaphoreCreateInfo.pNext = nullptr;
 	semaphoreCreateInfo.flags = 0;
 
+	VK_CHECK(vkCreateSemaphore(_device, &semaphoreCreateInfo, nullptr, &_skyboxSemaphore));
 	VK_CHECK(vkCreateSemaphore(_device, &semaphoreCreateInfo, nullptr, &_gbufferSemaphore));
 	VK_CHECK(vkCreateSemaphore(_device, &semaphoreCreateInfo, nullptr, &_rtShadowsSemaphore));
 	VK_CHECK(vkCreateSemaphore(_device, &semaphoreCreateInfo, nullptr, &_rtFinalSemaphore));
@@ -1028,6 +1047,32 @@ void Renderer::init_descriptors()
 		vkUpdateDescriptorSets(_device, static_cast<uint32_t>(setWrites.size()), setWrites.data(), 0, nullptr);
 	}
 
+	VkDescriptorSetAllocateInfo skyboxSetAllocInfo = {};
+	skyboxSetAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	skyboxSetAllocInfo.pNext = nullptr;
+	skyboxSetAllocInfo.descriptorPool = re->_descriptorPool;
+	skyboxSetAllocInfo.descriptorSetCount = 1;
+	skyboxSetAllocInfo.pSetLayouts = &re->_skyboxSetLayout;
+
+	VK_CHECK(vkAllocateDescriptorSets(_device, &skyboxSetAllocInfo, &_skyboxDescriptorSet));
+
+	VkDescriptorBufferInfo camBufferInfo = {};
+	camBufferInfo.buffer = _camBuffer._buffer;
+	camBufferInfo.offset = 0;
+	camBufferInfo.range = sizeof(GPUCameraData);
+
+	VkDescriptorImageInfo cubeMapInfo = {};
+	cubeMapInfo.sampler = re->_defaultSampler;
+	cubeMapInfo.imageView = currentScene->_skybox->_imageView;
+	cubeMapInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+	VkWriteDescriptorSet camSkyWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, _skyboxDescriptorSet, &camBufferInfo, 0);
+	VkWriteDescriptorSet cubeMapWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, _skyboxDescriptorSet, &cubeMapInfo, 1);
+
+	std::array<VkWriteDescriptorSet, 2> skyboxWrites = { camSkyWrite, cubeMapWrite };
+
+	vkUpdateDescriptorSets(_device, static_cast<uint32_t>(skyboxWrites.size()), skyboxWrites.data(), 0, nullptr);
+
 	//DEFERRED DESCRIPTORS
 	// Camera
 	VkDescriptorSetAllocateInfo cameraSetAllocInfo = {};
@@ -1037,12 +1082,7 @@ void Renderer::init_descriptors()
 	cameraSetAllocInfo.descriptorSetCount = 1;
 	cameraSetAllocInfo.pSetLayouts = &re->_camSetLayout;
 
-	vkAllocateDescriptorSets(_device, &cameraSetAllocInfo, &_camDescriptorSet);
-
-	VkDescriptorBufferInfo camBufferInfo = {};
-	camBufferInfo.buffer = _camBuffer._buffer;
-	camBufferInfo.offset = 0;
-	camBufferInfo.range = sizeof(GPUCameraData);
+	VK_CHECK(vkAllocateDescriptorSets(_device, &cameraSetAllocInfo, &_camDescriptorSet));
 
 	// Object materials
 	VkDescriptorSetAllocateInfo objectSetAlloc = {};
@@ -1052,7 +1092,7 @@ void Renderer::init_descriptors()
 	objectSetAlloc.descriptorSetCount = 1;
 	objectSetAlloc.pSetLayouts = &re->_materialsSetLayout;
 
-	vkAllocateDescriptorSets(_device, &objectSetAlloc, &_materialsDescriptorSet);
+	VK_CHECK(vkAllocateDescriptorSets(_device, &objectSetAlloc, &_materialsDescriptorSet));
 
 	VkDescriptorBufferInfo materialBufferInfo;
 	materialBufferInfo.buffer = _objectBuffer._buffer;
@@ -1175,7 +1215,10 @@ void Renderer::update_descriptors(RenderObject* first, size_t count)
 	camData.projection = projection;
 	camData.view = VulkanEngine::cinstance->camera->getView();
 	camData.viewproj = projection * camData.view;
-	
+	camData.viewproj_lastFrame = _lastFrame_viewProj;
+
+	_lastFrame_viewProj = camData.viewproj;
+
 	void* data2;
 	vmaMapMemory(_allocator, _camBuffer._allocation, &data2);
 	memcpy(data2, &camData, sizeof(GPUCameraData));

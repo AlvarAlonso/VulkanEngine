@@ -26,11 +26,6 @@ void main()
 	for(int i = 0; i < MAX_LIGHTS; i++)
 	{
 		vec3 shadowColor = imageLoad(shadowImages[i], pixel).xyz;
-		if(shadowColor.x != 1)
-		{
-			shadowColor = vec3(0.0);
-		}
-
 		imageStore(denoisedShadowImages[i], pixel, vec4(shadowColor, 1.0));
 	}
 }

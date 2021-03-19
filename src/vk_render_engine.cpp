@@ -251,7 +251,21 @@ void RenderEngine::init_descriptor_set_layouts()
 	setInfo.flags = 0;
 	setInfo.pBindings = bindings.data();
 
-	vkCreateDescriptorSetLayout(_device, &setInfo, nullptr, &_globalSetLayout);
+	VK_CHECK(vkCreateDescriptorSetLayout(_device, &setInfo, nullptr, &_globalSetLayout));
+
+	VkDescriptorSetLayoutBinding cubeMapBind = vkinit::descriptorset_layout_binding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1);
+
+	std::array<VkDescriptorSetLayoutBinding, 2> skyboxBindings = { cameraBind, cubeMapBind };
+
+	VkDescriptorSetLayoutCreateInfo skyboxSetInfo = {};
+	skyboxSetInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	skyboxSetInfo.pNext = nullptr;
+	skyboxSetInfo.bindingCount = static_cast<uint32_t>(skyboxBindings.size());
+	skyboxSetInfo.flags = 0;
+	skyboxSetInfo.pBindings = skyboxBindings.data();
+
+	VK_CHECK(vkCreateDescriptorSetLayout(_device, &skyboxSetInfo, nullptr, &_skyboxSetLayout));
+
 
 	VkDescriptorSetLayoutCreateInfo camSetInfo = {};
 	camSetInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -261,7 +275,7 @@ void RenderEngine::init_descriptor_set_layouts()
 	camSetInfo.flags = 0;
 	camSetInfo.pBindings = &cameraBind;
 
-	vkCreateDescriptorSetLayout(_device, &camSetInfo, nullptr, &_camSetLayout);
+	VK_CHECK(vkCreateDescriptorSetLayout(_device, &camSetInfo, nullptr, &_camSetLayout));
 
 	VkDescriptorSetLayoutBinding objectBind = vkinit::descriptorset_layout_binding(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, 0);
 
@@ -272,7 +286,7 @@ void RenderEngine::init_descriptor_set_layouts()
 	set2Info.flags = 0;
 	set2Info.pBindings = &objectBind;
 
-	vkCreateDescriptorSetLayout(_device, &set2Info, nullptr, &_objectSetLayout);
+	VK_CHECK(vkCreateDescriptorSetLayout(_device, &set2Info, nullptr, &_objectSetLayout));
 
 	VkDescriptorSetLayoutBinding materialsBind = vkinit::descriptorset_layout_binding(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT, 0);
 	VkDescriptorSetLayoutBinding matTexturesBind = vkinit::descriptorset_layout_binding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1);
@@ -287,7 +301,7 @@ void RenderEngine::init_descriptor_set_layouts()
 	materialsSetInfo.flags = 0;
 	materialsSetInfo.pBindings = matBindings.data();
 
-	vkCreateDescriptorSetLayout(_device, &materialsSetInfo, nullptr, &_materialsSetLayout);
+	VK_CHECK(vkCreateDescriptorSetLayout(_device, &materialsSetInfo, nullptr, &_materialsSetLayout));
 }
 
 void RenderEngine::init_raster_structures()
@@ -296,8 +310,7 @@ void RenderEngine::init_raster_structures()
 	init_deferred_attachments();
 	init_render_passes();
 	init_framebuffers();
-	init_gbuffer_descriptors();
-	
+	init_gbuffer_descriptors();	
 }
 
 void RenderEngine::init_deferred_attachments()
@@ -311,11 +324,13 @@ void RenderEngine::init_deferred_attachments()
 	_positionImage._format = VK_FORMAT_R16G16B16A16_SFLOAT;
 	_normalImage._format = VK_FORMAT_R16G16B16A16_SFLOAT;
 	_albedoImage._format = VK_FORMAT_R8G8B8A8_UNORM;
+	_motionVectorImage._format = VK_FORMAT_R16G16B16A16_SFLOAT;
 	_depthImage._format = VK_FORMAT_D32_SFLOAT;
 
-	VkImageCreateInfo position_igm = vkinit::image_create_info(_positionImage._format, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, attachmentExtent);
-	VkImageCreateInfo normal_igm = vkinit::image_create_info(_normalImage._format, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, attachmentExtent);
-	VkImageCreateInfo albedo_igm = vkinit::image_create_info(_albedoImage._format, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, attachmentExtent);
+	VkImageCreateInfo position_igm = vkinit::image_create_info(_positionImage._format, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, attachmentExtent);
+	VkImageCreateInfo normal_igm = vkinit::image_create_info(_normalImage._format, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, attachmentExtent);
+	VkImageCreateInfo albedo_igm = vkinit::image_create_info(_albedoImage._format, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, attachmentExtent);
+	VkImageCreateInfo motion_igm = vkinit::image_create_info(_motionVectorImage._format, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, attachmentExtent);
 	VkImageCreateInfo depth_igm = vkinit::image_create_info(_depthImage._format, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, attachmentExtent);
 
 	VmaAllocationCreateInfo img_alloc_info = {};
@@ -325,16 +340,19 @@ void RenderEngine::init_deferred_attachments()
 	vmaCreateImage(_allocator, &position_igm, &img_alloc_info, &_positionImage._image, &_positionImage._allocation, nullptr);
 	vmaCreateImage(_allocator, &normal_igm, &img_alloc_info, &_normalImage._image, &_normalImage._allocation, nullptr);
 	vmaCreateImage(_allocator, &albedo_igm, &img_alloc_info, &_albedoImage._image, &_albedoImage._allocation, nullptr);
+	vmaCreateImage(_allocator, &motion_igm, &img_alloc_info, &_motionVectorImage._image, &_motionVectorImage._allocation, nullptr);
 	vmaCreateImage(_allocator, &depth_igm, &img_alloc_info, &_depthImage._image, &_depthImage._allocation, nullptr);
 
 	VkImageViewCreateInfo position_view_igm = vkinit::imageview_create_info(_positionImage._format, _positionImage._image, VK_IMAGE_ASPECT_COLOR_BIT);
 	VkImageViewCreateInfo normal_view_igm = vkinit::imageview_create_info(_normalImage._format, _normalImage._image, VK_IMAGE_ASPECT_COLOR_BIT);
 	VkImageViewCreateInfo albedo_view_igm = vkinit::imageview_create_info(_albedoImage._format, _albedoImage._image, VK_IMAGE_ASPECT_COLOR_BIT);
+	VkImageViewCreateInfo motion_view_igm = vkinit::imageview_create_info(_motionVectorImage._format, _motionVectorImage._image, VK_IMAGE_ASPECT_COLOR_BIT);
 	VkImageViewCreateInfo depth_view_igm = vkinit::imageview_create_info(_depthImage._format, _depthImage._image, VK_IMAGE_ASPECT_DEPTH_BIT);
 
 	VK_CHECK(vkCreateImageView(_device, &position_view_igm, nullptr, &_positionImage._view));
 	VK_CHECK(vkCreateImageView(_device, &normal_view_igm, nullptr, &_normalImage._view));
 	VK_CHECK(vkCreateImageView(_device, &albedo_view_igm, nullptr, &_albedoImage._view));
+	VK_CHECK(vkCreateImageView(_device, &motion_view_igm, nullptr, &_motionVectorImage._view));
 	VK_CHECK(vkCreateImageView(_device, &depth_view_igm, nullptr, &_depthImage._view));
 
 	_mainDeletionQueue.push_function([=]() {
@@ -344,6 +362,8 @@ void RenderEngine::init_deferred_attachments()
 		vmaDestroyImage(_allocator, _normalImage._image, _normalImage._allocation);
 		vkDestroyImageView(_device, _albedoImage._view, nullptr);
 		vmaDestroyImage(_allocator, _albedoImage._image, _albedoImage._allocation);
+		vkDestroyImageView(_device, _motionVectorImage._view, nullptr);
+		vmaDestroyImage(_allocator, _motionVectorImage._image, _motionVectorImage._allocation);
 		vkDestroyImageView(_device, _depthImage._view, nullptr);
 		vmaDestroyImage(_allocator, _depthImage._image, _depthImage._allocation);
 		});
@@ -351,136 +371,315 @@ void RenderEngine::init_deferred_attachments()
 
 void RenderEngine::init_render_passes()
 {
-	//DEFERRED RENDER PASS
-	//gBuffers Pass
-	VkAttachmentDescription position_attachment = {};
-	position_attachment.format = _positionImage._format;
-	position_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
-	position_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-	position_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-	position_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-	position_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-	position_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-	position_attachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	// Skybox pass
+	{
+		VkAttachmentDescription color_attachment = {};
+		color_attachment.format = _albedoImage._format;
+		color_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
+		color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+		color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+		color_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		color_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		color_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		color_attachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-	VkAttachmentDescription normal_attachment = {};
-	normal_attachment.format = _normalImage._format;
-	normal_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
-	normal_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-	normal_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-	normal_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-	normal_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-	normal_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-	normal_attachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		VkAttachmentReference color_reference;
+		color_reference.attachment = 0;
+		color_reference.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-	VkAttachmentDescription albedo_attachment = {};
-	albedo_attachment.format = _albedoImage._format;
-	albedo_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
-	albedo_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-	albedo_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-	albedo_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-	albedo_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-	albedo_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-	albedo_attachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		VkSubpassDescription subpass = {};
+		subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+		subpass.colorAttachmentCount = 1;
+		subpass.pColorAttachments = &color_reference;
+		subpass.pDepthStencilAttachment = nullptr;
 
-	VkAttachmentDescription depth_attachment = {};
-	depth_attachment.format = _depthImage._format;
-	depth_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
-	depth_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-	depth_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-	depth_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-	depth_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-	depth_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-	depth_attachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+		std::array<VkSubpassDependency, 2> dependencies;
 
-	std::array<VkAttachmentDescription, 4> attachment_descriptions = { position_attachment, normal_attachment, albedo_attachment, depth_attachment };
+		dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
+		dependencies[0].dstSubpass = 0;
+		dependencies[0].srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+		dependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		dependencies[0].srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+		dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		dependencies[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
-	VkAttachmentReference position_ref;
-	position_ref.attachment = 0;
-	position_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		dependencies[1].srcSubpass = 0;
+		dependencies[1].dstSubpass = VK_SUBPASS_EXTERNAL;
+		dependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		dependencies[1].dstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+		dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		dependencies[1].dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+		dependencies[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
-	VkAttachmentReference normal_ref;
-	normal_ref.attachment = 1;
-	normal_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		VkRenderPassCreateInfo skybox_pass = {};
+		skybox_pass.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+		skybox_pass.pNext = nullptr;
+		skybox_pass.attachmentCount = 1;
+		skybox_pass.pAttachments = &color_attachment;
+		skybox_pass.subpassCount = 1;
+		skybox_pass.pSubpasses = &subpass;
+		skybox_pass.dependencyCount = static_cast<uint32_t>(dependencies.size());
+		skybox_pass.pDependencies = dependencies.data();
 
-	VkAttachmentReference albedo_ref;
-	albedo_ref.attachment = 2;
-	albedo_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		VK_CHECK(vkCreateRenderPass(_device, &skybox_pass, nullptr, &_skyboxRenderPass));
 
-	std::array<VkAttachmentReference, 3> color_references = { position_ref, normal_ref, albedo_ref };
-
-	VkAttachmentReference depth_ref;
-	depth_ref.attachment = 3;
-	depth_ref.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-	VkSubpassDescription subpass = {};
-	subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-	subpass.colorAttachmentCount = static_cast<uint32_t>(color_references.size());
-	subpass.pColorAttachments = color_references.data();
-	subpass.pDepthStencilAttachment = &depth_ref;
-
-	std::array<VkSubpassDependency, 2> dependencies;
-
-	dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
-	dependencies[0].dstSubpass = 0;
-	dependencies[0].srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-	dependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-	dependencies[0].srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
-	dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-	dependencies[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
-
-	dependencies[1].srcSubpass = 0;
-	dependencies[1].dstSubpass = VK_SUBPASS_EXTERNAL;
-	dependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-	dependencies[1].dstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-	dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-	dependencies[1].dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
-	dependencies[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
-
-	VkRenderPassCreateInfo deferred_pass = {};
-	deferred_pass.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-	deferred_pass.pNext = nullptr;
-	deferred_pass.attachmentCount = static_cast<uint32_t>(attachment_descriptions.size());
-	deferred_pass.pAttachments = attachment_descriptions.data();
-	deferred_pass.subpassCount = 1;
-	deferred_pass.pSubpasses = &subpass;
-	deferred_pass.dependencyCount = static_cast<uint32_t>(dependencies.size());
-	deferred_pass.pDependencies = dependencies.data();
-
-	VK_CHECK(vkCreateRenderPass(_device, &deferred_pass, nullptr, &_deferredRenderPass));
-
-	_mainDeletionQueue.push_function([=]() {
-		vkDestroyRenderPass(_device, _deferredRenderPass, nullptr);
+		_mainDeletionQueue.push_function([=]() {
+			vkDestroyRenderPass(_device, _skyboxRenderPass, nullptr);
 		});
+	}
+
+	// G-Buffers Pass
+	{
+		VkAttachmentDescription position_attachment = {};
+		position_attachment.format = _positionImage._format;
+		position_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
+		position_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+		position_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+		position_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		position_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		position_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		position_attachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+		VkAttachmentDescription normal_attachment = {};
+		normal_attachment.format = _normalImage._format;
+		normal_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
+		normal_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+		normal_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+		normal_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		normal_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		normal_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		normal_attachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+		VkAttachmentDescription albedo_attachment = {};
+		albedo_attachment.format = _albedoImage._format;
+		albedo_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
+		albedo_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		albedo_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+		albedo_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		albedo_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		albedo_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		albedo_attachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+		VkAttachmentDescription motion_attachment = {};
+		motion_attachment.format = _motionVectorImage._format;
+		motion_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
+		motion_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+		motion_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+		motion_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		motion_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		motion_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		motion_attachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+		VkAttachmentDescription depth_attachment = {};
+		depth_attachment.format = _depthImage._format;
+		depth_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
+		depth_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+		depth_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+		depth_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		depth_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		depth_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		depth_attachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+		std::array<VkAttachmentDescription, 5> attachment_descriptions =
+		{
+			position_attachment,
+			normal_attachment,
+			albedo_attachment,
+			motion_attachment,
+			depth_attachment
+		};
+
+		VkAttachmentReference position_ref;
+		position_ref.attachment = 0;
+		position_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+		VkAttachmentReference normal_ref;
+		normal_ref.attachment = 1;
+		normal_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+		VkAttachmentReference albedo_ref;
+		albedo_ref.attachment = 2;
+		albedo_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+		VkAttachmentReference motion_ref;
+		motion_ref.attachment = 3;
+		motion_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+		std::array<VkAttachmentReference, 4> color_references = { position_ref, normal_ref, albedo_ref, motion_ref };
+
+		VkAttachmentReference depth_ref;
+		depth_ref.attachment = 4;
+		depth_ref.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+		VkSubpassDescription subpass = {};
+		subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+		subpass.colorAttachmentCount = static_cast<uint32_t>(color_references.size());
+		subpass.pColorAttachments = color_references.data();
+		subpass.pDepthStencilAttachment = &depth_ref;
+
+		std::array<VkSubpassDependency, 2> dependencies;
+
+		dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
+		dependencies[0].dstSubpass = 0;
+		dependencies[0].srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+		dependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		dependencies[0].srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+		dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		dependencies[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+		dependencies[1].srcSubpass = 0;
+		dependencies[1].dstSubpass = VK_SUBPASS_EXTERNAL;
+		dependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		dependencies[1].dstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+		dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		dependencies[1].dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+		dependencies[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+		VkRenderPassCreateInfo gbuffers_pass = {};
+		gbuffers_pass.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+		gbuffers_pass.pNext = nullptr;
+		gbuffers_pass.attachmentCount = static_cast<uint32_t>(attachment_descriptions.size());
+		gbuffers_pass.pAttachments = attachment_descriptions.data();
+		gbuffers_pass.subpassCount = 1;
+		gbuffers_pass.pSubpasses = &subpass;
+		gbuffers_pass.dependencyCount = static_cast<uint32_t>(dependencies.size());
+		gbuffers_pass.pDependencies = dependencies.data();
+
+		VK_CHECK(vkCreateRenderPass(_device, &gbuffers_pass, nullptr, &_gbuffersRenderPass));
+
+		_mainDeletionQueue.push_function([=]() {
+			vkDestroyRenderPass(_device, _gbuffersRenderPass, nullptr);
+		});
+	}
 }
 
 void RenderEngine::init_framebuffers()
 {
-	//OFFSCREEN FRAMEBUFFER
-	std::array<VkImageView, 4> attachments;
-	attachments[0] = _positionImage._view;
-	attachments[1] = _normalImage._view;
-	attachments[2] = _albedoImage._view;
-	attachments[3] = _depthImage._view;
+	// Skybox buffer
+	{
+		VkFramebufferCreateInfo fb_info = {};
+		fb_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+		fb_info.pNext = nullptr;
+		fb_info.renderPass = _skyboxRenderPass;
+		fb_info.attachmentCount = 1;
+		fb_info.pAttachments = &_albedoImage._view;
+		fb_info.width = _windowExtent.width;
+		fb_info.height = _windowExtent.height;
+		fb_info.layers = 1;
 
-	VkFramebufferCreateInfo fb_info = {};
-	fb_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-	fb_info.pNext = nullptr;
-	fb_info.renderPass = _deferredRenderPass;
-	fb_info.attachmentCount = static_cast<uint32_t>(attachments.size());
-	fb_info.pAttachments = attachments.data();
-	fb_info.width = _windowExtent.width;
-	fb_info.height = _windowExtent.height;
-	fb_info.layers = 1;
+		VK_CHECK(vkCreateFramebuffer(_device, &fb_info, nullptr, &_skybox_framebuffer));
 
-	VK_CHECK(vkCreateFramebuffer(_device, &fb_info, nullptr, &_offscreen_framebuffer));
+		_mainDeletionQueue.push_function([=]() {
+			vkDestroyFramebuffer(_device, _skybox_framebuffer, nullptr);
+		});
+	}
+
+	// Offscreen buffer
+	{
+		std::array<VkImageView, 5> attachments;
+		attachments[0] = _positionImage._view;
+		attachments[1] = _normalImage._view;
+		attachments[2] = _albedoImage._view;
+		attachments[3] = _motionVectorImage._view;
+		attachments[4] = _depthImage._view;
+
+		VkFramebufferCreateInfo fb_info = {};
+		fb_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+		fb_info.pNext = nullptr;
+		fb_info.renderPass = _gbuffersRenderPass;
+		fb_info.attachmentCount = static_cast<uint32_t>(attachments.size());
+		fb_info.pAttachments = attachments.data();
+		fb_info.width = _windowExtent.width;
+		fb_info.height = _windowExtent.height;
+		fb_info.layers = 1;
+
+		VK_CHECK(vkCreateFramebuffer(_device, &fb_info, nullptr, &_offscreen_framebuffer));
+
+		_mainDeletionQueue.push_function([=]() {
+			vkDestroyFramebuffer(_device, _offscreen_framebuffer, nullptr);
+		});
+	}
 }
 
 void RenderEngine::init_pipelines()
 {
-	//DEFERRED PIPELINES
+	// RASTER PIPELINES
+
+	// Skybox pipeline
 	{
-		//SHADERS LOADING
+		// Shaders loading
+		VkShaderModule skyboxVertex;
+		if (!vkutil::load_shader_module(_device, "../shaders/skybox.vert.spv", &skyboxVertex))
+		{
+			std::cout << "Error when building the skybox vertex shader" << std::endl;
+		}
+		else
+		{
+			std::cout << "Skybox vertex shader succesfully loaded" << endl;
+		}
+
+		VkShaderModule skyboxFrag;
+		if (!vkutil::load_shader_module(_device, "../shaders/skybox.frag.spv", &skyboxFrag))
+		{
+			std::cout << "Error when building the skybox frag shader" << std::endl;
+		}
+		else
+		{
+			std::cout << "Skybox vertex shader succesfully loaded" << endl;
+		}
+
+		VkPipelineLayoutCreateInfo layoutInfo = vkinit::pipeline_layout_create_info();
+		layoutInfo.setLayoutCount = 1;
+		layoutInfo.pSetLayouts = &_skyboxSetLayout;
+
+		VK_CHECK(vkCreatePipelineLayout(_device, &layoutInfo, nullptr, &_skyboxPipelineLayout));
+
+		PipelineBuilder pipelineBuilder;
+
+		pipelineBuilder._vertexInputInfo = vkinit::vertex_input_state_create_info();
+		pipelineBuilder._inputAssembly = vkinit::input_assembly_create_info(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+
+		//Viewport and Scissor
+		pipelineBuilder._viewport.x = 0.0f;
+		pipelineBuilder._viewport.y = 0.0f;
+		pipelineBuilder._viewport.width = (float)_windowExtent.width;
+		pipelineBuilder._viewport.height = (float)_windowExtent.height;
+		pipelineBuilder._viewport.minDepth = 0.0f;
+		pipelineBuilder._viewport.maxDepth = 1.0f;
+
+		pipelineBuilder._scissor.offset = { 0, 0 };
+		pipelineBuilder._scissor.extent = _windowExtent;
+
+		pipelineBuilder._depthStencil = vkinit::depth_stencil_create_info(true, true, VK_COMPARE_OP_LESS_OR_EQUAL);
+		pipelineBuilder._rasterizer = vkinit::rasterization_state_create_info(VK_POLYGON_MODE_FILL);
+		pipelineBuilder._multisampling = vkinit::multisampling_state_create_info();
+
+		pipelineBuilder._colorBlendAttachment.push_back(vkinit::color_blend_attachment_state());
+
+		// Skybox Shaders
+		pipelineBuilder._shaderStages.push_back(
+			vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT, skyboxVertex));
+		pipelineBuilder._shaderStages.push_back(
+			vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, skyboxFrag));
+
+		// SkyboxLayout
+		pipelineBuilder._pipelineLayout = _skyboxPipelineLayout;
+
+		_skyboxPipeline = pipelineBuilder.build_pipeline(_device, _gbuffersRenderPass); // TODO
+
+		//DELETIONS
+		vkDestroyShaderModule(_device, skyboxFrag, nullptr);
+		vkDestroyShaderModule(_device, skyboxVertex, nullptr);
+
+		_mainDeletionQueue.push_function([=]() {
+			vkDestroyPipeline(_device, _skyboxPipeline, nullptr);
+			vkDestroyPipelineLayout(_device, _skyboxPipelineLayout, nullptr);
+		});
+	}
+
+	// G-Buffers & Deferred pipelines
+	{
+		// Shaders loading
 
 		VkShaderModule deferredVertex;
 		if (!vkutil::load_shader_module(_device, "../shaders/deferred.vert.spv", &deferredVertex))
@@ -519,7 +718,7 @@ void RenderEngine::init_pipelines()
 		layoutInfo.setLayoutCount = static_cast<uint32_t>(deferredSetLayouts.size());
 		layoutInfo.pSetLayouts = deferredSetLayouts.data();
 
-		VK_CHECK(vkCreatePipelineLayout(_device, &layoutInfo, nullptr, &_deferredPipelineLayout));
+		VK_CHECK(vkCreatePipelineLayout(_device, &layoutInfo, nullptr, &_gbuffersPipelineLayout));
 
 		std::array<VkDescriptorSetLayout, 2> lightSetLayouts = { _globalSetLayout, _gbuffersSetLayout };
 
@@ -568,6 +767,7 @@ void RenderEngine::init_pipelines()
 		pipelineBuilder._colorBlendAttachment.push_back(vkinit::color_blend_attachment_state());
 		pipelineBuilder._colorBlendAttachment.push_back(vkinit::color_blend_attachment_state());
 		pipelineBuilder._colorBlendAttachment.push_back(vkinit::color_blend_attachment_state());
+		pipelineBuilder._colorBlendAttachment.push_back(vkinit::color_blend_attachment_state());
 
 		//Deferred Shaders
 		pipelineBuilder._shaderStages.push_back(
@@ -576,9 +776,9 @@ void RenderEngine::init_pipelines()
 			vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, deferredFrag));
 
 		//Deferred Layout
-		pipelineBuilder._pipelineLayout = _deferredPipelineLayout;
+		pipelineBuilder._pipelineLayout = _gbuffersPipelineLayout;
 
-		_deferredPipeline = pipelineBuilder.build_pipeline(_device, _deferredRenderPass);
+		_gbuffersPipeline = pipelineBuilder.build_pipeline(_device, _gbuffersRenderPass);
 
 		//LIGHT PIPELINE CREATION
 
@@ -594,9 +794,9 @@ void RenderEngine::init_pipelines()
 		vkDestroyShaderModule(_device, deferredVertex, nullptr);
 
 		_mainDeletionQueue.push_function([=]() {
-			vkDestroyPipeline(_device, _deferredPipeline, nullptr);
-			vkDestroyPipelineLayout(_device, _deferredPipelineLayout, nullptr);
-			});
+			vkDestroyPipeline(_device, _gbuffersPipeline, nullptr);
+			vkDestroyPipelineLayout(_device, _gbuffersPipelineLayout, nullptr);
+		});
 	}
 }
 
@@ -617,8 +817,9 @@ void RenderEngine::init_gbuffer_descriptors()
 	VkDescriptorSetLayoutBinding position_bind = vkinit::descriptorset_layout_binding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 0);
 	VkDescriptorSetLayoutBinding normal_bind = vkinit::descriptorset_layout_binding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1);
 	VkDescriptorSetLayoutBinding albedo_bind = vkinit::descriptorset_layout_binding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 2);
+	VkDescriptorSetLayoutBinding motion_bind = vkinit::descriptorset_layout_binding(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_FRAGMENT_BIT, 3);
 
-	std::array<VkDescriptorSetLayoutBinding, 3> deferred_set_layouts = { position_bind, normal_bind, albedo_bind };
+	std::array<VkDescriptorSetLayoutBinding, 4> deferred_set_layouts = { position_bind, normal_bind, albedo_bind, motion_bind };
 
 	VkDescriptorSetLayoutCreateInfo deferred_layout_info = {};
 	deferred_layout_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -653,11 +854,17 @@ void RenderEngine::init_gbuffer_descriptors()
 	albedo_descriptor_image.imageView = _albedoImage._view;
 	albedo_descriptor_image.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
+	VkDescriptorImageInfo motion_descriptor_image;
+	motion_descriptor_image.sampler = _defaultSampler;
+	motion_descriptor_image.imageView = _motionVectorImage._view;
+	motion_descriptor_image.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+
 	VkWriteDescriptorSet position_texture = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, _gbuffersDescriptorSet, &position_descriptor_image, 0);
 	VkWriteDescriptorSet normal_texture = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, _gbuffersDescriptorSet, &normal_descriptor_image, 1);
 	VkWriteDescriptorSet albedo_texture = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, _gbuffersDescriptorSet, &albedo_descriptor_image, 2);
+	VkWriteDescriptorSet motion_texture = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, _gbuffersDescriptorSet, &motion_descriptor_image, 3);
 
-	std::array<VkWriteDescriptorSet, 3> setWrites = { position_texture, normal_texture, albedo_texture };
+	std::array<VkWriteDescriptorSet, 4> setWrites = { position_texture, normal_texture, albedo_texture, motion_texture };
 
 	vkUpdateDescriptorSets(_device, static_cast<uint32_t>(setWrites.size()), setWrites.data(), 0, nullptr);
 }
@@ -926,8 +1133,7 @@ void RenderEngine::create_storage_image()
 			0, nullptr,
 			1, &barrier
 		);
-
-		});
+	});
 }
 
 void RenderEngine::create_shadow_images(const int& lightsCount)
@@ -1312,19 +1518,12 @@ void RenderEngine::create_raytracing_pipelines(const Scene& scene)
 		resultImageLayoutBinding.descriptorCount = 1;
 		resultImageLayoutBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
 
-		// Shadow Textures
+		// Denoised Shadow Images
 		VkDescriptorSetLayoutBinding denoisedShadowsImagesBinding{};
 		denoisedShadowsImagesBinding.binding = 11;
 		denoisedShadowsImagesBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
 		denoisedShadowsImagesBinding.descriptorCount = static_cast<uint32_t>(scene._lights.size());
 		denoisedShadowsImagesBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
-
-		// Shadow Images
-		VkDescriptorSetLayoutBinding shadowImagesBinding{};
-		shadowImagesBinding.binding = 12;
-		shadowImagesBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-		shadowImagesBinding.descriptorCount = static_cast<uint32_t>(scene._lights.size());
-		shadowImagesBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
 
 		std::vector<VkDescriptorSetLayoutBinding> rt_bindings({
 			accelerationStructureLayoutBinding,
@@ -1338,8 +1537,7 @@ void RenderEngine::create_raytracing_pipelines(const Scene& scene)
 			materialBufferBinding,
 			textureBufferBinding,
 			resultImageLayoutBinding,
-			denoisedShadowsImagesBinding,
-			shadowImagesBinding
+			denoisedShadowsImagesBinding
 			});
 
 		VkDescriptorSetLayoutCreateInfo desc_set_layout_info{};

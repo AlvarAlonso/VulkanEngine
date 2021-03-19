@@ -14,6 +14,7 @@ struct GPUCameraData {
 	glm::mat4 view;
 	glm::mat4 projection;
 	glm::mat4 viewproj;
+	glm::mat4 viewproj_lastFrame; // for spatio-temporal accumulation
 };
 
 class VulkanEngine {
