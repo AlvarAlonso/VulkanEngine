@@ -27,7 +27,7 @@ struct Vertex {
 	glm::vec3 color;
 	glm::vec2 uv;
 
-	static VertexInputDescription get_vertex_description();
+	static VertexInputDescription get_vertex_description(bool onlyPosition = false);
 	
 	bool operator==(const Vertex& other) const {
 		return position == other.position && normal == other.normal && uv == other.uv;

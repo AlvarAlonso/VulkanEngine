@@ -180,7 +180,7 @@ void VulkanEngine::run()
 
 		//imgui commands
 		//ImGui::ShowDemoWindow();
-		render_imgui();
+		//render_imgui();
 		
 		renderer->draw_scene();
 	}
@@ -218,7 +218,7 @@ void VulkanEngine::load_images()
 {
 	VKE::Texture* defaultTexture = new VKE::Texture();
 
-	vkutil::load_image_from_file("../assets/plain.jpg", defaultTexture->_image);
+	vkutil::load_image_from_file(&std::string("../assets/plain.jpg"), defaultTexture->_image);
 
 	VkImageViewCreateInfo imageinfo = vkinit::imageview_create_info(VK_FORMAT_R8G8B8A8_UNORM, defaultTexture->_image._image, VK_IMAGE_ASPECT_COLOR_BIT);
 	vkCreateImageView(RenderEngine::_device, &imageinfo, nullptr, &defaultTexture->_imageView);
@@ -229,7 +229,7 @@ void VulkanEngine::load_images()
 
 	VKE::Texture* grassTexture = new VKE::Texture();
 
-	vkutil::load_image_from_file("../assets/grass.jpg", grassTexture->_image);
+	vkutil::load_image_from_file(&std::string("../assets/grass.jpg"), grassTexture->_image);
 
 	VkImageViewCreateInfo imageinfo2 = vkinit::imageview_create_info(VK_FORMAT_R8G8B8A8_UNORM, grassTexture->_image._image, VK_IMAGE_ASPECT_COLOR_BIT);
 	vkCreateImageView(RenderEngine::_device, &imageinfo2, nullptr, &grassTexture->_imageView);
@@ -240,7 +240,7 @@ void VulkanEngine::load_images()
 
 	VKE::Texture* barkTexture = new VKE::Texture();
 
-	vkutil::load_image_from_file("../assets/maple_bark.png", barkTexture->_image);
+	vkutil::load_image_from_file(&std::string("../assets/maple_bark.png"), barkTexture->_image);
 
 	VkImageViewCreateInfo barTexView = vkinit::imageview_create_info(VK_FORMAT_R8G8B8A8_UNORM, barkTexture->_image._image, VK_IMAGE_ASPECT_COLOR_BIT);
 	vkCreateImageView(RenderEngine::_device, &barTexView, nullptr, &barkTexture->_imageView);
@@ -251,7 +251,7 @@ void VulkanEngine::load_images()
 
 	VKE::Texture* leavesTexture = new VKE::Texture();
 
-	vkutil::load_image_from_file("../assets/maple_leaf.png", leavesTexture->_image);
+	vkutil::load_image_from_file(&std::string("../assets/maple_leaf.png"), leavesTexture->_image);
 
 	VkImageViewCreateInfo leavesTexView = vkinit::imageview_create_info(VK_FORMAT_R8G8B8A8_UNORM, leavesTexture->_image._image, VK_IMAGE_ASPECT_COLOR_BIT);
 	vkCreateImageView(RenderEngine::_device, &leavesTexView, nullptr, &leavesTexture->_imageView);
@@ -262,21 +262,13 @@ void VulkanEngine::load_images()
 
 	VKE::Texture* leavesOcclusionTexture = new VKE::Texture();
 
-	vkutil::load_image_from_file("../assets/maple_leaf_Mask.jpg", leavesOcclusionTexture->_image);
+	vkutil::load_image_from_file(&std::string("../assets/maple_leaf_Mask.jpg"), leavesOcclusionTexture->_image);
 
 	VkImageViewCreateInfo leavesOcclusionView = vkinit::imageview_create_info(VK_FORMAT_R8G8B8A8_UNORM, leavesOcclusionTexture->_image._image, VK_IMAGE_ASPECT_COLOR_BIT);
 	vkCreateImageView(RenderEngine::_device, &leavesOcclusionView, nullptr, &leavesOcclusionTexture->_imageView);
 
 	leavesOcclusionTexture->_id = VKE::Texture::sTexturesLoaded.size();
 	leavesOcclusionTexture->register_texture("leaf_occlusion");
-
-
-	VKE::Texture* skybox = new VKE::Texture();
-
-	vkutil::load_cubemap("../assets/kloppenheim_03_1k.hdr", VK_FORMAT_R8G8B8A8_UNORM, skybox->_image, skybox->_imageView);
-
-	skybox->_id = VKE::Texture::sTexturesLoaded.size();
-	skybox->register_texture("skybox");
 
 	RenderEngine::_mainDeletionQueue.push_function([=]() {
 		vkDestroyImageView(RenderEngine::_device, defaultTexture->_imageView, nullptr);

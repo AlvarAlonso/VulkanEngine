@@ -11,7 +11,7 @@ using namespace VKE;
 
 std::map<std::string, Mesh*> Mesh::sMeshesLoaded;
 
-VertexInputDescription Vertex::get_vertex_description()
+VertexInputDescription Vertex::get_vertex_description(bool onlyPosition)
 {
     VertexInputDescription description;
 
@@ -28,13 +28,18 @@ VertexInputDescription Vertex::get_vertex_description()
     positionAttribute.format = VK_FORMAT_R32G32B32_SFLOAT;
     positionAttribute.offset = offsetof(Vertex, position);
 
+    if(onlyPosition)
+    {
+        description.attributes.push_back(positionAttribute);
+        return description;
+    }
+
     VkVertexInputAttributeDescription normalAttribute = {};
     normalAttribute.binding = 0;
     normalAttribute.location = 1;
     normalAttribute.format = VK_FORMAT_R32G32B32_SFLOAT;
     normalAttribute.offset = offsetof(Vertex, normal);
 
-    
     VkVertexInputAttributeDescription colorAttribute = {};
     colorAttribute.binding = 0;
     colorAttribute.location = 2;

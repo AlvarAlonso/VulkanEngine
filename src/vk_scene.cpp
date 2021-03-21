@@ -9,7 +9,6 @@ using namespace VKE;
 
 Scene::Scene()
 {
-	_skybox = nullptr;
 }
 
 void Scene::generate_sample_scene()
@@ -20,12 +19,11 @@ void Scene::generate_sample_scene()
 	duckPrefab->register_prefab("pato");
 
 	RenderObject* duck = new RenderObject();
-	duck->_model = glm::translate(glm::vec3{ 0, 0, 0 });
+	duck->_model = glm::translate(glm::vec3{ 10, 10, -10 });
 	duck->_prefab = duckPrefab;
 	*/
 
 	// TODO: Rework renderables created on code to work with raytracing
-	/*
 	VKE::Material* stemMaterial = new VKE::Material(Texture::get("bark"));
 	stemMaterial->_type = VKE::DIFFUSE;
 	stemMaterial->_id = VKE::Material::sMaterials.size();
@@ -78,11 +76,6 @@ void Scene::generate_sample_scene()
 
 	_renderables.push_back(*treeStem);
 	_renderables.push_back(*treeLeaves);
-	*/
-
-	VKE::Material* skyboxMaterial = new VKE::Material(Texture::get("skybox"));
-	skyboxMaterial->_id = VKE::Material::sMaterials.size();
-	skyboxMaterial->register_material("skybox");
 
 	VKE::Material* grassMaterial = new VKE::Material(Texture::get("grass"));
 	grassMaterial->_tilling_factor = 10.0f;
@@ -92,7 +85,7 @@ void Scene::generate_sample_scene()
 	VKE::Mesh* planeMesh = new VKE::Mesh();
 	planeMesh->create_quad();
 
-	Prefab* planePrefab = new VKE::Prefab(*planeMesh, "skybox");
+	Prefab* planePrefab = new VKE::Prefab(*planeMesh, "grass");
 
 	RenderObject* plane = new RenderObject();
 	plane->_model = glm::translate(glm::mat4(1), glm::vec3{ 0.0, 0.0, 0.0 });
@@ -100,14 +93,21 @@ void Scene::generate_sample_scene()
 	plane->_model *= glm::scale(glm::mat4(1), glm::vec3{ 100, 100, 1 });
 	plane->_prefab = planePrefab;
 
-	/*
+
+	VKE::Texture* cubeMap = new VKE::Texture();
+
+	vkutil::load_cubemap(&std::string("../assets/cube_maps/bluecloud"), VK_FORMAT_R8G8B8A8_UNORM, cubeMap->_image, cubeMap->_imageView);
+
 	Prefab* boxPrefab = Prefab::get("../assets/Box.glb");
 	boxPrefab->register_prefab("box");
 
 	RenderObject* box = new RenderObject();
-	box->_model = glm::translate(glm::vec3{ -5, 0, 0 });
+	box->_model = glm::translate(glm::vec3{ 0, 0, 0 });
 	box->_prefab = boxPrefab;
-	*/
+
+	_skybox._renderable = box;
+	_skybox._cubeMap = cubeMap;
+
 	/*
 	Prefab* carPrefab = Prefab::get("../assets/gmc/scene.gltf");
 	carPrefab->register_prefab("cotxu");

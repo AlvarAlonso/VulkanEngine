@@ -29,8 +29,10 @@ namespace VKE
 
 namespace vkutil {
 
-	bool load_image_from_file(const char* file, AllocatedImage& outImage);
+	bool load_image_from_file(const std::string* file, AllocatedImage& outImage);
 
-	bool load_cubemap(const char* filename, VkFormat format, AllocatedImage& outImage, VkImageView& outImageView);
+	bool load_image_from_file(const std::string* file, int& width, int& height, void** data);
+
+	bool load_cubemap(const std::string* filename, VkFormat format, AllocatedImage& outImage, VkImageView& outImageView);
 }
 

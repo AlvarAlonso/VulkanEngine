@@ -13,11 +13,11 @@ using namespace VKE;
 int VKE::Texture::textureCount = 0;
 std::map<std::string, VKE::Texture*> VKE::Texture::sTexturesLoaded;
 
-bool vkutil::load_image_from_file(const char* file, AllocatedImage& outImage)
+bool vkutil::load_image_from_file(const std::string* file, AllocatedImage& outImage)
 {
     int texWidth, texHeight, texChannels;
 
-    stbi_uc* pixels = stbi_load(file, &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+    stbi_uc* pixels = stbi_load(file->c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
 
     if(!pixels) {
         std::cout << "Failed to load texture file" << file << std::endl;
@@ -115,35 +115,66 @@ bool vkutil::load_image_from_file(const char* file, AllocatedImage& outImage)
     return true;
 }
 
-bool vkutil::load_cubemap(const char* filename, VkFormat format, AllocatedImage& outImage, VkImageView& outImageView)
+bool vkutil::load_image_from_file(const std::string* file, int& width, int& height, void** data)
 {
-    int texWidth, texHeight, texChannels;
+    int texChannels;
 
-    stbi_uc* pixels = stbi_load(filename, &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+    stbi_uc* pixels = stbi_load(file->c_str(), &width, &height, &texChannels, STBI_rgb_alpha);
 
     if (!pixels) {
-        std::cout << "Failed to load texture file" << filename << std::endl;
+        std::cout << "Failed to load texture file" << file << std::endl;
         return false;
     }
 
-    void* pixel_ptr = pixels;
-    VkDeviceSize imageSize = texWidth * texHeight * 4;
+    void* pixel_ptr = (void*)pixels;
+    *data = pixel_ptr;
+
+    return true;
+}
+
+bool vkutil::load_cubemap(const std::string* filename, VkFormat format, AllocatedImage& outImage, VkImageView& outImageView)
+{
+    void* textureData[6];
+
+    int width{ 0 };
+    int height{ 0 };
+
+    const std::string baseName = *filename;
+
+    // Load 6 faces separately and copy them into a staging buffer
+    load_image_from_file(&std::string(baseName + std::string("_ft.jpg")), width, height, &textureData[0]);
+    load_image_from_file(&std::string(baseName + std::string("_bk.jpg")), width, height, &textureData[1]);
+    load_image_from_file(&std::string(baseName + std::string("_up.jpg")), width, height, &textureData[2]);
+    load_image_from_file(&std::string(baseName + std::string("_dn.jpg")), width, height, &textureData[3]);
+    load_image_from_file(&std::string(baseName + std::string("_rt.jpg")), width, height, &textureData[4]);
+    load_image_from_file(&std::string(baseName + std::string("_lf.jpg")), width, height, &textureData[5]);
+
+    const VkDeviceSize imageSize = width * height * 4 * 6.0f;
+    const VkDeviceSize layerSize = imageSize / 6.0f;
 
     AllocatedBuffer stagingBuffer = vkutil::create_buffer(RenderEngine::_allocator, imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VMA_MEMORY_USAGE_CPU_ONLY);
-
-    VkExtent3D imageExtent
-    {
-        static_cast<uint32_t>(texWidth),
-        static_cast<uint32_t>(texHeight),
-        1
-    };
     
     void* data;
     vmaMapMemory(RenderEngine::_allocator, stagingBuffer._allocation, &data);
-    memcpy(data, pixel_ptr, static_cast<size_t>(imageSize));
+
+    for(int i = 0; i < 6; i++)
+    {
+        memcpy((void*)((char*)data + layerSize * i), textureData[i], static_cast<size_t>(layerSize));
+    }
+
     vmaUnmapMemory(RenderEngine::_allocator, stagingBuffer._allocation);
 
-    stbi_image_free(pixels);
+    for(int i = 0; i < 6; i++)
+    {
+        stbi_image_free(textureData[i]);
+    }
+    
+    VkExtent3D imageExtent
+    {
+        width,
+        height,
+        1
+    };
 
     // Create the cube image
     VkImageCreateInfo cube_img_info = vkinit::image_create_info(format, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, imageExtent );
@@ -169,19 +200,17 @@ bool vkutil::load_cubemap(const char* filename, VkFormat format, AllocatedImage&
     vkupload::immediate_submit([&](VkCommandBuffer cmd) {
 
         std::vector<VkBufferImageCopy> bufferCopyRegions;
-        uint32_t offset = 0;
 
         for(uint32_t face = 0; face < 6; face++)
         {
-            // Calculat offset for current face
-            size_t offset = imageSize / 6 * face;
+            // Calculate offset for current face
             VkBufferImageCopy bufferCopyRegion = {};
             bufferCopyRegion.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
             bufferCopyRegion.imageSubresource.mipLevel = 0;
             bufferCopyRegion.imageSubresource.baseArrayLayer = face;
             bufferCopyRegion.imageSubresource.layerCount = 1;
             bufferCopyRegion.imageExtent = imageExtent;
-            bufferCopyRegion.bufferOffset = offset;
+            bufferCopyRegion.bufferOffset = layerSize * face;
             bufferCopyRegions.push_back(bufferCopyRegion);
         }
 
@@ -189,7 +218,7 @@ bool vkutil::load_cubemap(const char* filename, VkFormat format, AllocatedImage&
         VkImageSubresourceRange subresourceRange = {};
         subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
         subresourceRange.baseMipLevel = 0;
-        subresourceRange.levelCount = 0;
+        subresourceRange.levelCount = 1;
         subresourceRange.layerCount = 6;
 
         VkImageMemoryBarrier imageBarrier_toTransfer = {};

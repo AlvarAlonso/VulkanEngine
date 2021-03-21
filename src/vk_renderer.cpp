@@ -205,7 +205,20 @@ void Renderer::create_raytracing_descriptor_sets()
 	motionImageDescriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 	motionImageDescriptor.sampler = re->_defaultSampler;
 
-	std::array<VkDescriptorImageInfo, 4> gbuffersImageInfos = { positionImageDescriptor, normalImageDescriptor, albedoImageDescriptor, motionImageDescriptor };
+	// Depth Buffer
+	VkDescriptorImageInfo depthImageDescriptor{};
+	depthImageDescriptor.imageView = re->_depthImage._view;
+	depthImageDescriptor.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+	depthImageDescriptor.sampler = re->_defaultSampler;
+
+	std::array<VkDescriptorImageInfo, 5> gbuffersImageInfos = 
+	{ 
+		positionImageDescriptor, 
+		normalImageDescriptor, 
+		albedoImageDescriptor, 
+		motionImageDescriptor,
+		depthImageDescriptor	
+	};
 	
 	// ----------------------------------------------------
 	std::vector<VkDescriptorBufferInfo> verticesBufferInfos;
@@ -607,7 +620,7 @@ void Renderer::record_skybox_command_buffer()
 	VkCommandBufferBeginInfo skyboxCmdBeginInfo = vkinit::command_buffer_begin_info(VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
 
 	VK_CHECK(vkBeginCommandBuffer(_skyboxCommandBuffer, &skyboxCmdBeginInfo));
-
+	
 	VkClearValue clearValue;
 	clearValue.color = { {0.2f, 0.4f, 0.9f, 1.0f} };
 
@@ -621,9 +634,41 @@ void Renderer::record_skybox_command_buffer()
 
 	vkCmdBindDescriptorSets(_skyboxCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_skyboxPipelineLayout, 0, 1, &_skyboxDescriptorSet, 0, nullptr);
 
-	// TODO: draw skybox
+	Skybox& skybox = currentScene->_skybox;
+
+	VkDeviceSize offset = 0;
+	vkCmdBindVertexBuffers(_skyboxCommandBuffer, 0, 1, &skybox._renderable->_prefab->_vertices.vertexBuffer._buffer, &offset);
+
+	vkCmdBindIndexBuffer(_skyboxCommandBuffer, skybox._renderable->_prefab->_indices.indexBuffer._buffer, 0, VK_INDEX_TYPE_UINT32);
+
+	vkCmdDrawIndexed(_skyboxCommandBuffer, skybox._renderable->_prefab->_indices.count, 1, 0, 0, 0);
 
 	vkCmdEndRenderPass(_skyboxCommandBuffer);
+	
+	VkImageMemoryBarrier barrier = {};
+	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.image = re->_albedoImage._image;
+	barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	barrier.subresourceRange.baseMipLevel = 0;
+	barrier.subresourceRange.levelCount = 1;
+	barrier.subresourceRange.baseArrayLayer = 0;
+	barrier.subresourceRange.layerCount = 1;
+
+	barrier.srcAccessMask = 0;
+	barrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+
+	vkCmdPipelineBarrier(
+		_skyboxCommandBuffer,
+		VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+		0,
+		0, nullptr,
+		0, nullptr,
+		1, &barrier
+	);
 
 	VK_CHECK(vkEndCommandBuffer(_skyboxCommandBuffer));
 }
@@ -674,6 +719,31 @@ void Renderer::record_gbuffers_command_buffers(RenderObject* first, int count)
 	}
 
 	vkCmdEndRenderPass(_gbuffersCommandBuffer);
+
+	VkImageMemoryBarrier barrier = {};
+	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	barrier.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.image = re->_depthImage._image;
+	barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+	barrier.subresourceRange.baseMipLevel = 0;
+	barrier.subresourceRange.levelCount = 1;
+	barrier.subresourceRange.baseArrayLayer = 0;
+	barrier.subresourceRange.layerCount = 1;
+
+	barrier.srcAccessMask = 0;
+	barrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+
+	vkCmdPipelineBarrier(
+		_gbuffersCommandBuffer,
+		VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+		0,
+		0, nullptr,
+		0, nullptr,
+		1, &barrier
+	);
 
 	VK_CHECK(vkEndCommandBuffer(_gbuffersCommandBuffer));
 }
@@ -862,7 +932,7 @@ void Renderer::record_pospo_command_buffer(VkCommandBuffer cmd, uint32_t swapcha
 
 	VK_CHECK(vkBeginCommandBuffer(cmd, &cmdBeginInfo));
 
-	VkClearValue clearValue = {0.1f, 0.1f, 0.1f, 1.0f};
+	VkClearValue clearValue = {0.2f, 0.2f, 0.2f, 1.0f};
 
 	VkRenderPassBeginInfo pospo_begin_info = vkinit::renderpass_begin_info(re->pospo._renderPass, re->_windowExtent, re->pospo._framebuffers[swapchainImageIndex]);
 	pospo_begin_info.clearValueCount = 1;
@@ -1063,7 +1133,7 @@ void Renderer::init_descriptors()
 
 	VkDescriptorImageInfo cubeMapInfo = {};
 	cubeMapInfo.sampler = re->_defaultSampler;
-	cubeMapInfo.imageView = currentScene->_skybox->_imageView;
+	cubeMapInfo.imageView = currentScene->_skybox._cubeMap->_imageView;
 	cubeMapInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
 	VkWriteDescriptorSet camSkyWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, _skyboxDescriptorSet, &camBufferInfo, 0);
@@ -1273,13 +1343,25 @@ void Renderer::render_raytracing()
 
 	record_gbuffers_command_buffers(currentScene->_renderables.data(), currentScene->_renderables.size());
 
-	// G-BUFFER PASS
 	VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
+
+	// SKYBOX PASS
+
+	VkSubmitInfo submit_info_skybox_pass = vkinit::submit_info(&_skyboxCommandBuffer);
+	submit_info_skybox_pass.pWaitDstStageMask = waitStages;
+	submit_info_skybox_pass.waitSemaphoreCount = 1;
+	submit_info_skybox_pass.pWaitSemaphores = &_frames[get_current_frame_index()]._presentSemaphore;
+	submit_info_skybox_pass.signalSemaphoreCount = 1;
+	submit_info_skybox_pass.pSignalSemaphores = &_skyboxSemaphore;
+
+	VK_CHECK(vkQueueSubmit(_graphicsQueue, 1, &submit_info_skybox_pass, nullptr));
+
+	// G-BUFFER PASS
 
 	VkSubmitInfo submit_info_gbuffer_pass = vkinit::submit_info(&_gbuffersCommandBuffer);
 	submit_info_gbuffer_pass.pWaitDstStageMask = waitStages;
 	submit_info_gbuffer_pass.waitSemaphoreCount = 1;
-	submit_info_gbuffer_pass.pWaitSemaphores = &_frames[get_current_frame_index()]._presentSemaphore;
+	submit_info_gbuffer_pass.pWaitSemaphores = &_skyboxSemaphore;
 	submit_info_gbuffer_pass.signalSemaphoreCount = 1;
 	submit_info_gbuffer_pass.pSignalSemaphores = &_gbufferSemaphore;
 

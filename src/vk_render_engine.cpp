@@ -331,7 +331,7 @@ void RenderEngine::init_deferred_attachments()
 	VkImageCreateInfo normal_igm = vkinit::image_create_info(_normalImage._format, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, attachmentExtent);
 	VkImageCreateInfo albedo_igm = vkinit::image_create_info(_albedoImage._format, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, attachmentExtent);
 	VkImageCreateInfo motion_igm = vkinit::image_create_info(_motionVectorImage._format, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, attachmentExtent);
-	VkImageCreateInfo depth_igm = vkinit::image_create_info(_depthImage._format, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, attachmentExtent);
+	VkImageCreateInfo depth_igm = vkinit::image_create_info(_depthImage._format, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, attachmentExtent);
 
 	VmaAllocationCreateInfo img_alloc_info = {};
 	img_alloc_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
@@ -449,21 +449,21 @@ void RenderEngine::init_render_passes()
 		normal_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 		normal_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 		normal_attachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
+		
 		VkAttachmentDescription albedo_attachment = {};
 		albedo_attachment.format = _albedoImage._format;
 		albedo_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
-		albedo_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		albedo_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
 		albedo_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 		albedo_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 		albedo_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		albedo_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		albedo_attachment.initialLayout = VK_IMAGE_LAYOUT_GENERAL;
 		albedo_attachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
 		VkAttachmentDescription motion_attachment = {};
 		motion_attachment.format = _motionVectorImage._format;
 		motion_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
-		motion_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+		motion_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 		motion_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 		motion_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 		motion_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
@@ -636,10 +636,19 @@ void RenderEngine::init_pipelines()
 
 		PipelineBuilder pipelineBuilder;
 
+		// Vertex description
 		pipelineBuilder._vertexInputInfo = vkinit::vertex_input_state_create_info();
+
+		VertexInputDescription vertexDescription = Vertex::get_vertex_description(true);
+		pipelineBuilder._vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertexDescription.attributes.size());
+		pipelineBuilder._vertexInputInfo.pVertexAttributeDescriptions = vertexDescription.attributes.data();
+		pipelineBuilder._vertexInputInfo.vertexBindingDescriptionCount = static_cast<uint32_t>(vertexDescription.bindings.size());
+		pipelineBuilder._vertexInputInfo.pVertexBindingDescriptions = vertexDescription.bindings.data();
+
+		// Input assembly
 		pipelineBuilder._inputAssembly = vkinit::input_assembly_create_info(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
 
-		//Viewport and Scissor
+		// Viewport and Scissor
 		pipelineBuilder._viewport.x = 0.0f;
 		pipelineBuilder._viewport.y = 0.0f;
 		pipelineBuilder._viewport.width = (float)_windowExtent.width;
@@ -662,10 +671,10 @@ void RenderEngine::init_pipelines()
 		pipelineBuilder._shaderStages.push_back(
 			vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, skyboxFrag));
 
-		// SkyboxLayout
+		// Skybox Layout
 		pipelineBuilder._pipelineLayout = _skyboxPipelineLayout;
 
-		_skyboxPipeline = pipelineBuilder.build_pipeline(_device, _gbuffersRenderPass); // TODO
+		_skyboxPipeline = pipelineBuilder.build_pipeline(_device, _skyboxRenderPass);
 
 		//DELETIONS
 		vkDestroyShaderModule(_device, skyboxFrag, nullptr);
@@ -817,7 +826,7 @@ void RenderEngine::init_gbuffer_descriptors()
 	VkDescriptorSetLayoutBinding position_bind = vkinit::descriptorset_layout_binding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 0);
 	VkDescriptorSetLayoutBinding normal_bind = vkinit::descriptorset_layout_binding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1);
 	VkDescriptorSetLayoutBinding albedo_bind = vkinit::descriptorset_layout_binding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 2);
-	VkDescriptorSetLayoutBinding motion_bind = vkinit::descriptorset_layout_binding(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_FRAGMENT_BIT, 3);
+	VkDescriptorSetLayoutBinding motion_bind = vkinit::descriptorset_layout_binding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 3);
 
 	std::array<VkDescriptorSetLayoutBinding, 4> deferred_set_layouts = { position_bind, normal_bind, albedo_bind, motion_bind };
 
@@ -908,6 +917,8 @@ void RenderEngine::init_raytracing_structures()
 
 void RenderEngine::create_bottom_level_acceleration_structure(const Scene& scene)
 {
+	if (scene._renderables.size() == 0) return;
+
 	// TODO: resize according to primitive number (getter in scene class)
 	std::vector<BlasInput> allBlas;
 	allBlas.reserve(scene._renderables.size()); //per primitive
@@ -934,6 +945,8 @@ void RenderEngine::create_bottom_level_acceleration_structure(const Scene& scene
 
 void RenderEngine::create_top_level_acceleration_structure(const Scene& scene, bool recreated)
 {
+	if (scene._renderables.size() == 0) return;
+
 	std::vector<VkAccelerationStructureInstanceKHR> instances;
 	instances.reserve(scene._renderables.size());
 

@@ -43,6 +43,13 @@ void main()
 	vec3 N = normalize(texture(gbuffers[1], gbufferUV).xyz * 2.0 - vec3(1.0));
 	vec3 albedo = texture(gbuffers[2], gbufferUV).xyz;
 	int matIdx = int(texture(gbuffers[2], gbufferUV).w * MAX_MATERIALS);
+	float depth = texture(gbuffers[4], gbufferUV).x;
+
+	if(depth == 1.0)
+	{
+		imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(albedo, 1.0f));
+		return;
+	}
 
 	Material material = materials.m[matIdx];
 
