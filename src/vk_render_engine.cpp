@@ -1,9 +1,9 @@
 #include <SDL.h>
 #include <SDL_vulkan.h>
 
-#include <imgui.h>
-#include <imgui_impl_sdl.h>
-#include <imgui_impl_vulkan.h>
+#include <extra/imgui/imgui.h>
+#include <extra/imgui/imgui_impl_sdl.h>
+#include <extra/imgui/imgui_impl_vulkan.h>
 
 #include "vk_initializers.h"
 #include "vk_utils.h"
@@ -308,6 +308,7 @@ void RenderEngine::init_raster_structures()
 {
 	init_descriptor_set_pool();
 	init_deferred_attachments();
+	create_deep_shadow_images(1); // TODO
 	init_render_passes();
 	init_framebuffers();
 	init_gbuffer_descriptors();	
@@ -371,7 +372,84 @@ void RenderEngine::init_deferred_attachments()
 
 void RenderEngine::init_render_passes()
 {
-	// Skybox pass
+	// single attachment pass
+	{
+		VkAttachmentDescription color_attachment = {};
+		color_attachment.format = _deepShadowImage._format;
+		color_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
+		color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+		color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+		color_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		color_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		color_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		color_attachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+		VkAttachmentDescription depth_attachment = {};
+		depth_attachment.format = _depthImage._format;
+		depth_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
+		depth_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+		depth_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+		depth_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		depth_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		depth_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		depth_attachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+		std::array<VkAttachmentDescription, 2> attachment_descriptions =
+		{
+			color_attachment,
+			depth_attachment
+		};
+
+		VkAttachmentReference color_ref;
+		color_ref.attachment = 0;
+		color_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+		VkAttachmentReference depth_ref;
+		depth_ref.attachment = 1;
+		depth_ref.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+		VkSubpassDescription subpass = {};
+		subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+		subpass.colorAttachmentCount = 1;
+		subpass.pColorAttachments = &color_ref;
+		subpass.pDepthStencilAttachment = &depth_ref;
+
+		std::array<VkSubpassDependency, 2> dependencies;
+
+		dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
+		dependencies[0].dstSubpass = 0;
+		dependencies[0].srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+		dependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		dependencies[0].srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+		dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		dependencies[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+		dependencies[1].srcSubpass = 0;
+		dependencies[1].dstSubpass = VK_SUBPASS_EXTERNAL;
+		dependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		dependencies[1].dstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+		dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		dependencies[1].dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+		dependencies[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+		VkRenderPassCreateInfo single_attachment_pass = {};
+		single_attachment_pass.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+		single_attachment_pass.pNext = nullptr;
+		single_attachment_pass.attachmentCount = static_cast<uint32_t>(attachment_descriptions.size());
+		single_attachment_pass.pAttachments = attachment_descriptions.data();
+		single_attachment_pass.subpassCount = 1;
+		single_attachment_pass.pSubpasses = &subpass;
+		single_attachment_pass.dependencyCount = static_cast<uint32_t>(dependencies.size());
+		single_attachment_pass.pDependencies = dependencies.data();
+
+		VK_CHECK(vkCreateRenderPass(_device, &single_attachment_pass, nullptr, &_singleAttachmentRenderPass));
+
+		_mainDeletionQueue.push_function([=]() {
+			vkDestroyRenderPass(_device, _singleAttachmentRenderPass, nullptr);
+			});
+	}
+
+	// skybox pass
 	{
 		VkAttachmentDescription color_attachment = {};
 		color_attachment.format = _albedoImage._format;
@@ -555,6 +633,29 @@ void RenderEngine::init_render_passes()
 
 void RenderEngine::init_framebuffers()
 {
+	// Deep shadow map buffer
+	{
+		std::array<VkImageView, 2> attachments;
+		attachments[0] = _deepShadowImage._view;
+		attachments[1] = _depthImage._view;
+
+		VkFramebufferCreateInfo fb_info = {};
+		fb_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+		fb_info.pNext = nullptr;
+		fb_info.renderPass = _singleAttachmentRenderPass;
+		fb_info.attachmentCount = static_cast<uint32_t>(attachments.size());
+		fb_info.pAttachments = attachments.data();
+		fb_info.width = _windowExtent.width;
+		fb_info.height = _windowExtent.height;
+		fb_info.layers = 1;
+
+		VK_CHECK(vkCreateFramebuffer(_device, &fb_info, nullptr, &_dsm_framebuffer));
+
+		_mainDeletionQueue.push_function([=]() {
+			vkDestroyFramebuffer(_device, _dsm_framebuffer, nullptr);
+			});
+	}
+
 	// Skybox buffer
 	{
 		VkFramebufferCreateInfo fb_info = {};
@@ -605,6 +706,106 @@ void RenderEngine::init_pipelines()
 {
 	// RASTER PIPELINES
 
+	PipelineBuilder pipelineBuilder;
+
+	// Vertex description
+	pipelineBuilder._vertexInputInfo = vkinit::vertex_input_state_create_info();
+
+	// Input assembly
+	pipelineBuilder._inputAssembly = vkinit::input_assembly_create_info(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+
+	// Viewport and Scissor
+	pipelineBuilder._viewport.x = 0.0f;
+	pipelineBuilder._viewport.y = 0.0f;
+	pipelineBuilder._viewport.width = (float)_windowExtent.width;
+	pipelineBuilder._viewport.height = (float)_windowExtent.height;
+	pipelineBuilder._viewport.minDepth = 0.0f;
+	pipelineBuilder._viewport.maxDepth = 1.0f;
+
+	pipelineBuilder._scissor.offset = { 0, 0 };
+	pipelineBuilder._scissor.extent = _windowExtent;
+
+	// Depth-stencil
+	pipelineBuilder._depthStencil = vkinit::depth_stencil_create_info(true, true, VK_COMPARE_OP_LESS_OR_EQUAL);
+	// Rasterizer
+	pipelineBuilder._rasterizer = vkinit::rasterization_state_create_info(VK_POLYGON_MODE_FILL);
+	// Multisampling
+	pipelineBuilder._multisampling = vkinit::multisampling_state_create_info();
+
+	// Flat geometry pipeline
+	{
+		// Shaders loading
+		VkShaderModule flatVertex;
+		if (!vkutil::load_shader_module(_device, "../shaders/flat.vert.spv", &flatVertex))
+		{
+			std::cout << "Error when building the flat vertex shader" << std::endl;
+		}
+		else
+		{
+			std::cout << "Flat vertex shader succesfully loaded" << endl;
+		}
+
+		VkShaderModule flatFrag;
+		if (!vkutil::load_shader_module(_device, "../shaders/flat.frag.spv", &flatFrag))
+		{
+			std::cout << "Error when building the flat frag shader" << std::endl;
+		}
+		else
+		{
+			std::cout << "Flat vertex shader succesfully loaded" << endl;
+		}
+		
+		VkPipelineLayoutCreateInfo layoutInfo = vkinit::pipeline_layout_create_info();
+
+		std::array<VkDescriptorSetLayout, 2> dsmSetLayouts = { _camSetLayout, _materialsSetLayout };
+
+		VkPushConstantRange pushConstant = {};
+		pushConstant.offset = 0;
+		pushConstant.size = sizeof(GPUObjectData);
+		pushConstant.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+
+		std::vector<VkPushConstantRange> pushConstants = { pushConstant };
+
+		layoutInfo.pushConstantRangeCount = static_cast<uint32_t>(pushConstants.size());
+		layoutInfo.pPushConstantRanges = pushConstants.data();
+		layoutInfo.setLayoutCount = static_cast<uint32_t>(dsmSetLayouts.size());
+		layoutInfo.pSetLayouts = dsmSetLayouts.data();
+
+		VK_CHECK(vkCreatePipelineLayout(_device, &layoutInfo, nullptr, &_dsmPipelineLayout));
+
+		// Vertices description
+		VertexInputDescription vertexDescription = Vertex::get_vertex_description();
+		pipelineBuilder._vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertexDescription.attributes.size());
+		pipelineBuilder._vertexInputInfo.pVertexAttributeDescriptions = vertexDescription.attributes.data();
+		pipelineBuilder._vertexInputInfo.vertexBindingDescriptionCount = static_cast<uint32_t>(vertexDescription.bindings.size());
+		pipelineBuilder._vertexInputInfo.pVertexBindingDescriptions = vertexDescription.bindings.data();
+
+		//Deferred Color Blend Attachment
+		pipelineBuilder._colorBlendAttachment.clear();
+		pipelineBuilder._colorBlendAttachment.push_back(vkinit::color_blend_attachment_state());
+
+		//Deferred Shaders
+		pipelineBuilder._shaderStages.clear();
+		pipelineBuilder._shaderStages.push_back(
+			vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT, flatVertex));
+		pipelineBuilder._shaderStages.push_back(
+			vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, flatFrag));
+
+		//Deferred Layout
+		pipelineBuilder._pipelineLayout = _dsmPipelineLayout;
+
+		_dsmPipeline = pipelineBuilder.build_pipeline(_device, _singleAttachmentRenderPass);
+
+		//DELETIONS
+		vkDestroyShaderModule(_device, flatFrag, nullptr);
+		vkDestroyShaderModule(_device, flatVertex, nullptr);
+
+		_mainDeletionQueue.push_function([=]() {
+			vkDestroyPipeline(_device, _dsmPipeline, nullptr);
+			vkDestroyPipelineLayout(_device, _dsmPipelineLayout, nullptr);
+			});
+	}
+	
 	// Skybox pipeline
 	{
 		// Shaders loading
@@ -634,38 +835,19 @@ void RenderEngine::init_pipelines()
 
 		VK_CHECK(vkCreatePipelineLayout(_device, &layoutInfo, nullptr, &_skyboxPipelineLayout));
 
-		PipelineBuilder pipelineBuilder;
-
-		// Vertex description
-		pipelineBuilder._vertexInputInfo = vkinit::vertex_input_state_create_info();
-
+		// Vertices description
 		VertexInputDescription vertexDescription = Vertex::get_vertex_description(true);
 		pipelineBuilder._vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertexDescription.attributes.size());
 		pipelineBuilder._vertexInputInfo.pVertexAttributeDescriptions = vertexDescription.attributes.data();
 		pipelineBuilder._vertexInputInfo.vertexBindingDescriptionCount = static_cast<uint32_t>(vertexDescription.bindings.size());
 		pipelineBuilder._vertexInputInfo.pVertexBindingDescriptions = vertexDescription.bindings.data();
 
-		// Input assembly
-		pipelineBuilder._inputAssembly = vkinit::input_assembly_create_info(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-
-		// Viewport and Scissor
-		pipelineBuilder._viewport.x = 0.0f;
-		pipelineBuilder._viewport.y = 0.0f;
-		pipelineBuilder._viewport.width = (float)_windowExtent.width;
-		pipelineBuilder._viewport.height = (float)_windowExtent.height;
-		pipelineBuilder._viewport.minDepth = 0.0f;
-		pipelineBuilder._viewport.maxDepth = 1.0f;
-
-		pipelineBuilder._scissor.offset = { 0, 0 };
-		pipelineBuilder._scissor.extent = _windowExtent;
-
-		pipelineBuilder._depthStencil = vkinit::depth_stencil_create_info(true, true, VK_COMPARE_OP_LESS_OR_EQUAL);
-		pipelineBuilder._rasterizer = vkinit::rasterization_state_create_info(VK_POLYGON_MODE_FILL);
-		pipelineBuilder._multisampling = vkinit::multisampling_state_create_info();
-
+		// Color blend
+		pipelineBuilder._colorBlendAttachment.clear();
 		pipelineBuilder._colorBlendAttachment.push_back(vkinit::color_blend_attachment_state());
 
 		// Skybox Shaders
+		pipelineBuilder._shaderStages.clear();
 		pipelineBuilder._shaderStages.push_back(
 			vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT, skyboxVertex));
 		pipelineBuilder._shaderStages.push_back(
@@ -729,56 +911,22 @@ void RenderEngine::init_pipelines()
 
 		VK_CHECK(vkCreatePipelineLayout(_device, &layoutInfo, nullptr, &_gbuffersPipelineLayout));
 
-		std::array<VkDescriptorSetLayout, 2> lightSetLayouts = { _globalSetLayout, _gbuffersSetLayout };
-
-		layoutInfo.setLayoutCount = static_cast<uint32_t>(lightSetLayouts.size());
-		layoutInfo.pSetLayouts = lightSetLayouts.data();
-
-		VK_CHECK(vkCreatePipelineLayout(_device, &layoutInfo, nullptr, &_lightPipelineLayout));
-
-
-		//DEFERRED PIPELINE CREATION
-		PipelineBuilder pipelineBuilder;
-
-		//Deferred Vertex Info
-		pipelineBuilder._vertexInputInfo = vkinit::vertex_input_state_create_info();
-
+		// Vertices description
 		VertexInputDescription vertexDescription = Vertex::get_vertex_description();
 		pipelineBuilder._vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertexDescription.attributes.size());
 		pipelineBuilder._vertexInputInfo.pVertexAttributeDescriptions = vertexDescription.attributes.data();
 		pipelineBuilder._vertexInputInfo.vertexBindingDescriptionCount = static_cast<uint32_t>(vertexDescription.bindings.size());
 		pipelineBuilder._vertexInputInfo.pVertexBindingDescriptions = vertexDescription.bindings.data();
 
-		//Deferred Assembly Info
-		pipelineBuilder._inputAssembly = vkinit::input_assembly_create_info(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-
-		//Viewport and Scissor
-		pipelineBuilder._viewport.x = 0.0f;
-		pipelineBuilder._viewport.y = 0.0f;
-		pipelineBuilder._viewport.width = (float)_windowExtent.width;
-		pipelineBuilder._viewport.height = (float)_windowExtent.height;
-		pipelineBuilder._viewport.minDepth = 0.0f;
-		pipelineBuilder._viewport.maxDepth = 1.0f;
-
-		pipelineBuilder._scissor.offset = { 0, 0 };
-		pipelineBuilder._scissor.extent = _windowExtent;
-
-		//Deferred Depth Stencil
-		pipelineBuilder._depthStencil = vkinit::depth_stencil_create_info(true, true, VK_COMPARE_OP_LESS_OR_EQUAL);
-
-		//Deferred Rasterizer
-		pipelineBuilder._rasterizer = vkinit::rasterization_state_create_info(VK_POLYGON_MODE_FILL);
-
-		//Deferred Multisampling
-		pipelineBuilder._multisampling = vkinit::multisampling_state_create_info();
-
 		//Deferred Color Blend Attachment
+		pipelineBuilder._colorBlendAttachment.clear();
 		pipelineBuilder._colorBlendAttachment.push_back(vkinit::color_blend_attachment_state());
 		pipelineBuilder._colorBlendAttachment.push_back(vkinit::color_blend_attachment_state());
 		pipelineBuilder._colorBlendAttachment.push_back(vkinit::color_blend_attachment_state());
 		pipelineBuilder._colorBlendAttachment.push_back(vkinit::color_blend_attachment_state());
 
 		//Deferred Shaders
+		pipelineBuilder._shaderStages.clear();
 		pipelineBuilder._shaderStages.push_back(
 			vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT, deferredVertex));
 		pipelineBuilder._shaderStages.push_back(
@@ -788,15 +936,6 @@ void RenderEngine::init_pipelines()
 		pipelineBuilder._pipelineLayout = _gbuffersPipelineLayout;
 
 		_gbuffersPipeline = pipelineBuilder.build_pipeline(_device, _gbuffersRenderPass);
-
-		//LIGHT PIPELINE CREATION
-
-		//Light Depth Stencil
-		pipelineBuilder._depthStencil = vkinit::depth_stencil_create_info(false, false, VK_COMPARE_OP_ALWAYS);
-
-		//Deferred Color Blend Attachment
-		pipelineBuilder._colorBlendAttachment.clear();
-		pipelineBuilder._colorBlendAttachment.push_back(vkinit::color_blend_attachment_state());
 
 		//DELETIONS
 		vkDestroyShaderModule(_device, deferredFrag, nullptr);
@@ -1068,10 +1207,16 @@ void RenderEngine::create_top_level_acceleration_structure(const Scene& scene, b
 		}
 		else
 		{
+			/*
 			vkupload::immediate_submit([&](VkCommandBuffer cmd)
 				{
-					// TODO:
+					vkCmdBuildAccelerationStructuresKHR(
+						cmd,
+						1,
+						&accelerationBuildGeometryInfo,
+						accelerationBuildStructureRangeInfos.data());
 				});
+				*/
 		}
 	}
 
@@ -1149,6 +1294,30 @@ void RenderEngine::create_storage_image()
 	});
 }
 
+//TODO: ONLY CREATES ONE AT THE MOMENT
+void RenderEngine::create_deep_shadow_images(const int& lightsCount)
+{
+	VkExtent3D extent =
+	{
+		_windowExtent.width,
+		_windowExtent.height,
+		1
+	};
+
+	_deepShadowImage._format = VK_FORMAT_R32G32B32A32_SFLOAT;
+
+	VkImageCreateInfo image_info = vkinit::image_create_info(_deepShadowImage._format, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, extent);
+
+	VmaAllocationCreateInfo img_alloc_info = {};
+	img_alloc_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+	img_alloc_info.requiredFlags = VkMemoryPropertyFlagBits(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+	VK_CHECK(vmaCreateImage(_allocator, &image_info, &img_alloc_info, &_deepShadowImage._image, &_deepShadowImage._allocation, nullptr));
+
+	VkImageViewCreateInfo image_view_info = vkinit::imageview_create_info(_deepShadowImage._format, _deepShadowImage._image, VK_IMAGE_ASPECT_COLOR_BIT);
+	VK_CHECK(vkCreateImageView(_device, &image_view_info, nullptr, &_deepShadowImage._view));
+}
+
 void RenderEngine::create_shadow_images(const int& lightsCount)
 {
 	VkExtent3D extent =
@@ -1157,8 +1326,8 @@ void RenderEngine::create_shadow_images(const int& lightsCount)
 		_windowExtent.height,
 		1
 	};
-	
-	VkImageCreateInfo image_info = vkinit::image_create_info(VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, extent);
+
+	VkImageCreateInfo image_info = vkinit::image_create_info(VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT, extent);
 	
 	VmaAllocationCreateInfo img_alloc_info = {};
 	img_alloc_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
@@ -1538,6 +1707,13 @@ void RenderEngine::create_raytracing_pipelines(const Scene& scene)
 		denoisedShadowsImagesBinding.descriptorCount = static_cast<uint32_t>(scene._lights.size());
 		denoisedShadowsImagesBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
+		// Skybox
+		VkDescriptorSetLayoutBinding skyboxImageLayoutBinding{};
+		skyboxImageLayoutBinding.binding = 12;
+		skyboxImageLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+		skyboxImageLayoutBinding.descriptorCount = 1;
+		skyboxImageLayoutBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
+
 		std::vector<VkDescriptorSetLayoutBinding> rt_bindings({
 			accelerationStructureLayoutBinding,
 			uniformBufferBinding,
@@ -1550,7 +1726,8 @@ void RenderEngine::create_raytracing_pipelines(const Scene& scene)
 			materialBufferBinding,
 			textureBufferBinding,
 			resultImageLayoutBinding,
-			denoisedShadowsImagesBinding
+			denoisedShadowsImagesBinding,
+			skyboxImageLayoutBinding
 			});
 
 		VkDescriptorSetLayoutCreateInfo desc_set_layout_info{};
@@ -1727,8 +1904,17 @@ void RenderEngine::create_pospo_structures()
 	//Pospo Layout
 	VkPipelineLayoutCreateInfo pospo_pipeline_layout_info = vkinit::pipeline_layout_create_info();
 
-	pospo_pipeline_layout_info.setLayoutCount = 1;
-	pospo_pipeline_layout_info.pSetLayouts = &_singleTextureSetLayout;
+	std::array<VkDescriptorSetLayout, 2> setLayouts = { _singleTextureSetLayout, _singleTextureSetLayout };
+
+	VkPushConstantRange pushConstantRange = {};
+	pushConstantRange.offset = 0;
+	pushConstantRange.size = sizeof(FlagsPushConstant);
+	pushConstantRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+	pospo_pipeline_layout_info.setLayoutCount = 2;
+	pospo_pipeline_layout_info.pSetLayouts = setLayouts.data();
+	pospo_pipeline_layout_info.pushConstantRangeCount = 1;
+	pospo_pipeline_layout_info.pPushConstantRanges = &pushConstantRange;
 
 	VK_CHECK(vkCreatePipelineLayout(_device, &pospo_pipeline_layout_info, nullptr, &pospo._pipelineLayout));
 
@@ -1896,8 +2082,8 @@ void RenderEngine::create_raytracing_descriptor_pool()
 	std::vector<VkDescriptorPoolSize> poolSizes = {
 	{VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 2},
 	{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 100},
-	{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 5},
-	{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 10},
+	{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 10},
+	{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 20},
 	};
 
 	VkResult result;
@@ -1906,7 +2092,7 @@ void RenderEngine::create_raytracing_descriptor_pool()
 	dp_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
 	dp_info.pNext = nullptr;
 	dp_info.flags = 0;
-	dp_info.maxSets = 4;
+	dp_info.maxSets = 6;
 	dp_info.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
 	dp_info.pPoolSizes = poolSizes.data();
 
@@ -2179,16 +2365,9 @@ void RenderEngine::cleanup()
 	}
 }
 
-void RenderEngine::reset_imgui(RenderMode renderMode)
+void RenderEngine::reset_imgui()
 {
-	if(renderMode == RENDER_MODE_FORWARD || renderMode == RENDER_MODE_DEFERRED)
-	{
-		init_imgui(_defaultRenderPass);
-	}
-	else
-	{
-		init_imgui(pospo._renderPass);
-	}
+	init_imgui(pospo._renderPass);
 }
 
 VkPipeline PipelineBuilder::build_pipeline(VkDevice device, VkRenderPass pass)

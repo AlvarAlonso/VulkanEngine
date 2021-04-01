@@ -8,11 +8,13 @@
 #include <SDL.h>
 #include <SDL_vulkan.h>
 
-#include <imgui.h>
-#include <imgui_impl_sdl.h>
-#include <imgui_impl_vulkan.h>
+#include <extra/imgui/imgui.h>
+#include <extra/imgui/imgui_impl_sdl.h>
+#include <extra/imgui/imgui_impl_vulkan.h>
+#include <extra/imgui/ImGuizmo.h>
 
 #include <glm/gtx/transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
 
 #include "vk_initializers.h"
 
@@ -29,11 +31,13 @@ void VulkanEngine::init()
 {
 	cinstance = this;
 
-	camera = new Camera(camera_default_position);
+	camera = new Camera();
 	camera->_speed = 0.1f;
-
+	
 	renderer = new Renderer();
 	
+	//camera->setOrthographic(-1920 / 2, 1920 / 2, -1080 / 2, 1080 / 2, 0.1, 1000);
+
 	_window = renderer->get_sdl_window();
 
 	load_images();
@@ -91,23 +95,15 @@ void VulkanEngine::run()
 			{
 				if (e.key.keysym.sym == SDLK_SPACE)
 				{
-					_pipelineSelected++;
-					if (_pipelineSelected > 2)
-					{
-						_pipelineSelected = 0;
-					}
+					int& rm = renderer->_shaderFlags.renderMode;
 
-					if(_pipelineSelected == 0)
+					if (rm == 0) 
 					{
-						std::cout << "Using Forward Rendering" << std::endl;
-					}
-					else if(_pipelineSelected == 1)
-					{
-						std::cout << "Using Deferred Rendering" << std::endl;
+						rm++; 
 					}
 					else
 					{
-						std::cout << "Using Raytracing Rendering" << std::endl;
+						rm = 0;
 					}
 				}
 
@@ -177,34 +173,102 @@ void VulkanEngine::run()
 		ImGui_ImplSDL2_NewFrame(_window);
 
 		ImGui::NewFrame();
+		ImGuizmo::BeginFrame();
 
 		//imgui commands
-		//ImGui::ShowDemoWindow();
-		//render_imgui();
-		
+		render_debug_gizmo();
+		render_debug_GUI();
+
 		renderer->draw_scene();
 	}
 }
 
-void VulkanEngine::render_imgui()
+void VulkanEngine::render_debug_GUI()
 {
 	ImGui::Text("MAIN IMGUI DEBUG WINDOW:");
 	ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
-	static bool check = true;
-	ImGui::Checkbox("checkbox", &check);
 
-	glm::mat4 model = glm::transpose(scene->_renderables[0]._model);
+	// Lights
+	for(int i = 0; i < scene->_lights.size(); i++)
+	{
+		if(ImGui::TreeNode(&scene->_lights.at(i), "Light"))
+		{
+			scene->_lights.at(i).renderInMenu();
+			ImGui::TreePop();
+		}
+	}
 
-	static float &x = model[0].w;
-	ImGui::InputFloat("input float", &x, 1.0f, 1.0f, "%.3f");
+	// Render prefabs
+	for(int i = 0; i < scene->_renderables.size(); i++)
+	{
+		if(ImGui::TreeNode(&scene->_renderables.at(i), "Prefab"))
+		{
+			scene->_renderables.at(i).renderInMenu();
+			ImGui::TreePop();
+		}
+	}
+}
 
-	static float &y = model[1].w;
-	ImGui::InputFloat("input float", &y, 1.0f, 1.0f, "%.3f");
+void VulkanEngine::render_debug_gizmo()
+{
+	if (!gizmoEntity)
+		return;
 
-	static float &z = model[2].w;
-	ImGui::InputFloat("input float", &z, 1.0f, 1.0f, "%.3f");
+	glm::mat4& matrix = gizmoEntity->_model;
 
-	scene->_renderables[0]._model = glm::transpose(model);
+	static ImGuizmo::OPERATION mCurrentGizmoOperation(ImGuizmo::TRANSLATE);
+	static ImGuizmo::MODE mCurrentGizmoMode(ImGuizmo::WORLD);
+	if (ImGui::IsKeyPressed(90))
+		mCurrentGizmoOperation = ImGuizmo::TRANSLATE;
+	if (ImGui::IsKeyPressed(69))
+		mCurrentGizmoOperation = ImGuizmo::ROTATE;
+	if (ImGui::IsKeyPressed(82))
+		mCurrentGizmoOperation = ImGuizmo::SCALE;
+	if (ImGui::RadioButton("Translate", mCurrentGizmoOperation == ImGuizmo::TRANSLATE))
+		mCurrentGizmoOperation = ImGuizmo::TRANSLATE;
+	ImGui::SameLine();
+	if (ImGui::RadioButton("Rotate", mCurrentGizmoOperation == ImGuizmo::ROTATE))
+		mCurrentGizmoOperation = ImGuizmo::ROTATE;
+	ImGui::SameLine();
+	if (ImGui::RadioButton("Scale", mCurrentGizmoOperation == ImGuizmo::SCALE))
+		mCurrentGizmoOperation = ImGuizmo::SCALE;
+	float matrixTranslation[3], matrixRotation[3], matrixScale[3];
+	ImGuizmo::DecomposeMatrixToComponents(glm::value_ptr(matrix), matrixTranslation, matrixRotation, matrixScale);
+	ImGui::InputFloat3("Tr", matrixTranslation, 3);
+	ImGui::InputFloat3("Rt", matrixRotation, 3);
+	ImGui::InputFloat3("Sc", matrixScale, 3);
+	ImGuizmo::RecomposeMatrixFromComponents(matrixTranslation, matrixRotation, matrixScale, glm::value_ptr(matrix));
+
+	if(mCurrentGizmoOperation != ImGuizmo::SCALE)
+	{
+		if (ImGui::RadioButton("Local", mCurrentGizmoMode == ImGuizmo::LOCAL))
+			mCurrentGizmoMode = ImGuizmo::LOCAL;
+		ImGui::SameLine();
+		if (ImGui::RadioButton("World", mCurrentGizmoMode == ImGuizmo::WORLD))
+			mCurrentGizmoMode = ImGuizmo::WORLD;
+	}
+	static bool useSnap(false);
+	if (ImGui::IsKeyPressed(83))
+		useSnap = !useSnap;
+	ImGui::Checkbox("", &useSnap);
+	ImGui::SameLine();
+	static glm::vec3 snap;
+	switch(mCurrentGizmoOperation)
+	{
+	case ImGuizmo::TRANSLATE:
+		ImGui::InputFloat3("Snap", &snap.x);
+		break;
+	case ImGuizmo::ROTATE:
+		ImGui::InputFloat("Angle Snap", &snap.x);
+		break;
+	case ImGuizmo::SCALE:
+		ImGui::InputFloat("Scale Snap", &snap.x);
+		break;
+	}
+	ImGuiIO& io = ImGui::GetIO();
+	ImGuizmo::SetRect(0, 0, io.DisplaySize.x, io.DisplaySize.y);
+	ImGuizmo::Manipulate(glm::value_ptr(camera->getView()), glm::value_ptr(camera->getProjection()), mCurrentGizmoOperation, 
+		mCurrentGizmoMode, glm::value_ptr(matrix), NULL, useSnap ? &snap.x : NULL);
 }
 
 void VulkanEngine::load_meshes()

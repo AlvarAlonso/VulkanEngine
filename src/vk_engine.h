@@ -30,6 +30,7 @@ public:
 	//Scene components
 
 	Scene* scene;
+	Entity* gizmoEntity;
 	
 	Camera* camera;
 	bool mouse_locked = true;
@@ -48,5 +49,7 @@ public:
 
 private:
 
-	void render_imgui();
+	void render_debug_GUI();
+
+	void render_debug_gizmo();
 };

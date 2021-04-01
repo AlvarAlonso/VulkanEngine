@@ -65,30 +65,30 @@ void main()
 		float shadowFactor = 1.0;
 		
 		// Tracing shadow ray only if the light is visible from the surface
+		
 		if(NdotL > 0.0)
 		{
-			// Calculates the angle of a cone that starts at position worldPosition and perfectly
-			// encapsulates a sphere at position light.position with radius light.radius
 			vec3 perpL = cross(L, vec3(0.0, 1.0, 0.0));
 			// Handle case where L = up -> perpL should then be (1, 0, 0)
 			if(perpL == vec3(0))
 			{
 			perpL.x = 1.0;
 			}
-			// Use perpL to get a vector from worldPosition to the edge of the light sphere
-			vec3 toLightEdge = normalize((lightPosition + perpL * radius) - worldPos); // radius
-			// Angle between L and toLightEdge. Used as the cone angle when sampling shadow rays
+			
+			vec3 toLightEdge = normalize((lightPosition + perpL * radius) - worldPos);
+
 			float coneAngle = acos(dot(L, toLightEdge)) * 2.0f;
 
 			vec3 sampledDirection = normalize(getConeSample(prd.seed, L, coneAngle));
+			//sampledDirection = -toLightEdge;
 
 			float tMin   = 0.001;
-			float tMax   = length(lightDistance + 100);
+			float tMax   = length(lightDistance);
 			uint  flags = gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsOpaqueEXT | gl_RayFlagsSkipClosestHitShaderEXT;
 			shadowPrd.alpha = 0.0f;
 			shadowPrd.hardShadowed = true;
 			
-			vec3 origin = worldPos - sampledDirection * 0.01;
+			vec3 origin = worldPos - sampledDirection * 0.1;
 
 			// trace to the first opaque surface
 			traceRayEXT(topLevelAS,
@@ -120,6 +120,8 @@ void main()
 				}
 				continue;
 			}
+
+		    //imageStore(shadowTextures[i], ivec2(gl_LaunchIDEXT.xy), vec4(1.0));
 			
 			flags = gl_RayFlagsSkipClosestHitShaderEXT;
 
@@ -158,5 +160,7 @@ void main()
 			// No shadow, store white color
 			imageStore(shadowTextures[i], ivec2(gl_LaunchIDEXT.xy), vec4(1.0));
 		}
+		
+		//imageStore(shadowTextures[i], ivec2(gl_LaunchIDEXT.xy), vec4(1.0));
 	}
 }

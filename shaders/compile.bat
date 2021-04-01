@@ -8,6 +8,8 @@ C:\Tools\glslang\bin\glslangValidator.exe skybox.frag -o skybox.frag.spv --targe
 C:\Tools\glslang\bin\glslangValidator.exe light.vert -o light.vert.spv --target-env vulkan1.2
 C:\Tools\glslang\bin\glslangValidator.exe light.frag -o light.frag.spv --target-env vulkan1.2
 C:\Tools\glslang\bin\glslangValidator.exe pospo.frag -o pospo.frag.spv --target-env vulkan1.2
+C:\Tools\glslang\bin\glslangValidator.exe flat.vert -o flat.vert.spv --target-env vulkan1.2
+C:\Tools\glslang\bin\glslangValidator.exe flat.frag -o flat.frag.spv --target-env vulkan1.2
 
 C:\Tools\glslang\bin\glslangValidator.exe raygen.rgen -o raygen.rgen.spv --target-env vulkan1.2
 C:\Tools\glslang\bin\glslangValidator.exe closestHit.rchit -o closestHit.rchit.spv --target-env vulkan1.2

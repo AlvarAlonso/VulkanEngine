@@ -8,6 +8,7 @@ namespace VKE
 	struct MaterialToShader;
 }
 
+class Camera;
 struct RenderObject;
 struct SDL_Window;
 struct RenderEngine;
@@ -48,6 +49,9 @@ public:
 
 	void draw_scene();
 
+	// Shader flags
+	FlagsPushConstant _shaderFlags;
+
 	VKE::Mesh render_quad;
 
 	AllocatedBuffer _camBuffer; //cam parameters
@@ -59,6 +63,9 @@ public:
 	AllocatedBuffer _texturesBuffer;
 	AllocatedBuffer _textureIndicesBuffer;
 
+	Camera* _lightCamera;
+	AllocatedBuffer _lightCamBuffer;
+
 	std::vector<VKE::MaterialToShader> _materialInfos;
 
 	FrameData _frames[FRAME_OVERLAP];
@@ -69,10 +76,12 @@ public:
 	VkCommandPool _forwardCommandPool;
 	VkCommandPool _deferredCommandPool;
 
+	VkCommandBuffer _dsmCommandBuffer;
 	VkCommandBuffer _skyboxCommandBuffer;
 	VkCommandBuffer _gbuffersCommandBuffer;
 	VkCommandBuffer _rtShadowsCommandBuffer;
 	VkCommandBuffer _rtFinalCommandBuffer;
+	VkSemaphore		_dsmSemaphore;
 	VkSemaphore		_skyboxSemaphore;
 	VkSemaphore		_gbufferSemaphore;
 	VkSemaphore		_rtShadowsSemaphore;
@@ -82,6 +91,7 @@ public:
 	VkDescriptorSet _camDescriptorSet;
 	VkDescriptorSet _objectDescriptorSet;
 	VkDescriptorSet _materialsDescriptorSet;
+	VkDescriptorSet _lightCamDescriptorSet;
 
 	GPUSceneData _sceneParameters;
 	AllocatedBuffer _sceneParameterBuffer;
@@ -128,9 +138,11 @@ private:
 
 	void create_uniform_buffer();
 
-	void update_uniform_buffers(RenderObject* first, size_t count);
+	void update_uniform_buffers();
 
 	void create_raytracing_descriptor_sets();
+
+	void record_deep_shadow_map_command_buffer(RenderObject* first, int count);
 
 	void record_skybox_command_buffer();
 

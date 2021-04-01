@@ -29,7 +29,7 @@ struct Vertex {
 struct Light {
 	vec4 position_maxDist;
 	vec4 color_intensity;
-    float radius;
+    vec4 radius;
 };
 
 struct Primitive {
@@ -89,6 +89,7 @@ float computeAttenuation(in float distanceToLight, in float maxDist)
 	return att_factor * att_factor;
 }
 
+/*
 mat3 angleAxis3x3(float angle, vec3 axis)
 {
     axis = normalize(axis);
@@ -99,6 +100,25 @@ mat3 angleAxis3x3(float angle, vec3 axis)
     return mat3(oc * axis.x * axis.x + c,           oc * axis.x * axis.y - axis.z * s,  oc * axis.z * axis.x + axis.y * s,
                 oc * axis.x * axis.y + axis.z * s,  oc * axis.y * axis.y + c,           oc * axis.y * axis.z - axis.x * s,
                 oc * axis.z * axis.x - axis.y * s,  oc * axis.y * axis.z + axis.x * s,  oc * axis.z * axis.z + c);
+}
+*/
+
+// Rotation with angle (in radians) and axis
+mat3 angleAxis3x3(float angle, vec3 axis) {
+    float c, s;
+    s = sin(angle);
+    c = cos(angle);
+
+    float t = 1 - c;
+    float x = axis.x;
+    float y = axis.y;
+    float z = axis.z;
+
+    return mat3(
+        t * x * x + c, t * x * y - s * z, t * x * z + s * y,
+        t * x * y + s * z, t * y * y + c, t * y * z - s * x,
+        t * x * z - s * y, t * y * z + s * x, t * z * z + c
+    );
 }
 
 // The normal can be negated if one wants the ray to pass through
@@ -140,11 +160,10 @@ vec3 getSphereSample(inout uint rngState, const vec3 center, const float radius)
 
 // Returns a random direction vector inside a cone
 // Angle defined in radians
-// Example: direction=(0,1,0) and angle=pi returns ([-1,1],[0,1],[-1,1])
 vec3 getConeSample(inout uint rngState, vec3 direction, float coneAngle) {
     float cosAngle = cos(coneAngle);
 
-    // Generate points on the spherical cap around the north pole [1].
+    // Generate points on the spherical cap around the north pole.
     float z = rnd(rngState) * (1.0f - cosAngle) + cosAngle;
     float phi = rnd(rngState) * 2.0f * PI;
 
@@ -152,13 +171,13 @@ vec3 getConeSample(inout uint rngState, vec3 direction, float coneAngle) {
     float y = sqrt(1.0f - z * z) * sin(phi);
     vec3 north = vec3(0.f, 0.f, 1.f);
 
-    // Find the rotation axis `u` and rotation angle `rot` [1]
+    // Find the rotation axis and rotation angle
     vec3 axis = normalize(cross(north, normalize(direction)));
     float angle = acos(dot(normalize(direction), north));
 
-    // Convert rotation axis and angle to 3x3 rotation matrix [2]
+    // Convert rotation axis and angle to 3x3 rotation matrix
     mat3 R = angleAxis3x3(angle, axis);
-
+    
     return R * vec3(x, y, z);
 }
 

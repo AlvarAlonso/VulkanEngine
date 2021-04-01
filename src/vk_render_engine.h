@@ -37,6 +37,7 @@ struct Pospo {
 	VkPipelineLayout _pipelineLayout;
 	VkRenderPass _renderPass;
 	VkDescriptorSet _textureSet;
+	VkDescriptorSet _additionalTextureSet;
 	std::vector<VkFramebuffer> _framebuffers;
 };
 
@@ -134,11 +135,13 @@ public:
 	VkPipelineLayout _gbuffersPipelineLayout;
 	VkPipelineLayout _lightPipelineLayout;
 	VkPipelineLayout _skyboxPipelineLayout;
+	VkPipelineLayout _dsmPipelineLayout;
 
 	// Pipelines
 	VkPipeline	_texPipeline;
 	VkPipeline	_gbuffersPipeline;
 	VkPipeline	_skyboxPipeline;
+	VkPipeline	_dsmPipeline;
 
 	//Depth Buffer
 	Image _depthImage;
@@ -160,10 +163,12 @@ public:
 	// Render passes
 	VkRenderPass _defaultRenderPass;
 	VkRenderPass _gbuffersRenderPass;
+	VkRenderPass _singleAttachmentRenderPass;
 	VkRenderPass _skyboxRenderPass;
 
 	// Framebuffers
 	std::vector<VkFramebuffer> _framebuffers;
+	VkFramebuffer _dsm_framebuffer;
 	VkFramebuffer _skybox_framebuffer;
 	VkFramebuffer _offscreen_framebuffer;
 
@@ -198,7 +203,7 @@ public:
 	AccelerationStructure _topLevelAS{};
 	std::vector<AccelerationStructure> _bottomLevelAS{};
 
-	std::vector<AllocatedBuffer>						_transformBuffers; //for bottom AS
+	std::vector<AllocatedBuffer> _transformBuffers; //for bottom AS
 
 	RtPipeline				_rtShadowsPipeline;
 	RtPipeline				_rtFinalPipeline;
@@ -225,6 +230,8 @@ public:
 	std::vector<Image> _shadowImages;
 	std::vector<Image> _denoisedShadowImages;
 
+	//deep shadow images
+	Image _deepShadowImage;
 
 	//init the render engine
 	void init();
@@ -239,7 +246,7 @@ public:
 
 	void create_top_level_acceleration_structure(const Scene& scene, bool recreated);
 
-	void reset_imgui(RenderMode renderMode);
+	void reset_imgui();
 
 private:
 
@@ -280,6 +287,8 @@ private:
 	void create_bottom_level_acceleration_structure(const Scene& scene);
 
 	void create_storage_image();
+
+	void create_deep_shadow_images(const int& lightsCount);
 
 	void create_shadow_images(const int& lightsCount);
 

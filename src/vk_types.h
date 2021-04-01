@@ -66,6 +66,11 @@ struct RtPushConstant
 	int frame{ 0 };
 };
 
+struct FlagsPushConstant
+{
+	int renderMode{ 0 };
+};
+
 struct RtPipeline
 {
 	VkPipeline _pipeline;

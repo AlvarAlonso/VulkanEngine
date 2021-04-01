@@ -5,11 +5,12 @@
 #include "vk_textures.h"
 #include "vk_prefab.h"
 #include "vk_utils.h"
+#include "Camera.h"
 #include <iostream>
 
-#include <imgui.h>
-#include <imgui_impl_sdl.h>
-#include <imgui_impl_vulkan.h>
+#include <extra/imgui/imgui.h>
+#include <extra/imgui/imgui_impl_sdl.h>
+#include <extra/imgui/imgui_impl_vulkan.h>
 
 #include <array>
 #include <map>
@@ -40,7 +41,7 @@ Renderer::Renderer()
 	_graphicsQueue = re->_graphicsQueue;
 	_graphicsQueueFamily = re->_graphicsQueueFamily;
 	_renderMode = RENDER_MODE_RAYTRACING;
-	re->reset_imgui(_renderMode);
+	re->reset_imgui();
 
 	init_renderer();
 }
@@ -59,14 +60,14 @@ void Renderer::switch_render_mode()
 {
 	if (_renderMode == RENDER_MODE_RAYTRACING)
 	{
-		re->reset_imgui(_renderMode);
+		re->reset_imgui();
 	}
 
 	_renderMode++;
 
 	if(_renderMode == RENDER_MODE_RAYTRACING)
 	{
-		re->reset_imgui(_renderMode);
+		re->reset_imgui();
 	}
 
 	// TODO: More things to add to optimize resources (only create structures related to the current render mode).
@@ -74,6 +75,7 @@ void Renderer::switch_render_mode()
 
 void Renderer::init_renderer()
 {
+	_lightCamera = new Camera();
 	init_commands();
 	init_sync_structures();
 	create_descriptor_buffers();
@@ -84,34 +86,42 @@ void Renderer::init_renderer()
 
 void Renderer::draw_scene()
 {
+	ImGui::Render();
+
 	if(currentScene == nullptr)
 	{
 		std::cout << "ERROR: The current scene in the renderer is null. Set the scene from the engine before attempting to draw!" << std::endl;
 		std::abort();
 	}
 
-	ImGui::Render();
-
 	if(!isDeferredCommandInit)
 	{
 		re->create_raster_scene_structures();
 		init_descriptors();
 		record_skybox_command_buffer();
+		if(currentScene->_lights.size() > 0)
+		{
+			_lightCamera->_position = currentScene->_lights[0]._model[3];
+			_lightCamera->_direction = glm::vec3(0) - _lightCamera->_position;
+		}
+		else
+		{
+			std::cout << "[Warning]: No light set in the scene." << std::endl;
+		}
+
 		isDeferredCommandInit = true;
 	}
 
-	if(_renderMode == RENDER_MODE_RAYTRACING && !areAccelerationStructuresInit)
+	if(!areAccelerationStructuresInit)
 	{
 		re->create_raytracing_scene_structures(*currentScene);
 		create_raytracing_descriptor_sets();
-		//record_raytracing_command_buffer();
 		areAccelerationStructuresInit = true;
 	}
-	
-	else if(_renderMode == RENDER_MODE_RAYTRACING)
-	{
-		render_raytracing();
-	}
+
+	render_raytracing();
+
+	re->create_top_level_acceleration_structure(*currentScene, true);
 }
 
 void Renderer::create_uniform_buffer()
@@ -126,11 +136,12 @@ void Renderer::create_uniform_buffer()
 	//update_uniform_buffers();
 }
 
-void Renderer::update_uniform_buffers(RenderObject* first, size_t count)
+void Renderer::update_uniform_buffers()
 {
 	//Camera Update
-	glm::mat4 projection = glm::perspective(glm::radians(60.0f), 1700.0f / 900.0f, 0.1f, 512.0f);
-	projection[1][1] *= -1;
+	//glm::mat4 projection = glm::perspective(glm::radians(60.0f), 1700.0f / 900.0f, 0.1f, 512.0f);
+	glm::mat4 projection = VulkanEngine::cinstance->camera->getProjection();
+	//glm::mat4 projection = glm::ortho(-850, 850, -450, 450, -100, 1000);
 
 	void* data;
 	vmaMapMemory(_allocator, _ubo._allocation, &data);
@@ -140,7 +151,7 @@ void Renderer::update_uniform_buffers(RenderObject* first, size_t count)
 	memcpy(data, &uniformData, sizeof(uniformData));
 	vmaUnmapMemory(_allocator, _ubo._allocation);
 
-	//models update
+	// renderable models update
 	std::vector<RenderObject>& renderables = currentScene->_renderables;
 	std::vector<glm::mat4> transforms;
 
@@ -159,6 +170,26 @@ void Renderer::update_uniform_buffers(RenderObject* first, size_t count)
 
 	vmaUnmapMemory(_allocator, _transformBuffer._allocation);
 	
+	// light models update
+
+	std::vector<LightToShader> lightInfos;
+	lightInfos.reserve(currentScene->_lights.size());
+
+	// Pass Lights to LightToShader
+	for (const auto& light : currentScene->_lights)
+	{
+		LightToShader lightInfo;
+		lightInfo._position_dist = glm::vec4(glm::vec3(light._model[3]), light._maxDist);
+		lightInfo._color_intensity = glm::vec4(light._color, light._intensity);
+		lightInfo._radius.x = light._radius;
+		lightInfos.emplace_back(lightInfo);
+	}
+
+	void* sceneData;
+	vmaMapMemory(_allocator, _sceneBuffer._allocation, &sceneData);
+	memcpy(sceneData, lightInfos.data(), lightInfos.size() * sizeof(LightToShader));
+	vmaUnmapMemory(_allocator, _sceneBuffer._allocation);
+
 	// TODO: Solve memory leak
 	//re->create_top_level_acceleration_structure(*currentScene, true);
 }
@@ -277,28 +308,10 @@ void Renderer::create_raytracing_descriptor_sets()
 	// Binding 7: Scene Lights Descriptor
 	_sceneBuffer = vkutil::create_buffer(_allocator, currentScene->_lights.size() * sizeof(LightToShader), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 
-	std::vector<LightToShader> lightInfos;
-	lightInfos.reserve(currentScene->_lights.size());
-
-	// Pass Lights to LightToShader
-	for (const auto& light : currentScene->_lights)
-	{
-		LightToShader lightInfo;
-		lightInfo._position_dist = glm::vec4(glm::vec3(light._model[3]), light._maxDist);
-		lightInfo._color_intensity = glm::vec4(light._color, light._intensity);
-		lightInfo._radius.x = light._radius;
-		lightInfos.emplace_back(lightInfo);
-	}
-
 	VkDescriptorBufferInfo sceneBufferDescriptor{};
 	sceneBufferDescriptor.offset = 0;
 	sceneBufferDescriptor.buffer = _sceneBuffer._buffer;
-	sceneBufferDescriptor.range = lightInfos.size() * sizeof(LightToShader);
-
-	void* sceneData;
-	vmaMapMemory(_allocator, _sceneBuffer._allocation, &sceneData);
-	memcpy(sceneData, lightInfos.data(), lightInfos.size() * sizeof(LightToShader));
-	vmaUnmapMemory(_allocator, _sceneBuffer._allocation);
+	sceneBufferDescriptor.range = currentScene->_lights.size() * sizeof(LightToShader);
 
 	// Binding 8: Materials Descriptor
 
@@ -546,6 +559,12 @@ void Renderer::create_raytracing_descriptor_sets()
 			denoisedShadowImageInfos.push_back(denoisedShadowDescriptor);
 		}
 
+		// Binding 12: Skybox Image
+		VkDescriptorImageInfo cubeMapInfo{};
+		cubeMapInfo.sampler = re->_defaultSampler;
+		cubeMapInfo.imageView = currentScene->_skybox._cubeMap->_imageView;
+		cubeMapInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
 		//Descriptor Writes		
 
 		// Acceleration Structure Write
@@ -569,6 +588,7 @@ void Renderer::create_raytracing_descriptor_sets()
 		VkWriteDescriptorSet textureImagesWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, _rtFinalDescriptorSet, textureImageInfos.data(), 9, textureImageInfos.size());
 		VkWriteDescriptorSet resultImageWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, _rtFinalDescriptorSet, &storageImageDescriptor, 10);
 		VkWriteDescriptorSet denoisedShadowImagesWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, _rtFinalDescriptorSet, denoisedShadowImageInfos.data(), 11, static_cast<uint32_t>(denoisedShadowImageInfos.size()));
+		VkWriteDescriptorSet cubeMapWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, _rtFinalDescriptorSet, &cubeMapInfo, 12);
 
 		std::vector<VkWriteDescriptorSet> writeDescriptorSets = {
 			accelerationStructureWrite,
@@ -582,7 +602,8 @@ void Renderer::create_raytracing_descriptor_sets()
 			materialBufferWrite,
 			textureImagesWrite,		
 			resultImageWrite,
-			denoisedShadowImagesWrite
+			denoisedShadowImagesWrite,
+			cubeMapWrite
 		};
 
 		vkUpdateDescriptorSets(_device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, VK_NULL_HANDLE);
@@ -598,14 +619,23 @@ void Renderer::create_raytracing_descriptor_sets()
 
 	VK_CHECK(vkAllocateDescriptorSets(_device, &pospo_alloc_info, &re->pospo._textureSet));
 
+	VK_CHECK(vkAllocateDescriptorSets(_device, &pospo_alloc_info, &re->pospo._additionalTextureSet));
+
 	VkDescriptorImageInfo pospoImageInfo = {};
 	pospoImageInfo.sampler = re->_defaultSampler;
 	pospoImageInfo.imageView = re->_storageImageView;
 	pospoImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
+	VkDescriptorImageInfo dsmImageInfo = {};
+	dsmImageInfo.sampler = re->_defaultSampler;
+	dsmImageInfo.imageView = re->_deepShadowImage._view;
+	dsmImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
 	VkWriteDescriptorSet pospoWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, re->pospo._textureSet, &pospoImageInfo, 0);
+	VkWriteDescriptorSet dsmWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, re->pospo._additionalTextureSet, &dsmImageInfo, 0);
 
 	vkUpdateDescriptorSets(_device, 1, &pospoWrite, 0, VK_NULL_HANDLE);
+	vkUpdateDescriptorSets(_device, 1, &dsmWrite, 0, VK_NULL_HANDLE);
 
 	re->_mainDeletionQueue.push_function([=]() {
 		vmaDestroyBuffer(_allocator, _transformBuffer._buffer, _transformBuffer._allocation);
@@ -613,6 +643,61 @@ void Renderer::create_raytracing_descriptor_sets()
 		vmaDestroyBuffer(_allocator, _sceneBuffer._buffer, _sceneBuffer._allocation);
 		vmaDestroyBuffer(_allocator, _materialBuffer._buffer, _materialBuffer._allocation);
 	});
+}
+
+void Renderer::record_deep_shadow_map_command_buffer(RenderObject* first, int count)
+{
+	VkCommandBufferBeginInfo dsmCmdBeginInfo = vkinit::command_buffer_begin_info(VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
+
+	VK_CHECK(vkBeginCommandBuffer(_dsmCommandBuffer, &dsmCmdBeginInfo));
+
+	VkClearValue first_clearValue;
+	first_clearValue.color = { {0.2f, 0.6f, 0.2f, 1.0f} };
+
+	VkClearValue first_depthClear;
+	first_depthClear.depthStencil.depth = 1.0f;
+
+	VkRenderPassBeginInfo rpInfo = vkinit::renderpass_begin_info(re->_singleAttachmentRenderPass, re->_windowExtent, re->_dsm_framebuffer);
+
+	std::array<VkClearValue, 2> first_clearValues = { first_clearValue, first_depthClear };
+
+	rpInfo.clearValueCount = static_cast<uint32_t>(first_clearValues.size());
+	rpInfo.pClearValues = first_clearValues.data();
+
+	vkCmdBeginRenderPass(_dsmCommandBuffer, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+	vkCmdBindPipeline(_dsmCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_dsmPipeline);
+
+	vkCmdBindDescriptorSets(_dsmCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_dsmPipelineLayout, 0, 1, &_camDescriptorSet, 0, nullptr);
+
+	vkCmdBindDescriptorSets(_dsmCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_dsmPipelineLayout, 1, 1, &_materialsDescriptorSet, 0, nullptr);
+
+	VKE::Prefab* lastPrefab = nullptr;
+	for (int i = 0; i < count; i++)
+	{
+		RenderObject& object = first[i];
+
+		if (object._name == "hardcoded")
+		{
+			continue;
+		}
+
+		if (object._prefab != lastPrefab)
+		{
+			VkDeviceSize offset = 0;
+			vkCmdBindVertexBuffers(_dsmCommandBuffer, 0, 1, &object._prefab->_vertices.vertexBuffer._buffer, &offset);
+			if (object._prefab->_indices.count > 0)
+			{
+				vkCmdBindIndexBuffer(_dsmCommandBuffer, object._prefab->_indices.indexBuffer._buffer, 0, VK_INDEX_TYPE_UINT32);
+			}
+		}
+
+		object._prefab->draw(object._model, _dsmCommandBuffer, re->_dsmPipelineLayout);
+	}
+
+	vkCmdEndRenderPass(_dsmCommandBuffer);
+
+	VK_CHECK(vkEndCommandBuffer(_dsmCommandBuffer));
 }
 
 void Renderer::record_skybox_command_buffer()
@@ -943,6 +1028,9 @@ void Renderer::record_pospo_command_buffer(VkCommandBuffer cmd, uint32_t swapcha
 	vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, re->pospo._pipeline);
 
 	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, re->pospo._pipelineLayout, 0, 1, &re->pospo._textureSet, 0, nullptr);
+	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, re->pospo._pipelineLayout, 1, 1, &re->pospo._additionalTextureSet, 0, nullptr);
+
+	vkCmdPushConstants(cmd, re->pospo._pipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(FlagsPushConstant), &_shaderFlags);
 
 	VkDeviceSize offset = 0;
 	vkCmdBindVertexBuffers(cmd, 0, 1, &render_quad._vertexBuffer._buffer, &offset);
@@ -1004,6 +1092,7 @@ void Renderer::init_commands()
 	VK_CHECK(vkCreateCommandPool(_device, &commandPoolInfo, nullptr, &_deferredCommandPool));
 
 	VkCommandBufferAllocateInfo cmdAllocInfo = vkinit::command_buffer_allocate_info(_deferredCommandPool, 1);
+	VK_CHECK(vkAllocateCommandBuffers(_device, &cmdAllocInfo, &_dsmCommandBuffer));
 	VK_CHECK(vkAllocateCommandBuffers(_device, &cmdAllocInfo, &_skyboxCommandBuffer));
 	VK_CHECK(vkAllocateCommandBuffers(_device, &cmdAllocInfo, &_gbuffersCommandBuffer));
 
@@ -1028,6 +1117,7 @@ void Renderer::init_sync_structures()
 	semaphoreCreateInfo.pNext = nullptr;
 	semaphoreCreateInfo.flags = 0;
 
+	VK_CHECK(vkCreateSemaphore(_device, &semaphoreCreateInfo, nullptr, &_dsmSemaphore));
 	VK_CHECK(vkCreateSemaphore(_device, &semaphoreCreateInfo, nullptr, &_skyboxSemaphore));
 	VK_CHECK(vkCreateSemaphore(_device, &semaphoreCreateInfo, nullptr, &_gbufferSemaphore));
 	VK_CHECK(vkCreateSemaphore(_device, &semaphoreCreateInfo, nullptr, &_rtShadowsSemaphore));
@@ -1068,9 +1158,12 @@ void Renderer::create_descriptor_buffers()
 		//_frames[i].objectBuffer = vkutil::create_buffer(_allocator, sizeof(GPUObjectData) * MAX_OBJECTS, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 		_frames[i].cameraBuffer = vkutil::create_buffer(_allocator, sizeof(GPUCameraData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 
-		//cam buffer
-		_camBuffer = vkutil::create_buffer(_allocator, sizeof(GPUCameraData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 	}
+
+	//cam buffer
+	_camBuffer = vkutil::create_buffer(_allocator, sizeof(GPUCameraData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
+
+	_lightCamBuffer = vkutil::create_buffer(_allocator, sizeof(GPUCameraData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
 
 	//deferred
 	_objectBuffer = vkutil::create_buffer(_allocator, sizeof(VKE::MaterialToShader) * MAX_MATERIALS, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VMA_MEMORY_USAGE_CPU_TO_GPU);
@@ -1116,6 +1209,8 @@ void Renderer::init_descriptors()
 
 		vkUpdateDescriptorSets(_device, static_cast<uint32_t>(setWrites.size()), setWrites.data(), 0, nullptr);
 	}
+
+	// Skybox descriptors
 
 	VkDescriptorSetAllocateInfo skyboxSetAllocInfo = {};
 	skyboxSetAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -1273,13 +1368,34 @@ void Renderer::init_descriptors()
 
 		i++;
 	}
+
+	// Deep shadow map descriptors
+
+	VkDescriptorSetAllocateInfo dsmSetAllocInfo = {};
+	dsmSetAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	dsmSetAllocInfo.pNext = nullptr;
+	dsmSetAllocInfo.descriptorPool = re->_descriptorPool;
+	dsmSetAllocInfo.descriptorSetCount = 1;
+	dsmSetAllocInfo.pSetLayouts = &re->_camSetLayout;
+
+	VK_CHECK(vkAllocateDescriptorSets(_device, &dsmSetAllocInfo, &_lightCamDescriptorSet));
+
+	VkDescriptorBufferInfo lightCamBufferInfo = {};
+	lightCamBufferInfo.buffer = _lightCamBuffer._buffer;
+	lightCamBufferInfo.offset = 0;
+	lightCamBufferInfo.range = sizeof(GPUCameraData);
+
+	VkWriteDescriptorSet lightCamWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, _lightCamDescriptorSet, &camBufferInfo, 0);
+
+	vkUpdateDescriptorSets(_device, 1, &lightCamWrite, 0, nullptr);
 }
 
 // Update descriptors for deferred
 void Renderer::update_descriptors(RenderObject* first, size_t count)
 {
-	glm::mat4 projection = glm::perspective(glm::radians(70.0f), 1700.0f / 900.0f, 0.1f, 500.0f);
-	projection[1][1] *= -1;
+	//glm::mat4 projection = glm::perspective(glm::radians(70.0f), 1700.0f / 900.0f, 0.1f, 500.0f);
+	glm::mat4 projection = VulkanEngine::cinstance->camera->getProjection();
+	//glm::mat4 projection = glm::ortho(-850, 850, -450, 450, -100, 1000);
 
 	GPUCameraData camData;
 	camData.projection = projection;
@@ -1298,6 +1414,15 @@ void Renderer::update_descriptors(RenderObject* first, size_t count)
 	vmaMapMemory(_allocator, get_current_frame().cameraBuffer._allocation, &data);
 	memcpy(data, &camData, sizeof(GPUCameraData));
 	vmaUnmapMemory(_allocator, get_current_frame().cameraBuffer._allocation);
+
+	camData.projection = _lightCamera->getProjection();
+	camData.view = _lightCamera->getView();
+	camData.viewproj = camData.projection * camData.view;
+
+	void* data3;
+	vmaMapMemory(_allocator, _lightCamBuffer._allocation, &data3);
+	memcpy(data3, &camData, sizeof(GPUCameraData));
+	vmaUnmapMemory(_allocator, _lightCamBuffer._allocation);
 
 	float framed = { _frameNumber / 120.0f };
 
@@ -1338,25 +1463,36 @@ void Renderer::render_raytracing()
 	VK_CHECK(vkAcquireNextImageKHR(_device, re->_swapchain, 0, _frames[get_current_frame_index()]._presentSemaphore, nullptr, &swapchainImageIndex));
 
 	update_frame();
-	update_uniform_buffers(currentScene->_renderables.data(), currentScene->_renderables.size());
+	update_uniform_buffers();
 	update_descriptors(currentScene->_renderables.data(), currentScene->_renderables.size());
 
-	record_gbuffers_command_buffers(currentScene->_renderables.data(), currentScene->_renderables.size());
-
 	VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
+
+	// DEEP SHADOW MAPS PASS
+	record_deep_shadow_map_command_buffer(currentScene->_renderables.data(), currentScene->_renderables.size());
+
+	VkSubmitInfo submit_info_dsm_pass = vkinit::submit_info(&_dsmCommandBuffer);
+	submit_info_dsm_pass.pWaitDstStageMask = waitStages;
+	submit_info_dsm_pass.waitSemaphoreCount = 1;
+	submit_info_dsm_pass.pWaitSemaphores = &_frames[get_current_frame_index()]._presentSemaphore;
+	submit_info_dsm_pass.signalSemaphoreCount = 1;
+	submit_info_dsm_pass.pSignalSemaphores = &_dsmSemaphore;
+
+	VK_CHECK(vkQueueSubmit(_graphicsQueue, 1, &submit_info_dsm_pass, nullptr));
 
 	// SKYBOX PASS
 
 	VkSubmitInfo submit_info_skybox_pass = vkinit::submit_info(&_skyboxCommandBuffer);
 	submit_info_skybox_pass.pWaitDstStageMask = waitStages;
 	submit_info_skybox_pass.waitSemaphoreCount = 1;
-	submit_info_skybox_pass.pWaitSemaphores = &_frames[get_current_frame_index()]._presentSemaphore;
+	submit_info_skybox_pass.pWaitSemaphores = &_dsmSemaphore;
 	submit_info_skybox_pass.signalSemaphoreCount = 1;
 	submit_info_skybox_pass.pSignalSemaphores = &_skyboxSemaphore;
 
 	VK_CHECK(vkQueueSubmit(_graphicsQueue, 1, &submit_info_skybox_pass, nullptr));
 
 	// G-BUFFER PASS
+	record_gbuffers_command_buffers(currentScene->_renderables.data(), currentScene->_renderables.size());
 
 	VkSubmitInfo submit_info_gbuffer_pass = vkinit::submit_info(&_gbuffersCommandBuffer);
 	submit_info_gbuffer_pass.pWaitDstStageMask = waitStages;
@@ -1421,7 +1557,6 @@ void Renderer::render_raytracing()
 	presentInfo.pImageIndices = &swapchainImageIndex;
 
 	VK_CHECK(vkQueuePresentKHR(_graphicsQueue, &presentInfo));
-
 
 	_frameNumber++;
 }

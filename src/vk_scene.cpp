@@ -14,6 +14,7 @@ Scene::Scene()
 void Scene::generate_sample_scene()
 {	
 	// TODO raytracing must accept glTFs with no indices
+	
 	/*
 	Prefab* duckPrefab = Prefab::get("../assets/Duck.glb");
 	duckPrefab->register_prefab("pato");
@@ -22,7 +23,7 @@ void Scene::generate_sample_scene()
 	duck->_model = glm::translate(glm::vec3{ 10, 10, -10 });
 	duck->_prefab = duckPrefab;
 	*/
-
+	
 	// TODO: Rework renderables created on code to work with raytracing
 	VKE::Material* stemMaterial = new VKE::Material(Texture::get("bark"));
 	stemMaterial->_type = VKE::DIFFUSE;
@@ -76,7 +77,7 @@ void Scene::generate_sample_scene()
 
 	_renderables.push_back(*treeStem);
 	_renderables.push_back(*treeLeaves);
-
+	
 	VKE::Material* grassMaterial = new VKE::Material(Texture::get("grass"));
 	grassMaterial->_tilling_factor = 10.0f;
 	grassMaterial->_id = VKE::Material::sMaterials.size();
@@ -102,6 +103,7 @@ void Scene::generate_sample_scene()
 	boxPrefab->register_prefab("box");
 
 	RenderObject* box = new RenderObject();
+	box->_name = "hardcoded";
 	box->_model = glm::translate(glm::vec3{ 0, 0, 0 });
 	box->_prefab = boxPrefab;
 
@@ -117,8 +119,15 @@ void Scene::generate_sample_scene()
 	car->_model *= glm::translate(glm::vec3{ 0, 0, 0 });
 	car->_prefab = carPrefab;
 	*/
+	/*
+	Prefab* sponzaPrefab = Prefab::get("../assets/sponza/Sponza.gltf");
+	sponzaPrefab->register_prefab("sponza");
+
+	RenderObject* sponza = new RenderObject();
+	sponza->_prefab = sponzaPrefab;
+	*/
 	Light point_light1;
-	point_light1._model = glm::translate(glm::vec3{ 20, 100, 0 });
+	point_light1._model = glm::translate(glm::vec3{ 40, 50, 80 });
 	point_light1._color = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
 	point_light1._radius = 1.0f;
 	point_light1._intensity = 1.0f;
