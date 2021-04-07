@@ -3,7 +3,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
-Camera::Camera() : _position(glm::vec3(0, 20, 20)), _direction(glm::vec3(0, 0, -1)), _speed(SPEED), _sensitivity(SENSITIVITY)
+Camera::Camera() : _position(glm::vec3(0, 100, 30)), _direction(glm::vec3(0, 0, -1)), _speed(SPEED), _sensitivity(SENSITIVITY)
 {
     _up_vec = glm::vec3(0, 1, 0);
     _yaw = YAW;
@@ -64,22 +64,9 @@ glm::mat4 Camera::getProjection()
     }
     else
     {
-        glm::mat4x4 M = glm::mat4x4(0);
-        
-        M[0][0] = 2.0f / (_right - _left);
-        M[3][0] = -(_right + _left) / (_right - _left);
-        M[1][1] = 2.0f / (_top - _bottom);
-        M[3][1] = -(_top + _bottom) / (_top - _bottom);
-        M[2][2] = -2.0f / (_far - _near);
-        M[3][2] = -(_far + _near) / (_far - _near);
-        M[3][3] = 1.0f;
-        //M[1][1] *= -1;
-
-        //return glm::transpose(M);
-        //return M;
-        //return glm::ortho(_left, _right, _bottom, _top, -2000.0f, 100.0f);
-        return glm::ortho(-100.0f, 100.0f, -100.0f / 1.88f, 100.0f / 1.88f, -2000.0f, 100.0f);
-        //return glm::ortho(_left, _right, _bottom, _top);
+        glm::mat4x4&& ortho = glm::ortho(_left, _right, _bottom, _top, _near, _far);
+        ortho[1][1] *= -1;
+        return ortho;
     }
 }
 

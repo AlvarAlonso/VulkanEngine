@@ -68,7 +68,8 @@ struct RtPushConstant
 
 struct FlagsPushConstant
 {
-	int renderMode{ 0 };
+	bool showDeepShadowMap = false;
+	int shadowMapLayer{ 0 };
 };
 
 struct RtPipeline

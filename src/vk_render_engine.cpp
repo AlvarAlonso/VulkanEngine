@@ -85,6 +85,18 @@ void RenderEngine::init()
 
 	vkCreateDescriptorSetLayout(_device, &set3Info, nullptr, &_singleTextureSetLayout);
 
+	// Storage Texture Set Layout
+	VkDescriptorSetLayoutBinding storageBind = vkinit::descriptorset_layout_binding(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_FRAGMENT_BIT, 0);
+
+	VkDescriptorSetLayoutCreateInfo storageLayoutInfo{};
+	storageLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	storageLayoutInfo.pNext = nullptr;
+	storageLayoutInfo.bindingCount = 1;
+	storageLayoutInfo.flags = 0;
+	storageLayoutInfo.pBindings = &storageBind;
+
+	vkCreateDescriptorSetLayout(_device, &storageLayoutInfo, nullptr, &_storageTextureSetLayout);
+
 	init_raster_structures();
 	init_raytracing_structures();
 
@@ -117,10 +129,13 @@ void RenderEngine::init_vulkan()
 	//use vkbootstrap to select a gpu
 	//We want a gpu that can write to the SDL surface and supports Vulkan 1.1
 	vkb::PhysicalDeviceSelector selector{ vkb_inst };
+	VkPhysicalDeviceFeatures required_device_features{};
+	required_device_features.fragmentStoresAndAtomics = VK_TRUE;
 	vkb::PhysicalDevice physicalDevice = selector
 		.set_minimum_version(1, 1)
 		.set_surface(_surface)
 		.add_required_extensions(required_device_extensions)
+		.set_required_features(required_device_features)
 		.select()
 		.value();
 
@@ -374,16 +389,6 @@ void RenderEngine::init_render_passes()
 {
 	// single attachment pass
 	{
-		VkAttachmentDescription color_attachment = {};
-		color_attachment.format = _deepShadowImage._format;
-		color_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
-		color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-		color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-		color_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-		color_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		color_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		color_attachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
 		VkAttachmentDescription depth_attachment = {};
 		depth_attachment.format = _depthImage._format;
 		depth_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -394,53 +399,25 @@ void RenderEngine::init_render_passes()
 		depth_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 		depth_attachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
-		std::array<VkAttachmentDescription, 2> attachment_descriptions =
-		{
-			color_attachment,
-			depth_attachment
-		};
-
-		VkAttachmentReference color_ref;
-		color_ref.attachment = 0;
-		color_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
 		VkAttachmentReference depth_ref;
-		depth_ref.attachment = 1;
+		depth_ref.attachment = 0;
 		depth_ref.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
 		VkSubpassDescription subpass = {};
 		subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-		subpass.colorAttachmentCount = 1;
-		subpass.pColorAttachments = &color_ref;
+		subpass.colorAttachmentCount = 0;
+		subpass.pColorAttachments = nullptr;
 		subpass.pDepthStencilAttachment = &depth_ref;
-
-		std::array<VkSubpassDependency, 2> dependencies;
-
-		dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
-		dependencies[0].dstSubpass = 0;
-		dependencies[0].srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-		dependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-		dependencies[0].srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
-		dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-		dependencies[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
-
-		dependencies[1].srcSubpass = 0;
-		dependencies[1].dstSubpass = VK_SUBPASS_EXTERNAL;
-		dependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-		dependencies[1].dstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-		dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-		dependencies[1].dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
-		dependencies[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
 		VkRenderPassCreateInfo single_attachment_pass = {};
 		single_attachment_pass.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
 		single_attachment_pass.pNext = nullptr;
-		single_attachment_pass.attachmentCount = static_cast<uint32_t>(attachment_descriptions.size());
-		single_attachment_pass.pAttachments = attachment_descriptions.data();
+		single_attachment_pass.attachmentCount = 1;
+		single_attachment_pass.pAttachments = &depth_attachment;
 		single_attachment_pass.subpassCount = 1;
 		single_attachment_pass.pSubpasses = &subpass;
-		single_attachment_pass.dependencyCount = static_cast<uint32_t>(dependencies.size());
-		single_attachment_pass.pDependencies = dependencies.data();
+		single_attachment_pass.dependencyCount = 0;
+		single_attachment_pass.pDependencies = nullptr;
 
 		VK_CHECK(vkCreateRenderPass(_device, &single_attachment_pass, nullptr, &_singleAttachmentRenderPass));
 
@@ -635,16 +612,12 @@ void RenderEngine::init_framebuffers()
 {
 	// Deep shadow map buffer
 	{
-		std::array<VkImageView, 2> attachments;
-		attachments[0] = _deepShadowImage._view;
-		attachments[1] = _depthImage._view;
-
 		VkFramebufferCreateInfo fb_info = {};
 		fb_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
 		fb_info.pNext = nullptr;
 		fb_info.renderPass = _singleAttachmentRenderPass;
-		fb_info.attachmentCount = static_cast<uint32_t>(attachments.size());
-		fb_info.pAttachments = attachments.data();
+		fb_info.attachmentCount = 1;
+		fb_info.pAttachments = &_depthImage._view;
 		fb_info.width = _windowExtent.width;
 		fb_info.height = _windowExtent.height;
 		fb_info.layers = 1;
@@ -757,7 +730,7 @@ void RenderEngine::init_pipelines()
 		
 		VkPipelineLayoutCreateInfo layoutInfo = vkinit::pipeline_layout_create_info();
 
-		std::array<VkDescriptorSetLayout, 2> dsmSetLayouts = { _camSetLayout, _materialsSetLayout };
+		std::array<VkDescriptorSetLayout, 3> dsmSetLayouts = { _camSetLayout, _materialsSetLayout, _storageTextureSetLayout };
 
 		VkPushConstantRange pushConstant = {};
 		pushConstant.offset = 0;
@@ -1316,6 +1289,33 @@ void RenderEngine::create_deep_shadow_images(const int& lightsCount)
 
 	VkImageViewCreateInfo image_view_info = vkinit::imageview_create_info(_deepShadowImage._format, _deepShadowImage._image, VK_IMAGE_ASPECT_COLOR_BIT);
 	VK_CHECK(vkCreateImageView(_device, &image_view_info, nullptr, &_deepShadowImage._view));
+
+	vkupload::immediate_submit([&](VkCommandBuffer cmd) {
+		VkImageMemoryBarrier barrier = {};
+		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+		barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.image = _deepShadowImage._image;
+		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		barrier.subresourceRange.baseMipLevel = 0;
+		barrier.subresourceRange.levelCount = 1;
+		barrier.subresourceRange.baseArrayLayer = 0;
+		barrier.subresourceRange.layerCount = 1;
+
+		barrier.srcAccessMask = 0;
+		barrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+
+		vkCmdPipelineBarrier(
+			cmd,
+			VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+			0,
+			0, nullptr,
+			0, nullptr,
+			1, &barrier
+		);
+		});
 }
 
 void RenderEngine::create_shadow_images(const int& lightsCount)
@@ -1495,6 +1495,13 @@ void RenderEngine::create_raytracing_pipelines(const Scene& scene)
 		shadowImagesBinding.descriptorCount = static_cast<uint32_t>(scene._lights.size());
 		shadowImagesBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
 
+		// Deep Shadow Image for Directional
+		VkDescriptorSetLayoutBinding deepShadowImageBinding{};
+		deepShadowImageBinding.binding = 11;
+		deepShadowImageBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+		deepShadowImageBinding.descriptorCount = 1;
+		deepShadowImageBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
+
 		std::vector<VkDescriptorSetLayoutBinding> shadow_bindings =
 		{
 			accelerationStructureLayoutBinding,
@@ -1507,7 +1514,8 @@ void RenderEngine::create_raytracing_pipelines(const Scene& scene)
 			sceneBufferBinding,
 			materialBufferBinding,
 			textureBufferBinding,
-			shadowImagesBinding
+			shadowImagesBinding,
+			deepShadowImageBinding
 		};
 
 		VkDescriptorSetLayoutCreateInfo desc_set_layout_info{};
@@ -1904,7 +1912,7 @@ void RenderEngine::create_pospo_structures()
 	//Pospo Layout
 	VkPipelineLayoutCreateInfo pospo_pipeline_layout_info = vkinit::pipeline_layout_create_info();
 
-	std::array<VkDescriptorSetLayout, 2> setLayouts = { _singleTextureSetLayout, _singleTextureSetLayout };
+	std::array<VkDescriptorSetLayout, 2> setLayouts = { _singleTextureSetLayout, _storageTextureSetLayout };
 
 	VkPushConstantRange pushConstantRange = {};
 	pushConstantRange.offset = 0;
@@ -2262,6 +2270,8 @@ void RenderEngine::get_enabled_features()
 	_enabledAccelerationStructureFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
 	_enabledAccelerationStructureFeatures.accelerationStructure = VK_TRUE;
 	_enabledAccelerationStructureFeatures.pNext = &_enabledRayTracingPipelineFeatures;
+
+	_enabledPhysicalDeviceFeatures.fragmentStoresAndAtomics = VK_TRUE;
 
 	deviceCreatepNextChain = &_enabledAccelerationStructureFeatures;
 }

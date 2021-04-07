@@ -76,6 +76,8 @@ void Renderer::switch_render_mode()
 void Renderer::init_renderer()
 {
 	_lightCamera = new Camera();
+	_lightCamera->setOrthographic(-128, 128, -128, 128, -1000, 500);
+
 	init_commands();
 	init_sync_structures();
 	create_descriptor_buffers();
@@ -442,6 +444,12 @@ void Renderer::create_raytracing_descriptor_sets()
 			shadowImageInfos.push_back(shadowDescriptor);
 		}
 
+		// Binding 11: Deep Shadow Image
+		VkDescriptorImageInfo deepShadowDescriptor{};
+		deepShadowDescriptor.sampler = VK_NULL_HANDLE;
+		deepShadowDescriptor.imageView = re->_deepShadowImage._view;
+		deepShadowDescriptor.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+
 		//Descriptor Writes		
 
 		//	Acceleration Structure Write
@@ -464,6 +472,7 @@ void Renderer::create_raytracing_descriptor_sets()
 		VkWriteDescriptorSet materialBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rtShadowsDescriptorSet, &materialBufferDescriptor, 8);
 		VkWriteDescriptorSet textureImagesWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, _rtShadowsDescriptorSet, textureImageInfos.data(), 9, textureImageInfos.size());
 		VkWriteDescriptorSet shadowImagesWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, _rtShadowsDescriptorSet, shadowImageInfos.data(), 10, static_cast<uint32_t>(shadowImageInfos.size()));
+		//VkWriteDescriptorSet deepShadowImagesWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, _rtShadowsDescriptorSet, &deepShadowDescriptor, 11);
 
 		std::vector<VkWriteDescriptorSet> writeDescriptorSets = {
 			accelerationStructureWrite,
@@ -477,6 +486,7 @@ void Renderer::create_raytracing_descriptor_sets()
 			materialBufferWrite,
 			textureImagesWrite,
 			shadowImagesWrite
+			//deepShadowImagesWrite
 		};
 
 		vkUpdateDescriptorSets(_device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, VK_NULL_HANDLE);
@@ -619,6 +629,8 @@ void Renderer::create_raytracing_descriptor_sets()
 
 	VK_CHECK(vkAllocateDescriptorSets(_device, &pospo_alloc_info, &re->pospo._textureSet));
 
+	pospo_alloc_info.pSetLayouts = &re->_storageTextureSetLayout;
+
 	VK_CHECK(vkAllocateDescriptorSets(_device, &pospo_alloc_info, &re->pospo._additionalTextureSet));
 
 	VkDescriptorImageInfo pospoImageInfo = {};
@@ -629,10 +641,10 @@ void Renderer::create_raytracing_descriptor_sets()
 	VkDescriptorImageInfo dsmImageInfo = {};
 	dsmImageInfo.sampler = re->_defaultSampler;
 	dsmImageInfo.imageView = re->_deepShadowImage._view;
-	dsmImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	dsmImageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
 
 	VkWriteDescriptorSet pospoWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, re->pospo._textureSet, &pospoImageInfo, 0);
-	VkWriteDescriptorSet dsmWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, re->pospo._additionalTextureSet, &dsmImageInfo, 0);
+	VkWriteDescriptorSet dsmWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, re->pospo._additionalTextureSet, &dsmImageInfo, 0);
 
 	vkUpdateDescriptorSets(_device, 1, &pospoWrite, 0, VK_NULL_HANDLE);
 	vkUpdateDescriptorSets(_device, 1, &dsmWrite, 0, VK_NULL_HANDLE);
@@ -651,36 +663,28 @@ void Renderer::record_deep_shadow_map_command_buffer(RenderObject* first, int co
 
 	VK_CHECK(vkBeginCommandBuffer(_dsmCommandBuffer, &dsmCmdBeginInfo));
 
-	VkClearValue first_clearValue;
-	first_clearValue.color = { {0.2f, 0.6f, 0.2f, 1.0f} };
-
 	VkClearValue first_depthClear;
 	first_depthClear.depthStencil.depth = 1.0f;
 
 	VkRenderPassBeginInfo rpInfo = vkinit::renderpass_begin_info(re->_singleAttachmentRenderPass, re->_windowExtent, re->_dsm_framebuffer);
 
-	std::array<VkClearValue, 2> first_clearValues = { first_clearValue, first_depthClear };
-
-	rpInfo.clearValueCount = static_cast<uint32_t>(first_clearValues.size());
-	rpInfo.pClearValues = first_clearValues.data();
+	rpInfo.clearValueCount = 1;
+	rpInfo.pClearValues = &first_depthClear;
 
 	vkCmdBeginRenderPass(_dsmCommandBuffer, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
 
 	vkCmdBindPipeline(_dsmCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_dsmPipeline);
 
-	vkCmdBindDescriptorSets(_dsmCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_dsmPipelineLayout, 0, 1, &_camDescriptorSet, 0, nullptr);
+	vkCmdBindDescriptorSets(_dsmCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_dsmPipelineLayout, 0, 1, &_lightCamDescriptorSet, 0, nullptr);
 
 	vkCmdBindDescriptorSets(_dsmCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_dsmPipelineLayout, 1, 1, &_materialsDescriptorSet, 0, nullptr);
+
+	vkCmdBindDescriptorSets(_dsmCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, re->_dsmPipelineLayout, 2, 1, &_deepShadowMapDescriptorSet, 0, nullptr);
 
 	VKE::Prefab* lastPrefab = nullptr;
 	for (int i = 0; i < count; i++)
 	{
 		RenderObject& object = first[i];
-
-		if (object._name == "hardcoded")
-		{
-			continue;
-		}
 
 		if (object._prefab != lastPrefab)
 		{
@@ -1385,17 +1389,26 @@ void Renderer::init_descriptors()
 	lightCamBufferInfo.offset = 0;
 	lightCamBufferInfo.range = sizeof(GPUCameraData);
 
-	VkWriteDescriptorSet lightCamWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, _lightCamDescriptorSet, &camBufferInfo, 0);
+	dsmSetAllocInfo.pSetLayouts = &re->_storageTextureSetLayout;
+
+	VK_CHECK(vkAllocateDescriptorSets(_device, &dsmSetAllocInfo, &_deepShadowMapDescriptorSet));
+
+	VkDescriptorImageInfo dsmImageInfo{};
+	dsmImageInfo.imageView = re->_deepShadowImage._view;
+	dsmImageInfo.sampler = VK_NULL_HANDLE;
+	dsmImageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+
+	VkWriteDescriptorSet lightCamWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, _lightCamDescriptorSet, &lightCamBufferInfo, 0);
+	VkWriteDescriptorSet dsmWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, _deepShadowMapDescriptorSet, &dsmImageInfo, 0);
 
 	vkUpdateDescriptorSets(_device, 1, &lightCamWrite, 0, nullptr);
+	vkUpdateDescriptorSets(_device, 1, &dsmWrite, 0, nullptr);
 }
 
 // Update descriptors for deferred
 void Renderer::update_descriptors(RenderObject* first, size_t count)
 {
-	//glm::mat4 projection = glm::perspective(glm::radians(70.0f), 1700.0f / 900.0f, 0.1f, 500.0f);
 	glm::mat4 projection = VulkanEngine::cinstance->camera->getProjection();
-	//glm::mat4 projection = glm::ortho(-850, 850, -450, 450, -100, 1000);
 
 	GPUCameraData camData;
 	camData.projection = projection;
@@ -1415,6 +1428,8 @@ void Renderer::update_descriptors(RenderObject* first, size_t count)
 	memcpy(data, &camData, sizeof(GPUCameraData));
 	vmaUnmapMemory(_allocator, get_current_frame().cameraBuffer._allocation);
 
+	_lightCamera->_position = currentScene->_lights[0]._model[3];
+	_lightCamera->_direction = glm::vec3(0) - _lightCamera->_position;
 	camData.projection = _lightCamera->getProjection();
 	camData.view = _lightCamera->getView();
 	camData.viewproj = camData.projection * camData.view;
@@ -1524,6 +1539,9 @@ void Renderer::render_raytracing()
 	submit_info_rtFinal_pass.pWaitSemaphores = &_rtShadowsSemaphore;
 	submit_info_rtFinal_pass.signalSemaphoreCount = 1;
 	submit_info_rtFinal_pass.pSignalSemaphores = &_rtFinalSemaphore;
+
+	//submit_info_rtFinal_pass.pWaitSemaphores = &_gbufferSemaphore;
+	//submit_info_rtFinal_pass.pSignalSemaphores = &_rtFinalSemaphore;
 
 	VK_CHECK(vkQueueSubmit(_graphicsQueue, 1, &submit_info_rtFinal_pass, nullptr));
 

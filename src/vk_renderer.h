@@ -92,6 +92,7 @@ public:
 	VkDescriptorSet _objectDescriptorSet;
 	VkDescriptorSet _materialsDescriptorSet;
 	VkDescriptorSet _lightCamDescriptorSet;
+	VkDescriptorSet _deepShadowMapDescriptorSet;
 
 	GPUSceneData _sceneParameters;
 	AllocatedBuffer _sceneParameterBuffer;

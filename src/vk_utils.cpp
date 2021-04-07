@@ -122,3 +122,18 @@ void vkupload::immediate_submit(std::function<void(VkCommandBuffer cmd)>&& funct
 
 	vkResetCommandPool(RenderEngine::_device, RenderEngine::_uploadContext._commandPool, 0);
 }
+
+Timer::Timer(const std::string& name)
+{
+	_name = name;
+	start = std::chrono::high_resolution_clock::now();
+}
+
+Timer::~Timer()
+{
+	end = std::chrono::high_resolution_clock::now();
+	duration = end - start;
+
+	float ms = duration.count() * 1000.0f;
+	std::cout << "TIMER: " << _name << " took " << ms << "ms\n";
+}

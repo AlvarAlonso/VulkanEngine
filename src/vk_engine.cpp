@@ -4,6 +4,7 @@
 #include "vk_engine.h"
 #include "vk_textures.h"
 #include "vk_material.h"
+#include "vk_utils.h"
 
 #include <SDL.h>
 #include <SDL_vulkan.h>
@@ -29,6 +30,8 @@ Renderer* renderer = nullptr;
 
 void VulkanEngine::init()
 {
+	Timer timer("Init Function");
+
 	cinstance = this;
 
 	camera = new Camera();
@@ -36,8 +39,6 @@ void VulkanEngine::init()
 	
 	renderer = new Renderer();
 	
-	//camera->setOrthographic(-1920 / 2, 1920 / 2, -1080 / 2, 1080 / 2, 0.1, 1000);
-
 	_window = renderer->get_sdl_window();
 
 	load_images();
@@ -95,7 +96,7 @@ void VulkanEngine::run()
 			{
 				if (e.key.keysym.sym == SDLK_SPACE)
 				{
-					int& rm = renderer->_shaderFlags.renderMode;
+					int& rm = renderer->_shaderFlags.shadowMapLayer;
 
 					if (rm == 0) 
 					{
@@ -187,6 +188,8 @@ void VulkanEngine::render_debug_GUI()
 {
 	ImGui::Text("MAIN IMGUI DEBUG WINDOW:");
 	ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+
+	ImGui::Checkbox("Show Deep Shadow Map", &renderer->_shaderFlags.showDeepShadowMap);
 
 	// Lights
 	for(int i = 0; i < scene->_lights.size(); i++)

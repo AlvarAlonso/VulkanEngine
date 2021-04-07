@@ -4,6 +4,19 @@
 
 #include <iostream>
 #include <fstream>
+#include <chrono>
+#include <string>
+
+struct Timer
+{
+	std::string _name;
+	std::chrono::time_point<std::chrono::steady_clock> start, end;
+	std::chrono::duration<float> duration;
+
+	Timer(const std::string& name = "");
+
+	~Timer();
+};
 
 namespace vkutil {
 

@@ -15,6 +15,7 @@ layout(binding = 7, set = 0, std140) uniform Lights { Light l[5]; } lights;
 layout(binding = 8, set = 0) buffer Materials { Material m[]; } materials;
 layout(binding = 9, set = 0) uniform sampler2D textures[];
 layout(binding = 10, set = 0, rgba8) uniform image2D shadowTextures[];
+//layout(binding = 11, set = 0, rgba32f) uniform image2D deepShadowMap;
 
 layout( push_constant ) uniform RtPushConstant {
 	int frame;

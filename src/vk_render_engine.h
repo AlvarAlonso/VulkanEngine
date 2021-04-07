@@ -127,6 +127,7 @@ public:
 	VkDescriptorSetLayout			_objectSetLayout;
 	static VkDescriptorSetLayout	_materialsSetLayout;
 	VkDescriptorSetLayout			_singleTextureSetLayout;
+	VkDescriptorSetLayout			_storageTextureSetLayout;
 	VkDescriptorSetLayout			_camSetLayout;
 	VkDescriptorSetLayout			_skyboxSetLayout;
 
@@ -182,6 +183,7 @@ public:
 	// - Properties and features
 	VkPhysicalDeviceRayTracingPipelinePropertiesKHR  _rayTracingPipelineProperties{};
 	VkPhysicalDeviceAccelerationStructureFeaturesKHR _accelerationStructureFeatures{};
+	VkPhysicalDeviceFeatures _enabledPhysicalDeviceFeatures{};
 
 	void* deviceCreatepNextChain = nullptr;
 
