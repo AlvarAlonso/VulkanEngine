@@ -5,6 +5,11 @@
 #include "vk_prefab.h"
 #include <string>
 
+enum lightType {
+	DIRECTIONAL = 0,
+	SPHERE_LIGHT
+};
+
 struct GPUObjectData
 {
 	glm::mat4 modelMatrix;
@@ -37,10 +42,12 @@ public:
 	Light();
 	Light(const std::string& name);
 
+	glm::vec3 _targetPosition;
 	glm::vec3 _color;
 	float _maxDist;
 	float _intensity;
 	float _radius;
+	lightType _type;
 
 	void renderInMenu();
 };
@@ -49,5 +56,5 @@ struct LightToShader
 {
 	glm::vec4 _position_dist;
 	glm::vec4 _color_intensity;
-	glm::vec4 _radius;
+	glm::vec4 _properties_type;
 };

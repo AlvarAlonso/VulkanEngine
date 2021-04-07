@@ -110,7 +110,7 @@ void main()
 	  float lightIntensity = lights.l[i].color_intensity.w;
 	  float lightMaxDist  = lights.l[i].position_maxDist.w;
 	  vec3 lightPosition = lights.l[i].position_maxDist.xyz;
-	  float radius = lights.l[i].radius.x;
+	  float radius = lights.l[i].properties_type.x; // TODO
 
 	  // Point light
 	  vec3 lDir      = lightPosition - worldPos;

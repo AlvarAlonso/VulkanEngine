@@ -72,11 +72,21 @@ void main()
 		float lightIntensity = lights.l[i].color_intensity.w;
 		float lightMaxDist  = lights.l[i].position_maxDist.w;
 		vec3 lightPosition = lights.l[i].position_maxDist.xyz;
-		float radius = lights.l[i].radius.x;
+		float lightType = lights.l[i].properties_type.w;
 
-		// Point light
-		vec3 lDir      = lightPosition - worldPos;
-		float lightDistance  = length(lDir);
+		vec3 lDir;
+		float attenuation = 1.0;
+
+		if(lightType < 0.01) // DIRECTIONAL LIGHT
+		{
+			lDir = lightPosition - lights.l[i].properties_type.xyz;
+		}
+		else // POINT LIGHT
+		{
+			lDir = lightPosition - worldPos;
+			float lightDistance  = length(lDir);
+			attenuation = computeAttenuation( lightDistance,  lightMaxDist );
+		}
 
 		vec3 L = normalize(lDir);
 		vec3 V = normalize( cam.position.xyz - worldPos );
@@ -86,7 +96,6 @@ void main()
 		float NdotH = clamp( dot( N, H ), 0.0, 1.0 );
 		float LdotH = clamp( dot( L, H ), 0.0, 1.0 );
 
-		float attenuation = computeAttenuation( lightDistance,  lightMaxDist );
 		float shadowFactor = 1.0;
 		
 		//calulate the specular and diffuse

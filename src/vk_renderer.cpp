@@ -183,7 +183,16 @@ void Renderer::update_uniform_buffers()
 		LightToShader lightInfo;
 		lightInfo._position_dist = glm::vec4(glm::vec3(light._model[3]), light._maxDist);
 		lightInfo._color_intensity = glm::vec4(light._color, light._intensity);
-		lightInfo._radius.x = light._radius;
+
+		if(light._type == DIRECTIONAL)
+		{
+			lightInfo._properties_type = glm::vec4(glm::vec3(light._targetPosition), light._type);
+		}
+		else
+		{
+			lightInfo._properties_type = glm::vec4(light._radius, 0.0, 0.0, light._type);
+		}
+
 		lightInfos.emplace_back(lightInfo);
 	}
 
@@ -1429,7 +1438,7 @@ void Renderer::update_descriptors(RenderObject* first, size_t count)
 	vmaUnmapMemory(_allocator, get_current_frame().cameraBuffer._allocation);
 
 	_lightCamera->_position = currentScene->_lights[0]._model[3];
-	_lightCamera->_direction = glm::vec3(0) - _lightCamera->_position;
+	_lightCamera->_direction = currentScene->_lights[0]._targetPosition;
 	camData.projection = _lightCamera->getProjection();
 	camData.view = _lightCamera->getView();
 	camData.viewproj = camData.projection * camData.view;

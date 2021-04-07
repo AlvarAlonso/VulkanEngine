@@ -127,11 +127,13 @@ void Scene::generate_sample_scene()
 	sponza->_prefab = sponzaPrefab;
 	*/
 	Light point_light1;
-	point_light1._model = glm::translate(glm::vec3{ 40, 50, 80 });
+	point_light1._model = glm::translate(glm::vec3{ 0, 50, -80 });
 	point_light1._color = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
 	point_light1._radius = 1.0f;
 	point_light1._intensity = 1.0f;
 	point_light1._maxDist = 300.0f;
+	point_light1._type = DIRECTIONAL;
+	point_light1._targetPosition = glm::vec3(0.0, 0.0, 0.0);
 
 	Light point_light2;
 	point_light2._model = glm::translate(glm::vec3{ -50, 100, 0 });

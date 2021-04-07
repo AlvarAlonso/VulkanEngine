@@ -3,7 +3,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
-Camera::Camera() : _position(glm::vec3(0, 100, 30)), _direction(glm::vec3(0, 0, -1)), _speed(SPEED), _sensitivity(SENSITIVITY)
+Camera::Camera() : _position(glm::vec3(0, 80, 50)), _direction(glm::vec3(0, 0, -1)), _speed(SPEED), _sensitivity(SENSITIVITY)
 {
     _up_vec = glm::vec3(0, 1, 0);
     _yaw = YAW;

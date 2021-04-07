@@ -48,6 +48,7 @@ Light::Light() : Entity()
 	_maxDist = 10.0f;
 	_intensity = 30.0f;
 	_radius = 1.0f;
+	_type = DIRECTIONAL;
 }
 
 Light::Light(const std::string& name)

@@ -29,7 +29,7 @@ struct Vertex {
 struct Light {
 	vec4 position_maxDist;
 	vec4 color_intensity;
-    vec4 radius;
+    vec4 properties_type;
 };
 
 struct Primitive {

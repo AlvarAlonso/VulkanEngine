@@ -54,7 +54,7 @@ void main()
 		// light info
 		float lightMaxDist = lights.l[i].position_maxDist.w;
 		vec3 lightPosition = lights.l[i].position_maxDist.xyz;
-		float radius = lights.l[i].radius.x;
+		float lightType = lights.l[i].properties_type.w;
 
 		// Point light
 		vec3 lDir      = lightPosition - worldPos;
@@ -69,19 +69,29 @@ void main()
 		
 		if(NdotL > 0.0)
 		{
-			vec3 perpL = cross(L, vec3(0.0, 1.0, 0.0));
-			// Handle case where L = up -> perpL should then be (1, 0, 0)
-			if(perpL == vec3(0))
-			{
-			perpL.x = 1.0;
-			}
+			vec3 direction;
 			
-			vec3 toLightEdge = normalize((lightPosition + perpL * radius) - worldPos);
+			if(lightType < 0.01)
+			{
+				direction = normalize(lightPosition - lights.l[i].properties_type.xyz);
+			}
+			else
+			{
+				float radius = lights.l[i].properties_type.x;
+				vec3 perpL = cross(L, vec3(0.0, 1.0, 0.0));
+				// Handle case where L = up -> perpL should then be (1, 0, 0)
+				if(perpL == vec3(0))
+				{
+				perpL.x = 1.0;
+				}
+			
+				vec3 toLightEdge = normalize((lightPosition + perpL * radius) - worldPos);
 
-			float coneAngle = acos(dot(L, toLightEdge)) * 2.0f;
+				float coneAngle = acos(dot(L, toLightEdge)) * 2.0f;
 
-			vec3 sampledDirection = normalize(getConeSample(prd.seed, L, coneAngle));
-			//sampledDirection = -toLightEdge;
+				vec3 sampledDirection = normalize(getConeSample(prd.seed, L, coneAngle));
+				direction = -sampledDirection;
+			}
 
 			float tMin   = 0.001;
 			float tMax   = length(lightDistance);
@@ -89,7 +99,7 @@ void main()
 			shadowPrd.alpha = 0.0f;
 			shadowPrd.hardShadowed = true;
 			
-			vec3 origin = worldPos - sampledDirection * 0.1;
+			vec3 origin = worldPos + direction * 0.1;
 
 			// trace to the first opaque surface
 			traceRayEXT(topLevelAS,
@@ -100,7 +110,7 @@ void main()
 			0,
 			origin,
 			tMin,
-			-sampledDirection,
+			direction,
 			tMax,
 			1);
 			
@@ -134,7 +144,7 @@ void main()
 			0,           // missIndex
 			origin,      // ray origin
 			tMin,        // ray min range
-			-sampledDirection,          // ray direction
+			direction,          // ray direction
 			tMax,        // ray max range
 			1            // payload (location = 1)
 			);
