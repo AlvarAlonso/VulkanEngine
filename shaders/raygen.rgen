@@ -16,11 +16,11 @@ layout(binding = 1, set = 0) uniform CameraProperties
 	mat4 projInverse;
 	vec4 position;
 } cam;
-layout(binding = 2, set = 0) uniform sampler2D gbuffers[]; // 0 = position, 1 = normal, 2 = albedo, 3 = motion vector
+layout(binding = 2, set = 0) uniform sampler2D gbuffers[]; // 0 = position, 1 = normal, 2 = albedo, 3 = depth, 4 = motion vector
 layout(binding = 7, set = 0, std140) uniform Lights { Light l[5]; } lights;
 layout(binding = 8, set = 0) buffer Materials { Material m[]; } materials;
-layout(binding = 10, set = 0, rgba8) uniform image2D image;
-layout(binding = 11, set = 0, rgba8) uniform image2D denoisedShadowImages[];
+layout(binding = 10, set = 0, rgba32f) uniform image2D image;
+layout(binding = 11, set = 0, rgba32f) uniform image2D denoisedShadowImages[];
 layout(binding = 12, set = 0) uniform samplerCube cubeMap;
 
 layout( push_constant ) uniform RtPushConstant {
@@ -44,7 +44,7 @@ void main()
 	vec3 N = normalize(texture(gbuffers[1], gbufferUV).xyz * 2.0 - vec3(1.0));
 	vec3 albedo = texture(gbuffers[2], gbufferUV).xyz;
 	int matIdx = int(texture(gbuffers[2], gbufferUV).w * MAX_MATERIALS);
-	float depth = texture(gbuffers[4], gbufferUV).x;
+	float depth = texture(gbuffers[3], gbufferUV).x;
 
 	if(depth == 1.0)
 	{
@@ -118,10 +118,10 @@ void main()
     vec4 ambientLight = vec4(texture(cubeMap, R).rgb, 1.0);
 
     vec3 finalColor = vec3(0.0);
-	//finalColor = albedo * totalLight * 0.9 + ambientLight.xyz * 0.1; // TODO: Hardcoded
+	//finalColor = albedo * totalLight * 0.95 + ambientLight.xyz * 0.05; // TODO: Hardcoded
 	finalColor = albedo * totalLight;
 
-	//vec3 shadowColor = imageLoad(denoisedShadowImages[0], ivec2(gl_LaunchIDEXT.xy)).xyz;
-	//imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(shadowColor, 1.0f));
-	imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(finalColor, 1.0f));
+	vec3 shadowColor = imageLoad(denoisedShadowImages[0], ivec2(gl_LaunchIDEXT.xy)).xyz;
+	imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(shadowColor, 1.0f));
+	//imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(finalColor, 1.0f));
 }

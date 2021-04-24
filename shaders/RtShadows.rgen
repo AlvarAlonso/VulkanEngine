@@ -10,15 +10,24 @@
 const int MAX_MATERIALS = 100;
 
 layout(binding = 0, set = 0) uniform accelerationStructureEXT topLevelAS;
-layout(binding = 2, set = 0) uniform sampler2D gbuffers[]; // 0 = position, 1 = normal, 2 = albedo, 3 = motion vector
+layout(binding = 2, set = 0) uniform sampler2D gbuffers[]; // 0 = position, 1 = normal, 2 = albedo, 3 = depth, 4 = motion vector
 layout(binding = 7, set = 0, std140) uniform Lights { Light l[5]; } lights;
 layout(binding = 8, set = 0) buffer Materials { Material m[]; } materials;
 layout(binding = 9, set = 0) uniform sampler2D textures[];
-layout(binding = 10, set = 0, rgba8) uniform image2D shadowTextures[];
-//layout(binding = 11, set = 0, rgba32f) uniform image2D deepShadowMap;
+layout(binding = 10, set = 0, rgba32f) uniform image2D shadowTextures[];
+layout(binding = 11, set = 0) uniform usampler2D deepShadowMap;
+layout(binding = 12, set = 0) uniform ShadowCamera
+{
+	mat4 view;
+	mat4 proj;
+	mat4 viewproj;
+	mat4 viewproj_lastFrame;
+} shadowCam;
 
 layout( push_constant ) uniform RtPushConstant {
-	int frame;
+	vec4 frame_bias;
+	ivec4 flags; // x = render mode (0 = full any-hit, 1 = shadow map, 2 = shadow map + any-hit)
+				 // y = kernel size
 } pushConstant;
 
 // Payload
@@ -27,9 +36,14 @@ layout(location = 1) rayPayloadEXT ShadowRayPayload shadowPrd;
 
 const uint MAX_RECURSION = 10;
 
+const float SHADOW_MAP_WIDTH = 1024;
+const float SHADOW_MAP_HEIGHT = 1024;
+
+const uint MAX_UINT = 0xFFFFFFFF;
+
 void main() 
 {
-	prd.seed = tea(gl_LaunchIDEXT.y * gl_LaunchSizeEXT.x + gl_LaunchIDEXT.x, pushConstant.frame);
+	prd.seed = tea(gl_LaunchIDEXT.y * gl_LaunchSizeEXT.x + gl_LaunchIDEXT.x, uint(pushConstant.frame_bias.x));
 	
 	const vec2 pixelCenter = vec2(gl_LaunchIDEXT.xy) + vec2(0.5);
 	vec2 gbufferUV = vec2(pixelCenter.x / gl_LaunchSizeEXT.x, pixelCenter.y / gl_LaunchSizeEXT.y);
@@ -38,12 +52,13 @@ void main()
 	vec3 N = normalize(texture(gbuffers[1], gbufferUV).xyz * 2.0 - vec3(1.0));
 	vec3 albedo = texture(gbuffers[2], gbufferUV).xyz;
 	int matIdx = int(texture(gbuffers[2], gbufferUV).w * MAX_MATERIALS);
+	float realDepth = texture(gbuffers[3], gbufferUV).x;
 
 	Material material = materials.m[matIdx];
 
 	float alpha = 0.3f;
 	// Reproject screenTexCoord to where it was last frame
-	vec2 motionVector = texture(gbuffers[3], gbufferUV).xy;
+	vec2 motionVector = texture(gbuffers[4], gbufferUV).xy;
 	motionVector.y = 1.f - motionVector.y;
 	motionVector = motionVector * 2.f - 1.0f;
 
@@ -67,8 +82,79 @@ void main()
 		
 		// Tracing shadow ray only if the light is visible from the surface
 		
-		if(NdotL > 0.0)
+		//if(NdotL > 0.0)
+		if(true)
 		{
+			if(pushConstant.flags.x != 0)
+			{
+				const int KERNEL_SIZE = pushConstant.flags.y;
+				
+				vec4 proj_pos = shadowCam.viewproj * vec4(worldPos, 1.0);
+
+				vec2 shadow_uv = proj_pos.xy / proj_pos.w;
+
+				shadow_uv = shadow_uv * 0.5 + vec2(0.5);
+
+				float real_depth = (proj_pos.z - pushConstant.frame_bias.y) / proj_pos.w;
+				real_depth = real_depth * 0.5 + 0.5;
+
+				/*
+				if(pushConstant.flags.x == 1)
+				{
+					uint shadowi_depth = texture(deepShadowMap, shadow_uv).x;
+					double shadow_depth = double(shadowi_depth) / double(MAX_UINT);
+
+					//float shadow_depth = float(texture(deepShadowMap, shadow_uv).x) / 4294967295;
+
+					if(float(shadow_depth) < real_depth)
+					{
+						shadowFactor = 0.0;
+					}
+
+					if((shadow_uv.x > 1.0 || shadow_uv.x < 0.0 || shadow_uv.y > 1.0 || shadow_uv.y < 0.0))
+					{
+						shadowFactor = 0.5;
+					}
+
+					imageStore(shadowTextures[0], ivec2(gl_LaunchIDEXT.xy), vec4(vec3(shadowFactor), 1.0));
+					return;
+				}
+				*/
+				
+				int shadowHits = 0;
+
+				for(int i = -KERNEL_SIZE; i <= KERNEL_SIZE; i++)
+				{
+					for(int j = -KERNEL_SIZE; j <= KERNEL_SIZE; j++)
+					{
+						vec2 current_shadow_uv = shadow_uv + vec2(float(i) / SHADOW_MAP_WIDTH, float(j) / SHADOW_MAP_HEIGHT);
+
+						uint shadowi_depth = texture(deepShadowMap, current_shadow_uv).x;
+						double shadow_depth = double(shadowi_depth) / double(MAX_UINT);
+
+						if((float(shadow_depth) < real_depth) || (shadow_uv.x > 1.0 || shadow_uv.x < 0.0 || shadow_uv.y > 1.0 || shadow_uv.y < 0.0))
+						{
+							shadowHits++;
+						}
+					}
+				}
+
+				shadowFactor -= float(shadowHits) / pow(float(KERNEL_SIZE) * 2.0 + 1.0,  2.0);
+				shadowFactor = clamp(shadowFactor, 0.0, 1.0);
+				
+				if(pushConstant.flags.x == 1)
+				{
+					imageStore(shadowTextures[0], ivec2(gl_LaunchIDEXT.xy), vec4(vec3(shadowFactor), 1.0));
+					return;
+				}
+
+				if((shadowFactor >= 0.0 && shadowFactor <= 0.001) || (shadowFactor <= 1.0 && shadowFactor >= 0.999))
+				{
+					imageStore(shadowTextures[0], ivec2(gl_LaunchIDEXT.xy), vec4(vec3(shadowFactor), 1.0));
+					return;
+				}
+			}
+
 			vec3 direction;
 			
 			if(lightType < 0.01)
@@ -82,7 +168,7 @@ void main()
 				// Handle case where L = up -> perpL should then be (1, 0, 0)
 				if(perpL == vec3(0))
 				{
-				perpL.x = 1.0;
+					perpL.x = 1.0;
 				}
 			
 				vec3 toLightEdge = normalize((lightPosition + perpL * radius) - worldPos);
@@ -116,11 +202,11 @@ void main()
 			
 			if(shadowPrd.hardShadowed == true)
 			{
-				float a         = 1.0f / float(pushConstant.frame + 1);
+				float a         = 1.0f / float(pushConstant.frame_bias.x + 1);
 				vec3  old_shadow = imageLoad(shadowTextures[i], reprojectedTexCoord).xyz;
 				vec3 shadow = vec3(0);
 
-				if(pushConstant.frame > 0)
+				if(pushConstant.frame_bias.x > 0)
 				{
 					imageStore(shadowTextures[i], ivec2(gl_LaunchIDEXT.xy), vec4(mix(old_shadow, shadow, a), 1.0f));
 				}
@@ -153,10 +239,10 @@ void main()
 			shadowFactor = 1.0 - shadowPrd.alpha;
 
 
-			float a         = 1.0f / float(pushConstant.frame + 1);
+			float a         = 1.0f / float(pushConstant.frame_bias.x + 1);
 			vec3  old_shadow = imageLoad(shadowTextures[i], reprojectedTexCoord).xyz;
 			vec3 shadow = vec3(shadowFactor);
-			if(pushConstant.frame > 0)
+			if(pushConstant.frame_bias.x > 0)
 			{
 				imageStore(shadowTextures[i], ivec2(gl_LaunchIDEXT.xy), vec4(mix(old_shadow, shadow, a), 1.0f));
 			}
@@ -164,7 +250,7 @@ void main()
 			{
 				shadow = alpha * (shadow) + (1.0f - alpha) * old_shadow;
 				imageStore(shadowTextures[i], ivec2(gl_LaunchIDEXT.xy), vec4(shadow, 1.0));
-			}
+			}			
 		}
 		else
 		{

@@ -53,12 +53,12 @@ void main()
 
 	int occlusionTextureIdx = int(material.emissive_metRough_occlusion_normal_indices.z);
 	vec3 occlusionTexture = texture(textures[occlusionTextureIdx], texCoord).xyz;
-
+	
 	if(occlusionTextureIdx >= 0 && occlusionTexture.x < 0.001 && occlusionTexture.y < 0.001 && occlusionTexture.z < 0.001)
 	{
 		discard;
 	}
-
+	
 	float tilling = material.roughness_metallic_tilling_color_factors.z;
 	vec2 uv = texCoord * tilling;
 

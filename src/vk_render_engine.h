@@ -17,6 +17,9 @@ const int MAX_OBJECTS = 100;
 const int MAX_MATERIALS = 100;
 const int MAX_TEXTURES = 100;
 const int GBUFFER_NUM = 5;
+const float SHADOW_BIAS = 0.0f;
+const float SHADOW_MAP_WIDTH = 1920.0f;
+const float SHADOW_MAP_HEIGHT = 1080.0f;
 
 struct RenderObject;
 class Scene;
@@ -211,7 +214,6 @@ public:
 	RtPipeline				_rtFinalPipeline;
 
 	VkPipeline				_denoiserPipeline;
-	RtPushConstant			_rtPushConstant;
 	VkPipelineLayout		_denoiserPipelineLayout;
 	VkDescriptorSetLayout	_denoiserSetLayout;
 	VkDescriptorPool		_rayTracingDescriptorPool;
@@ -234,6 +236,7 @@ public:
 
 	//deep shadow images
 	Image _deepShadowImage;
+	Image _directionalLightDepthBuffer;
 
 	//init the render engine
 	void init();

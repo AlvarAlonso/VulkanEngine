@@ -59,11 +59,13 @@ struct Image {
 	VkImage _image;
 	VmaAllocation _allocation;
 	VkFormat _format;
+	VkExtent3D _extent;
 };
 
 struct RtPushConstant
 {
-	int frame{ 0 };
+	glm::vec4 frame_bias{ 0, 0, 0, 0 };
+	glm::ivec4 flags{ 0, 0, 0, 0 };
 };
 
 struct FlagsPushConstant

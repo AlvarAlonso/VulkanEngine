@@ -25,6 +25,7 @@ void Scene::generate_sample_scene()
 	*/
 	
 	// TODO: Rework renderables created on code to work with raytracing
+	
 	VKE::Material* stemMaterial = new VKE::Material(Texture::get("bark"));
 	stemMaterial->_type = VKE::DIFFUSE;
 	stemMaterial->_id = VKE::Material::sMaterials.size();
@@ -77,7 +78,8 @@ void Scene::generate_sample_scene()
 
 	_renderables.push_back(*treeStem);
 	_renderables.push_back(*treeLeaves);
-	
+
+
 	VKE::Material* grassMaterial = new VKE::Material(Texture::get("grass"));
 	grassMaterial->_tilling_factor = 10.0f;
 	grassMaterial->_id = VKE::Material::sMaterials.size();
@@ -91,7 +93,7 @@ void Scene::generate_sample_scene()
 	RenderObject* plane = new RenderObject();
 	plane->_model = glm::translate(glm::mat4(1), glm::vec3{ 0.0, 0.0, 0.0 });
 	plane->_model = glm::rotate(glm::mat4(1), glm::radians(-90.0f), glm::vec3{ 1, 0, 0 });
-	plane->_model *= glm::scale(glm::mat4(1), glm::vec3{ 100, 100, 1 });
+	plane->_model *= glm::scale(glm::mat4(1), glm::vec3{ 1000, 1000, 1 });
 	plane->_prefab = planePrefab;
 
 
@@ -127,7 +129,7 @@ void Scene::generate_sample_scene()
 	sponza->_prefab = sponzaPrefab;
 	*/
 	Light point_light1;
-	point_light1._model = glm::translate(glm::vec3{ 0, 50, -80 });
+	point_light1._model = glm::translate(glm::vec3{ 0, 150, 100 });
 	point_light1._color = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
 	point_light1._radius = 1.0f;
 	point_light1._intensity = 1.0f;

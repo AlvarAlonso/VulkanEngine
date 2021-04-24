@@ -76,7 +76,8 @@ void Renderer::switch_render_mode()
 void Renderer::init_renderer()
 {
 	_lightCamera = new Camera();
-	_lightCamera->setOrthographic(-128, 128, -128, 128, -1000, 500);
+	//_lightCamera->setPerspective(60.0f, 1920.0f / 1080.0f, 0.1f, 512.0f);
+	_lightCamera->setOrthographic(-128, 128, -128, 128, -500, 500);
 
 	init_commands();
 	init_sync_structures();
@@ -84,6 +85,9 @@ void Renderer::init_renderer()
 	create_uniform_buffer();
 
 	render_quad.create_quad();
+
+	_rtPushConstant.frame_bias.y = SHADOW_BIAS;
+	_rtPushConstant.flags.y = 1;
 }
 
 void Renderer::draw_scene()
@@ -241,25 +245,25 @@ void Renderer::create_raytracing_descriptor_sets()
 	albedoImageDescriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 	albedoImageDescriptor.sampler = re->_defaultSampler;
 
-	// Motion Vector
-	VkDescriptorImageInfo motionImageDescriptor{};
-	motionImageDescriptor.imageView = re->_motionVectorImage._view;
-	motionImageDescriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-	motionImageDescriptor.sampler = re->_defaultSampler;
-
 	// Depth Buffer
 	VkDescriptorImageInfo depthImageDescriptor{};
 	depthImageDescriptor.imageView = re->_depthImage._view;
 	depthImageDescriptor.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
 	depthImageDescriptor.sampler = re->_defaultSampler;
 
+	// Motion Vector
+	VkDescriptorImageInfo motionImageDescriptor{};
+	motionImageDescriptor.imageView = re->_motionVectorImage._view;
+	motionImageDescriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	motionImageDescriptor.sampler = re->_defaultSampler;
+
 	std::array<VkDescriptorImageInfo, 5> gbuffersImageInfos = 
 	{ 
 		positionImageDescriptor, 
 		normalImageDescriptor, 
 		albedoImageDescriptor, 
-		motionImageDescriptor,
-		depthImageDescriptor	
+		depthImageDescriptor,
+		motionImageDescriptor
 	};
 	
 	// ----------------------------------------------------
@@ -455,9 +459,15 @@ void Renderer::create_raytracing_descriptor_sets()
 
 		// Binding 11: Deep Shadow Image
 		VkDescriptorImageInfo deepShadowDescriptor{};
-		deepShadowDescriptor.sampler = VK_NULL_HANDLE;
+		deepShadowDescriptor.sampler = re->_defaultSampler;
 		deepShadowDescriptor.imageView = re->_deepShadowImage._view;
-		deepShadowDescriptor.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+		deepShadowDescriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+		// Binding 12: Deep Shadow Map Camera
+		VkDescriptorBufferInfo deepShadowMapCameraDescriptor{};
+		deepShadowMapCameraDescriptor.buffer = _lightCamBuffer._buffer;
+		deepShadowMapCameraDescriptor.offset = 0;
+		deepShadowMapCameraDescriptor.range = sizeof(GPUCameraData);
 
 		//Descriptor Writes		
 
@@ -481,7 +491,8 @@ void Renderer::create_raytracing_descriptor_sets()
 		VkWriteDescriptorSet materialBufferWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, _rtShadowsDescriptorSet, &materialBufferDescriptor, 8);
 		VkWriteDescriptorSet textureImagesWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, _rtShadowsDescriptorSet, textureImageInfos.data(), 9, textureImageInfos.size());
 		VkWriteDescriptorSet shadowImagesWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, _rtShadowsDescriptorSet, shadowImageInfos.data(), 10, static_cast<uint32_t>(shadowImageInfos.size()));
-		//VkWriteDescriptorSet deepShadowImagesWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, _rtShadowsDescriptorSet, &deepShadowDescriptor, 11);
+		VkWriteDescriptorSet deepShadowImagesWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, _rtShadowsDescriptorSet, &deepShadowDescriptor, 11);
+		VkWriteDescriptorSet deepShadowMapCamWrite = vkinit::write_descriptor_buffer(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, _rtShadowsDescriptorSet, &deepShadowMapCameraDescriptor, 12);
 
 		std::vector<VkWriteDescriptorSet> writeDescriptorSets = {
 			accelerationStructureWrite,
@@ -494,8 +505,9 @@ void Renderer::create_raytracing_descriptor_sets()
 			sceneBufferWrite,
 			materialBufferWrite,
 			textureImagesWrite,
-			shadowImagesWrite
-			//deepShadowImagesWrite
+			shadowImagesWrite,
+			deepShadowImagesWrite,
+			deepShadowMapCamWrite
 		};
 
 		vkUpdateDescriptorSets(_device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, VK_NULL_HANDLE);
@@ -675,7 +687,13 @@ void Renderer::record_deep_shadow_map_command_buffer(RenderObject* first, int co
 	VkClearValue first_depthClear;
 	first_depthClear.depthStencil.depth = 1.0f;
 
-	VkRenderPassBeginInfo rpInfo = vkinit::renderpass_begin_info(re->_singleAttachmentRenderPass, re->_windowExtent, re->_dsm_framebuffer);
+	VkExtent2D extent =
+	{
+		static_cast<uint32_t>(SHADOW_MAP_WIDTH),
+		static_cast<uint32_t>(SHADOW_MAP_HEIGHT)
+	};
+
+	VkRenderPassBeginInfo rpInfo = vkinit::renderpass_begin_info(re->_singleAttachmentRenderPass, extent, re->_dsm_framebuffer);
 
 	rpInfo.clearValueCount = 1;
 	rpInfo.pClearValues = &first_depthClear;
@@ -709,6 +727,33 @@ void Renderer::record_deep_shadow_map_command_buffer(RenderObject* first, int co
 	}
 
 	vkCmdEndRenderPass(_dsmCommandBuffer);
+
+	{
+		VkImageMemoryBarrier barrier = {};
+		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+		barrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+		barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.image = re->_deepShadowImage._image;
+		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		barrier.subresourceRange.baseMipLevel = 0;
+		barrier.subresourceRange.levelCount = 1;
+		barrier.subresourceRange.baseArrayLayer = 0;
+		barrier.subresourceRange.layerCount = 1;
+
+		barrier.srcAccessMask = 0;
+		barrier.dstAccessMask = VK_ACCESS_INPUT_ATTACHMENT_READ_BIT;
+
+		vkCmdPipelineBarrier(
+			_dsmCommandBuffer,
+			VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+			0,
+			0, nullptr,
+			0, nullptr,
+			1, &barrier
+		);
+	}
 
 	VK_CHECK(vkEndCommandBuffer(_dsmCommandBuffer));
 }
@@ -896,7 +941,7 @@ void Renderer::record_rtShadows_command_buffer()
 	*/
 
 	vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, re->_rtShadowsPipeline._pipeline);
-	vkCmdPushConstants(cmd, re->_rtFinalPipeline._layout, VK_SHADER_STAGE_RAYGEN_BIT_KHR, 0, sizeof(RtPushConstant), &re->_rtPushConstant);
+	vkCmdPushConstants(cmd, re->_rtFinalPipeline._layout, VK_SHADER_STAGE_RAYGEN_BIT_KHR, 0, sizeof(RtPushConstant), &_rtPushConstant);
 	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, re->_rtShadowsPipeline._layout, 0, 1, &_rtShadowsDescriptorSet, 0, 0);
 
 	re->vkCmdTraceRaysKHR(
@@ -981,7 +1026,7 @@ void Renderer::record_rtFinal_command_buffer()
 	*/
 	
 	vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, re->_rtFinalPipeline._pipeline);
-	vkCmdPushConstants(cmd, re->_rtFinalPipeline._layout, VK_SHADER_STAGE_RAYGEN_BIT_KHR, 0, sizeof(RtPushConstant), &re->_rtPushConstant);
+	vkCmdPushConstants(cmd, re->_rtFinalPipeline._layout, VK_SHADER_STAGE_RAYGEN_BIT_KHR, 0, sizeof(RtPushConstant), &_rtPushConstant);
 	vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, re->_rtFinalPipeline._layout, 0, 1, &_rtFinalDescriptorSet, 0, 0);
 	
 	re->vkCmdTraceRaysKHR(
@@ -1010,6 +1055,33 @@ void Renderer::record_rtFinal_command_buffer()
 
 		barrier.srcAccessMask = 0;
 		barrier.dstAccessMask = VK_ACCESS_INPUT_ATTACHMENT_READ_BIT;
+
+		vkCmdPipelineBarrier(
+			cmd,
+			VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+			0,
+			0, nullptr,
+			0, nullptr,
+			1, &barrier
+		);
+	}
+
+	{
+		VkImageMemoryBarrier barrier = {};
+		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+		barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.image = re->_deepShadowImage._image;
+		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		barrier.subresourceRange.baseMipLevel = 0;
+		barrier.subresourceRange.levelCount = 1;
+		barrier.subresourceRange.baseArrayLayer = 0;
+		barrier.subresourceRange.layerCount = 1;
+
+		barrier.srcAccessMask = 0;
+		barrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
 
 		vkCmdPipelineBarrier(
 			cmd,
@@ -1417,6 +1489,9 @@ void Renderer::init_descriptors()
 // Update descriptors for deferred
 void Renderer::update_descriptors(RenderObject* first, size_t count)
 {
+	_lightCamera->_position = currentScene->_lights[0]._model[3];
+	_lightCamera->_direction = glm::vec3(0) - _lightCamera->_position;
+
 	glm::mat4 projection = VulkanEngine::cinstance->camera->getProjection();
 
 	GPUCameraData camData;
@@ -1432,13 +1507,6 @@ void Renderer::update_descriptors(RenderObject* first, size_t count)
 	memcpy(data2, &camData, sizeof(GPUCameraData));
 	vmaUnmapMemory(_allocator, _camBuffer._allocation);
 
-	void* data;
-	vmaMapMemory(_allocator, get_current_frame().cameraBuffer._allocation, &data);
-	memcpy(data, &camData, sizeof(GPUCameraData));
-	vmaUnmapMemory(_allocator, get_current_frame().cameraBuffer._allocation);
-
-	_lightCamera->_position = currentScene->_lights[0]._model[3];
-	_lightCamera->_direction = currentScene->_lights[0]._targetPosition;
 	camData.projection = _lightCamera->getProjection();
 	camData.view = _lightCamera->getView();
 	camData.viewproj = camData.projection * camData.view;
@@ -1595,7 +1663,7 @@ FrameData& Renderer::get_current_frame()
 
 void Renderer::reset_frame()
 {
-	re->_rtPushConstant.frame = -1;
+	_rtPushConstant.frame_bias.x = -1.0f;
 }
 
 void Renderer::update_frame()
@@ -1609,5 +1677,5 @@ void Renderer::update_frame()
 		reset_frame();
 		refCamMatrix = m;
 	}
-	re->_rtPushConstant.frame++;
+	_rtPushConstant.frame_bias.x++;
 }

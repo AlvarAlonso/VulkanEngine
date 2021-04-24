@@ -70,6 +70,6 @@ void main()
 		return;
 	}
 
-	prd.alpha += 0.4;
+	prd.alpha += 0.7;
 }
 

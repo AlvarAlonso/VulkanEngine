@@ -131,6 +131,7 @@ void RenderEngine::init_vulkan()
 	vkb::PhysicalDeviceSelector selector{ vkb_inst };
 	VkPhysicalDeviceFeatures required_device_features{};
 	required_device_features.fragmentStoresAndAtomics = VK_TRUE;
+	required_device_features.shaderFloat64 = VK_TRUE;
 	vkb::PhysicalDevice physicalDevice = selector
 		.set_minimum_version(1, 1)
 		.set_surface(_surface)
@@ -336,6 +337,12 @@ void RenderEngine::init_deferred_attachments()
 		_windowExtent.height,
 		1
 	};
+
+	_positionImage._extent = attachmentExtent;
+	_normalImage._extent = attachmentExtent;
+	_albedoImage._extent = attachmentExtent;
+	_motionVectorImage._extent = attachmentExtent;
+	_depthImage._extent = attachmentExtent;
 
 	_positionImage._format = VK_FORMAT_R16G16B16A16_SFLOAT;
 	_normalImage._format = VK_FORMAT_R16G16B16A16_SFLOAT;
@@ -617,9 +624,9 @@ void RenderEngine::init_framebuffers()
 		fb_info.pNext = nullptr;
 		fb_info.renderPass = _singleAttachmentRenderPass;
 		fb_info.attachmentCount = 1;
-		fb_info.pAttachments = &_depthImage._view;
-		fb_info.width = _windowExtent.width;
-		fb_info.height = _windowExtent.height;
+		fb_info.pAttachments = &_directionalLightDepthBuffer._view;
+		fb_info.width = SHADOW_MAP_WIDTH;
+		fb_info.height = SHADOW_MAP_HEIGHT;
 		fb_info.layers = 1;
 
 		VK_CHECK(vkCreateFramebuffer(_device, &fb_info, nullptr, &_dsm_framebuffer));
@@ -753,9 +760,13 @@ void RenderEngine::init_pipelines()
 		pipelineBuilder._vertexInputInfo.vertexBindingDescriptionCount = static_cast<uint32_t>(vertexDescription.bindings.size());
 		pipelineBuilder._vertexInputInfo.pVertexBindingDescriptions = vertexDescription.bindings.data();
 
-		//Deferred Color Blend Attachment
+		// Deferred Color Blend Attachment
 		pipelineBuilder._colorBlendAttachment.clear();
 		pipelineBuilder._colorBlendAttachment.push_back(vkinit::color_blend_attachment_state());
+
+		// Viewport
+		pipelineBuilder._viewport.width = SHADOW_MAP_WIDTH;
+		pipelineBuilder._viewport.height = SHADOW_MAP_HEIGHT;
 
 		//Deferred Shaders
 		pipelineBuilder._shaderStages.clear();
@@ -779,6 +790,9 @@ void RenderEngine::init_pipelines()
 			});
 	}
 	
+	pipelineBuilder._viewport.width = (float)_windowExtent.width;
+	pipelineBuilder._viewport.height = (float)_windowExtent.height;
+
 	// Skybox pipeline
 	{
 		// Shaders loading
@@ -1219,7 +1233,10 @@ void RenderEngine::create_storage_image()
 		1
 	};
 
-	VkImageCreateInfo image = vkinit::image_create_info(VK_FORMAT_B8G8R8A8_UNORM, VK_IMAGE_USAGE_TRANSFER_SRC_BIT
+	//VkFormat format = VK_FORMAT_B8G8R8A8_UNORM;
+	VkFormat format = VK_FORMAT_R32G32B32A32_SFLOAT;
+
+	VkImageCreateInfo image = vkinit::image_create_info(format, VK_IMAGE_USAGE_TRANSFER_SRC_BIT
 		| VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, extent);
 	image.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 	VK_CHECK(vkCreateImage(_device, &image, nullptr, &_storageImage));
@@ -1235,7 +1252,7 @@ void RenderEngine::create_storage_image()
 	VK_CHECK(vkAllocateMemory(_device, &memoryAllocateInfo, nullptr, &_storageImageMemory));
 	VK_CHECK(vkBindImageMemory(_device, _storageImage, _storageImageMemory, 0));
 
-	VkImageViewCreateInfo colorImageView = vkinit::imageview_create_info(VK_FORMAT_B8G8R8A8_UNORM, _storageImage, VK_IMAGE_ASPECT_COLOR_BIT);
+	VkImageViewCreateInfo colorImageView = vkinit::imageview_create_info(format, _storageImage, VK_IMAGE_ASPECT_COLOR_BIT);
 
 	VK_CHECK(vkCreateImageView(_device, &colorImageView, nullptr, &_storageImageView));
 
@@ -1270,20 +1287,46 @@ void RenderEngine::create_storage_image()
 //TODO: ONLY CREATES ONE AT THE MOMENT
 void RenderEngine::create_deep_shadow_images(const int& lightsCount)
 {
+	/*
 	VkExtent3D extent =
 	{
 		_windowExtent.width,
 		_windowExtent.height,
 		1
 	};
+	*/
 
-	_deepShadowImage._format = VK_FORMAT_R32G32B32A32_SFLOAT;
+	VkExtent3D extent =
+	{
+		SHADOW_MAP_WIDTH,
+		SHADOW_MAP_HEIGHT,
+		1
+	};
 
-	VkImageCreateInfo image_info = vkinit::image_create_info(_deepShadowImage._format, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, extent);
+	_directionalLightDepthBuffer._extent = extent;
+	_directionalLightDepthBuffer._format = VK_FORMAT_D32_SFLOAT;
 
+	VkImageCreateInfo depth_igm = vkinit::image_create_info(_directionalLightDepthBuffer._format, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, extent);
+	
 	VmaAllocationCreateInfo img_alloc_info = {};
 	img_alloc_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
 	img_alloc_info.requiredFlags = VkMemoryPropertyFlagBits(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+	vmaCreateImage(_allocator, &depth_igm, &img_alloc_info, &_directionalLightDepthBuffer._image, &_directionalLightDepthBuffer._allocation, nullptr);
+	VkImageViewCreateInfo depth_view_igm = vkinit::imageview_create_info(_directionalLightDepthBuffer._format, _directionalLightDepthBuffer._image, VK_IMAGE_ASPECT_DEPTH_BIT);
+
+	VK_CHECK(vkCreateImageView(_device, &depth_view_igm, nullptr, &_directionalLightDepthBuffer._view));
+
+	_mainDeletionQueue.push_function([=]()
+	{
+		vkDestroyImageView(_device, _directionalLightDepthBuffer._view, nullptr);
+		vkDestroyImage(_device, _directionalLightDepthBuffer._image, nullptr);
+	});
+
+	_deepShadowImage._extent = extent;
+	_deepShadowImage._format = VK_FORMAT_R32G32B32A32_UINT;
+
+	VkImageCreateInfo image_info = vkinit::image_create_info(_deepShadowImage._format, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, extent);
 
 	VK_CHECK(vmaCreateImage(_allocator, &image_info, &img_alloc_info, &_deepShadowImage._image, &_deepShadowImage._allocation, nullptr));
 
@@ -1320,6 +1363,15 @@ void RenderEngine::create_deep_shadow_images(const int& lightsCount)
 
 void RenderEngine::create_shadow_images(const int& lightsCount)
 {
+	/*
+	VkExtent3D extent =
+	{
+		_windowExtent.width,
+		_windowExtent.height,
+		1
+	};
+	*/
+
 	VkExtent3D extent =
 	{
 		_windowExtent.width,
@@ -1327,7 +1379,9 @@ void RenderEngine::create_shadow_images(const int& lightsCount)
 		1
 	};
 
-	VkImageCreateInfo image_info = vkinit::image_create_info(VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT, extent);
+	VkFormat format = VK_FORMAT_R32G32B32A32_SFLOAT;
+
+	VkImageCreateInfo image_info = vkinit::image_create_info(format, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT, extent);
 	
 	VmaAllocationCreateInfo img_alloc_info = {};
 	img_alloc_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
@@ -1341,17 +1395,19 @@ void RenderEngine::create_shadow_images(const int& lightsCount)
 	{
 		VK_CHECK(vmaCreateImage(_allocator, &image_info, &img_alloc_info, &_shadowImages[i]._image, &_shadowImages[i]._allocation, nullptr));
 		
-		VkImageViewCreateInfo image_view_info = vkinit::imageview_create_info(VK_FORMAT_R8G8B8A8_UNORM, _shadowImages[i]._image, VK_IMAGE_ASPECT_COLOR_BIT);
+		VkImageViewCreateInfo image_view_info = vkinit::imageview_create_info(format, _shadowImages[i]._image, VK_IMAGE_ASPECT_COLOR_BIT);
 		VK_CHECK(vkCreateImageView(_device, &image_view_info, nullptr, &_shadowImages[i]._view));
+		_shadowImages[i]._format = format;
 	}
 
 	// Denoised Shadow Images
 	for (size_t i = 0; i < _denoisedShadowImages.size(); i++)
 	{
 		VK_CHECK(vmaCreateImage(_allocator, &image_info, &img_alloc_info, &_denoisedShadowImages[i]._image, &_denoisedShadowImages[i]._allocation, nullptr));
-
-		VkImageViewCreateInfo image_view_info = vkinit::imageview_create_info(VK_FORMAT_R8G8B8A8_UNORM, _denoisedShadowImages[i]._image, VK_IMAGE_ASPECT_COLOR_BIT);
+		
+		VkImageViewCreateInfo image_view_info = vkinit::imageview_create_info(format, _denoisedShadowImages[i]._image, VK_IMAGE_ASPECT_COLOR_BIT);
 		VK_CHECK(vkCreateImageView(_device, &image_view_info, nullptr, &_denoisedShadowImages[i]._view));
+		_denoisedShadowImages[i]._format = format;
 	}
 
 
@@ -1498,9 +1554,16 @@ void RenderEngine::create_raytracing_pipelines(const Scene& scene)
 		// Deep Shadow Image for Directional
 		VkDescriptorSetLayoutBinding deepShadowImageBinding{};
 		deepShadowImageBinding.binding = 11;
-		deepShadowImageBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+		deepShadowImageBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 		deepShadowImageBinding.descriptorCount = 1;
 		deepShadowImageBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
+
+		// Deep Shadow Camera
+		VkDescriptorSetLayoutBinding deepShadowMapCamera{};
+		deepShadowMapCamera.binding = 12;
+		deepShadowMapCamera.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		deepShadowMapCamera.descriptorCount = 1;
+		deepShadowMapCamera.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
 
 		std::vector<VkDescriptorSetLayoutBinding> shadow_bindings =
 		{
@@ -1515,7 +1578,8 @@ void RenderEngine::create_raytracing_pipelines(const Scene& scene)
 			materialBufferBinding,
 			textureBufferBinding,
 			shadowImagesBinding,
-			deepShadowImageBinding
+			deepShadowImageBinding,
+			deepShadowMapCamera
 		};
 
 		VkDescriptorSetLayoutCreateInfo desc_set_layout_info{};

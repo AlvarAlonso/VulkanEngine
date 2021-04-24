@@ -51,6 +51,7 @@ public:
 
 	// Shader flags
 	FlagsPushConstant _shaderFlags;
+	RtPushConstant	  _rtPushConstant;
 
 	VKE::Mesh render_quad;
 
@@ -94,7 +95,7 @@ public:
 	VkDescriptorSet _lightCamDescriptorSet;
 	VkDescriptorSet _deepShadowMapDescriptorSet;
 
-	GPUSceneData _sceneParameters;
+	GPUSceneData	_sceneParameters;
 	AllocatedBuffer _sceneParameterBuffer;
 
 	//RAY TRACING PIPELINE

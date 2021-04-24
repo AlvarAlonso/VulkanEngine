@@ -35,7 +35,11 @@ void VulkanEngine::init()
 	cinstance = this;
 
 	camera = new Camera();
-	camera->_speed = 0.1f;
+	camera->_speed = 1.0f;
+	camera->_position = glm::vec3(0, 150, 100);
+	//camera->setOrthographic(-128, 128, -128, 128, -500, 500);
+
+	//camera->_direction = -camera->_position;
 	
 	renderer = new Renderer();
 	
@@ -189,7 +193,15 @@ void VulkanEngine::render_debug_GUI()
 	ImGui::Text("MAIN IMGUI DEBUG WINDOW:");
 	ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
 
+	ImGui::SliderFloat("Camera speed", &camera->_speed, 0.1f, 5.0f, "%.3f");
+
+	ImGui::SliderInt("Shadow render mode", &renderer->_rtPushConstant.flags.x, 0, 2, "%d");
+
 	ImGui::Checkbox("Show Deep Shadow Map", &renderer->_shaderFlags.showDeepShadowMap);
+
+	ImGui::SliderFloat("Shadow Bias", &renderer->_rtPushConstant.frame_bias.y, 0.0f, 5.0f, "%.4f", 2.0f);
+
+	ImGui::SliderInt("Kernel Size", &renderer->_rtPushConstant.flags.y, 1, 10, "%d");
 
 	// Lights
 	for(int i = 0; i < scene->_lights.size(); i++)

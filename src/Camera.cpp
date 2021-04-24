@@ -9,7 +9,7 @@ Camera::Camera() : _position(glm::vec3(0, 80, 50)), _direction(glm::vec3(0, 0, -
     _yaw = YAW;
     _pitch = PITCH;
     glm::lookAt(_position, _position + _direction, glm::vec3(0, 1, 0));
-    setPerspective(60.0f, 1920.0f / 1080.0f, 0.1f, 512.0f);
+    setPerspective(60.0f, 1920.0f / 1080.0f, 0.1f, 3000.0f);
     updateCameraVectors();
 }
 
