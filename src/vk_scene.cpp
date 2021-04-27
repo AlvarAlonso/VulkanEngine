@@ -54,7 +54,7 @@ void Scene::generate_sample_scene()
 
 	_renderables.push_back(*treeStem);
 	_renderables.push_back(*treeLeaves);
-
+	
 	treeStem->_model = glm::translate(glm::vec3{ 10, 0, 10 });
 	treeLeaves->_model = glm::translate(glm::vec3{ 10, 0, 10 });
 
@@ -78,7 +78,7 @@ void Scene::generate_sample_scene()
 
 	_renderables.push_back(*treeStem);
 	_renderables.push_back(*treeLeaves);
-
+	
 
 	VKE::Material* grassMaterial = new VKE::Material(Texture::get("grass"));
 	grassMaterial->_tilling_factor = 10.0f;
@@ -91,11 +91,40 @@ void Scene::generate_sample_scene()
 	Prefab* planePrefab = new VKE::Prefab(*planeMesh, "grass");
 
 	RenderObject* plane = new RenderObject();
-	plane->_model = glm::translate(glm::mat4(1), glm::vec3{ 0.0, 0.0, 0.0 });
-	plane->_model = glm::rotate(glm::mat4(1), glm::radians(-90.0f), glm::vec3{ 1, 0, 0 });
-	plane->_model *= glm::scale(glm::mat4(1), glm::vec3{ 1000, 1000, 1 });
+	plane->_model = glm::translate(glm::vec3{ 0.0, 0.0, 0.0 });
+	plane->_model = glm::rotate(plane->_model, glm::radians(-90.0f), glm::vec3{ 1, 0, 0 });
+	plane->_model *= glm::scale(glm::mat4(1), glm::vec3{ 500, 500, 1 });
 	plane->_prefab = planePrefab;
 
+	RenderObject* plane2 = new RenderObject();
+	plane2->_model = glm::translate(glm::vec3{ 0.0, -50.0, 0.0 });
+	plane2->_model = glm::rotate(plane2->_model, glm::radians(-90.0f), glm::vec3{ 1, 0, 0 });
+	plane2->_model *= glm::scale(glm::mat4(1), glm::vec3{ 500, 500, 1 });
+	plane2->_prefab = planePrefab;
+
+	RenderObject* plane3 = new RenderObject();
+	plane3->_model = glm::translate(glm::vec3{ 0.0, -100.0, 0.0 });
+	plane3->_model = glm::rotate(plane3->_model, glm::radians(-90.0f), glm::vec3{ 1, 0, 0 });
+	plane3->_model *= glm::scale(glm::mat4(1), glm::vec3{ 500, 500, 1 });
+	plane3->_prefab = planePrefab;
+
+	RenderObject* plane4 = new RenderObject();
+	plane4->_model = glm::translate(glm::vec3{ 0.0, -150.0, 0.0 });
+	plane4->_model = glm::rotate(plane4->_model, glm::radians(-90.0f), glm::vec3{ 1, 0, 0 });
+	plane4->_model *= glm::scale(glm::mat4(1), glm::vec3{ 500, 500, 1 });
+	plane4->_prefab = planePrefab;
+	
+	RenderObject* plane5 = new RenderObject();
+	plane5->_model = glm::translate(glm::vec3{ 0.0, -250.0, 0.0 });
+	plane5->_model = glm::rotate(plane5->_model, glm::radians(-90.0f), glm::vec3{ 1, 0, 0 });
+	plane5->_model *= glm::scale(glm::mat4(1), glm::vec3{ 500, 500, 1 });
+	plane5->_prefab = planePrefab;
+
+	//_renderables.push_back(*plane3);
+	_renderables.push_back(*plane);
+	_renderables.push_back(*plane2);
+	_renderables.push_back(*plane3);
+	_renderables.push_back(*plane4);
 
 	VKE::Texture* cubeMap = new VKE::Texture();
 
@@ -152,7 +181,6 @@ void Scene::generate_sample_scene()
 
 	//_renderables.push_back(*cornellBox);
 	//_renderables.push_back(*car);
-	_renderables.push_back(*plane);
 
 	_lights.push_back(point_light1);
 }                                

@@ -70,8 +70,7 @@ struct RtPushConstant
 
 struct FlagsPushConstant
 {
-	bool showDeepShadowMap = false;
-	int shadowMapLayer{ 0 };
+	glm::ivec4 flags{ 0, 1, 0, -1 }; // show dsm, dsm depth mode, dsm layer
 };
 
 struct RtPipeline

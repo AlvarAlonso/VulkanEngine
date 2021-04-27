@@ -100,9 +100,9 @@ void VulkanEngine::run()
 			{
 				if (e.key.keysym.sym == SDLK_SPACE)
 				{
-					int& rm = renderer->_shaderFlags.shadowMapLayer;
+					int& rm = renderer->_shaderFlags.flags.z;
 
-					if (rm == 0) 
+					if (rm < 3) 
 					{
 						rm++; 
 					}
@@ -197,7 +197,9 @@ void VulkanEngine::render_debug_GUI()
 
 	ImGui::SliderInt("Shadow render mode", &renderer->_rtPushConstant.flags.x, 0, 2, "%d");
 
-	ImGui::Checkbox("Show Deep Shadow Map", &renderer->_shaderFlags.showDeepShadowMap);
+	ImGui::SliderInt("Show deep shadow map", &renderer->_shaderFlags.flags.x, 0, 1, "%d");
+
+	ImGui::SliderInt("DSM Show Depth Mode", &renderer->_shaderFlags.flags.y, 0, 1, "%d");
 
 	ImGui::SliderFloat("Shadow Bias", &renderer->_rtPushConstant.frame_bias.y, 0.0f, 5.0f, "%.4f", 2.0f);
 

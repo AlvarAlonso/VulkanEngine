@@ -40,6 +40,8 @@ const float SHADOW_MAP_WIDTH = 1024;
 const float SHADOW_MAP_HEIGHT = 1024;
 
 const uint MAX_UINT = 0xFFFFFFFF;
+const uint MAX_24UINT = 0x00FFFFFF;
+const uint MAX_8UINT = 0x000000FF;
 
 void main() 
 {
@@ -102,7 +104,7 @@ void main()
 				if(pushConstant.flags.x == 1)
 				{
 					uint shadowi_depth = texture(deepShadowMap, shadow_uv).x;
-					double shadow_depth = double(shadowi_depth) / double(MAX_UINT);
+					double shadow_depth = double(shadowi_depth) / double(MAX_24UINT);
 
 					//float shadow_depth = float(texture(deepShadowMap, shadow_uv).x) / 4294967295;
 
@@ -130,7 +132,8 @@ void main()
 						vec2 current_shadow_uv = shadow_uv + vec2(float(i) / SHADOW_MAP_WIDTH, float(j) / SHADOW_MAP_HEIGHT);
 
 						uint shadowi_depth = texture(deepShadowMap, current_shadow_uv).x;
-						double shadow_depth = double(shadowi_depth) / double(MAX_UINT);
+						shadowi_depth = shadowi_depth >> 8;
+						double shadow_depth = double(shadowi_depth) / double(MAX_24UINT);
 
 						if((float(shadow_depth) < real_depth) || (shadow_uv.x > 1.0 || shadow_uv.x < 0.0 || shadow_uv.y > 1.0 || shadow_uv.y < 0.0))
 						{

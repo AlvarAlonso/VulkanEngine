@@ -2,6 +2,8 @@
 
 #extension GL_EXT_nonuniform_qualifier : enable
 
+precision highp int;
+
 layout (location = 0) in vec2 texCoord;
 
 struct Material {
@@ -24,6 +26,52 @@ float near = -500.0;
 float far = 0.1;
 
 const uint MAX_UINT = 0xFFFFFFFF;
+const uint MAX_24UINT = 0x00FFFFFF;
+const uint MAX_8UINT = 0x000000FF;
+
+const uint DEFAULT_VISIBILITY = 0x000000FF;
+const uint DEFAULT_MATERIAL_OPACITY = 0x0000000F;
+
+uint computeVisibilitySample(uint depth, uint visibility)
+{
+	uint V = depth;
+	V = V << 8;
+	V = V | visibility;
+	
+	return V;
+}
+
+uint computeNewVisibility(uint V, uint visibilityToAdd)
+{
+	uint visibility = (V & 0x000000FF) - visibilityToAdd;
+
+	uint newV = V & 0xFFFFFF00;
+	newV = V | visibility;
+
+	return newV;
+}
+
+uvec2 computeMiddleSamples(uint a, uint b, uint c, uint d)
+{
+	uint firstInterval = (a & MAX_8UINT) - (b & MAX_8UINT);
+	uint secondInterval = (b & MAX_8UINT) - (c & MAX_8UINT);
+	uint thirdInterval = (c & MAX_8UINT) - (d & MAX_8UINT);
+
+	//return uvec2(b, d);
+
+	if(firstInterval > secondInterval && secondInterval > thirdInterval)
+	{
+		return uvec2(c, d);
+	}
+	else if(secondInterval > firstInterval && secondInterval > thirdInterval)
+	{
+		return uvec2(b, d);
+	}
+	else
+	{
+		return uvec2(b, c);
+	}
+}
 
 float linearizeDepth(float depth)
 {
@@ -44,36 +92,154 @@ void main()
 		discard;
 	}
 	
-	//float depth = gl_FragCoord.z;
-	uint depth = uint(gl_FragCoord.z * MAX_UINT);
-
-	uint currentMinDepth = imageLoad(deepShadowImage, ivec2(gl_FragCoord.xy)).x;
-	uint currentMaxDepth = imageLoad(deepShadowImage, ivec2(gl_FragCoord.xy)).y;
-
-	if(depth < currentMinDepth)
-	{
-		imageStore(deepShadowImage, ivec2(gl_FragCoord.xy), uvec4(depth, 1, 1, 1));
-	}
+	uint depth = uint(gl_FragCoord.z * MAX_24UINT);
 	
-	/*
-	uint depth = 50;
+	uvec4 currentDsmValues = imageLoad(deepShadowImage, ivec2(gl_FragCoord.xy));
 
-	imageStore(deepShadowImage, ivec2(gl_FragCoord.xy), uvec4(depth, 1, 1, 1));
-	*/
-	/*
-	if(depth < currentMinDepth)
-	{
-		imageStore(deepShadowImage, ivec2(gl_FragCoord.xy), uvec4(depth, currentMaxDepth, 1, 1));
-	}
+	uint v = 0;
 
-	if(depth < currentMinDepth && depth > currentMaxDepth)
+	// it is a min
+	if(depth < (currentDsmValues.x >> 8))
 	{
-		imageStore(deepShadowImage, ivec2(gl_FragCoord.xy), uvec4(depth, depth, 1, 1));
-		return;
+		v = computeVisibilitySample(depth, DEFAULT_VISIBILITY - DEFAULT_MATERIAL_OPACITY);
+
+		if(currentDsmValues.x == MAX_UINT)
+		{
+			imageStore(deepShadowImage, ivec2(gl_FragCoord.xy), uvec4(v, currentDsmValues.y, currentDsmValues.z, currentDsmValues.w));
+		}
+		else if(currentDsmValues.w == 0)
+		{
+			currentDsmValues.w = computeNewVisibility(currentDsmValues.x, DEFAULT_MATERIAL_OPACITY);
+
+			imageStore(deepShadowImage, ivec2(gl_FragCoord.xy), uvec4(v, currentDsmValues.y, currentDsmValues.z, currentDsmValues.w));
+		}
+		else if(currentDsmValues.y == 0)
+		{
+			currentDsmValues.w = computeNewVisibility(currentDsmValues.w, DEFAULT_MATERIAL_OPACITY);
+			currentDsmValues.y = computeNewVisibility(currentDsmValues.x, DEFAULT_MATERIAL_OPACITY);
+
+			imageStore(deepShadowImage, ivec2(gl_FragCoord.xy), uvec4(v, currentDsmValues.y, currentDsmValues.z, currentDsmValues.w));
+		}
+		else if(currentDsmValues.z == 0)
+		{
+			currentDsmValues.w = computeNewVisibility(currentDsmValues.w, DEFAULT_MATERIAL_OPACITY);
+			currentDsmValues.z = computeNewVisibility(currentDsmValues.y, DEFAULT_MATERIAL_OPACITY);
+			currentDsmValues.y = computeNewVisibility(currentDsmValues.x, DEFAULT_MATERIAL_OPACITY);
+
+			imageStore(deepShadowImage, ivec2(gl_FragCoord.xy), uvec4(v, currentDsmValues.y, currentDsmValues.z, currentDsmValues.w));
+		}
+		else
+		{
+			currentDsmValues.w = computeNewVisibility(currentDsmValues.w, DEFAULT_MATERIAL_OPACITY);
+			currentDsmValues.z = computeNewVisibility(currentDsmValues.z, DEFAULT_MATERIAL_OPACITY);
+			currentDsmValues.y = computeNewVisibility(currentDsmValues.y, DEFAULT_MATERIAL_OPACITY);
+			currentDsmValues.x = computeNewVisibility(currentDsmValues.x, DEFAULT_MATERIAL_OPACITY);
+
+			currentDsmValues.yz = computeMiddleSamples(v, currentDsmValues.x, currentDsmValues.y, currentDsmValues.z);
+
+			imageStore(deepShadowImage, ivec2(gl_FragCoord.xy), uvec4(v, currentDsmValues.y, currentDsmValues.z, currentDsmValues.w));
+		}
 	}
-	else if(depth > currentMaxDepth)
+	// it is a max
+	else if(depth > (currentDsmValues.w >> 8))
 	{
-		imageStore(deepShadowImage, ivec2(gl_FragCoord.xy), uvec4(currentMinDepth, depth, 1, 1));
+		if(currentDsmValues.w == 0)
+		{
+			v = computeVisibilitySample(depth, (currentDsmValues.x & MAX_8UINT) - DEFAULT_MATERIAL_OPACITY);
+
+			imageStore(deepShadowImage, ivec2(gl_FragCoord.xy), uvec4(currentDsmValues.x, currentDsmValues.y, currentDsmValues.z, v));
+		}
+		else if(currentDsmValues.y == 0)
+		{
+			v = computeVisibilitySample(depth, (currentDsmValues.w & MAX_8UINT) - DEFAULT_MATERIAL_OPACITY);
+
+			currentDsmValues.y = currentDsmValues.w;
+
+			imageStore(deepShadowImage, ivec2(gl_FragCoord.xy), uvec4(currentDsmValues.x, currentDsmValues.y, currentDsmValues.z, v));
+		}
+		else if(currentDsmValues.z == 0)
+		{
+			v = computeVisibilitySample(depth, (currentDsmValues.w & MAX_8UINT) - DEFAULT_MATERIAL_OPACITY);
+
+			currentDsmValues.z = currentDsmValues.w;
+
+			imageStore(deepShadowImage, ivec2(gl_FragCoord.xy), uvec4(currentDsmValues.x, currentDsmValues.y, currentDsmValues.z, v));
+		}
+		else
+		{
+			v = computeVisibilitySample(depth, (currentDsmValues.w & MAX_8UINT) - DEFAULT_MATERIAL_OPACITY);
+
+			currentDsmValues.yz = computeMiddleSamples(currentDsmValues.x, currentDsmValues.y, currentDsmValues.z, currentDsmValues.w);
+
+			imageStore(deepShadowImage, ivec2(gl_FragCoord.xy), uvec4(currentDsmValues.x, currentDsmValues.y, currentDsmValues.z, v));
+		}
 	}
-	*/
+	// it is in the middle
+	else
+	{
+		if(currentDsmValues.y == 0)
+		{
+			v = computeVisibilitySample(depth, (currentDsmValues.x & MAX_8UINT) - DEFAULT_MATERIAL_OPACITY);
+
+			currentDsmValues.w = computeNewVisibility(currentDsmValues.w, DEFAULT_MATERIAL_OPACITY);
+
+			imageStore(deepShadowImage, ivec2(gl_FragCoord.xy), uvec4(currentDsmValues.x, v, currentDsmValues.z, currentDsmValues.w));
+		}
+		else if(currentDsmValues.z == 0)
+		{
+			if(depth < (currentDsmValues.y >> 8))
+			{
+				v = computeVisibilitySample(depth, (currentDsmValues.x & MAX_8UINT) - DEFAULT_MATERIAL_OPACITY);
+				
+				currentDsmValues.w = computeNewVisibility(currentDsmValues.w, DEFAULT_MATERIAL_OPACITY);
+				currentDsmValues.z = computeNewVisibility(currentDsmValues.y, DEFAULT_MATERIAL_OPACITY);
+
+				imageStore(deepShadowImage, ivec2(gl_FragCoord.xy), uvec4(currentDsmValues.x, v, currentDsmValues.z, currentDsmValues.w));
+			}
+			else
+			{
+				v = computeVisibilitySample(depth, (currentDsmValues.y & MAX_8UINT) - DEFAULT_MATERIAL_OPACITY);
+
+				currentDsmValues.w = computeNewVisibility(currentDsmValues.w, DEFAULT_MATERIAL_OPACITY);
+
+				imageStore(deepShadowImage, ivec2(gl_FragCoord.xy), uvec4(currentDsmValues.x, currentDsmValues.y, v, currentDsmValues.w));
+			}
+		}
+		else
+		{
+			if(depth < (currentDsmValues.y >> 8))
+			{
+				v = computeVisibilitySample(depth, (currentDsmValues.x & MAX_8UINT) - DEFAULT_MATERIAL_OPACITY);
+
+				currentDsmValues.w = computeNewVisibility(currentDsmValues.w, DEFAULT_MATERIAL_OPACITY);
+				currentDsmValues.z = computeNewVisibility(currentDsmValues.z, DEFAULT_MATERIAL_OPACITY);
+				currentDsmValues.y = computeNewVisibility(currentDsmValues.y, DEFAULT_MATERIAL_OPACITY);
+
+				currentDsmValues.yz = computeMiddleSamples(currentDsmValues.x, v, currentDsmValues.y, currentDsmValues.z);
+
+				imageStore(deepShadowImage, ivec2(gl_FragCoord.xy), uvec4(currentDsmValues.x, currentDsmValues.y, currentDsmValues.z, currentDsmValues.w));
+			}
+			else if(depth < (currentDsmValues.z >> 8))
+			{
+				v = computeVisibilitySample(depth, (currentDsmValues.y & MAX_8UINT) - DEFAULT_MATERIAL_OPACITY);
+				
+				currentDsmValues.w = computeNewVisibility(currentDsmValues.w, DEFAULT_MATERIAL_OPACITY);
+				currentDsmValues.z = computeNewVisibility(currentDsmValues.z, DEFAULT_MATERIAL_OPACITY);
+
+				currentDsmValues.yz = computeMiddleSamples(currentDsmValues.x, currentDsmValues.y, v, currentDsmValues.z);
+
+				imageStore(deepShadowImage, ivec2(gl_FragCoord.xy), uvec4(currentDsmValues.x, currentDsmValues.y, currentDsmValues.z, currentDsmValues.w));
+			}
+			else
+			{
+				v = computeVisibilitySample(depth, (currentDsmValues.z & MAX_8UINT) - DEFAULT_MATERIAL_OPACITY);
+
+				currentDsmValues.w = computeNewVisibility(currentDsmValues.w, DEFAULT_MATERIAL_OPACITY);
+
+				currentDsmValues.yz = computeMiddleSamples(currentDsmValues.x, currentDsmValues.y, currentDsmValues.z, v);
+
+				imageStore(deepShadowImage, ivec2(gl_FragCoord.xy), uvec4(currentDsmValues.x, currentDsmValues.y, currentDsmValues.z, currentDsmValues.w));
+			}
+		}
+	}
 }

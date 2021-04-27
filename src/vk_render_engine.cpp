@@ -348,7 +348,7 @@ void RenderEngine::init_deferred_attachments()
 	_normalImage._format = VK_FORMAT_R16G16B16A16_SFLOAT;
 	_albedoImage._format = VK_FORMAT_R8G8B8A8_UNORM;
 	_motionVectorImage._format = VK_FORMAT_R16G16B16A16_SFLOAT;
-	_depthImage._format = VK_FORMAT_D32_SFLOAT;
+	_depthImage._format = VK_FORMAT_D24_UNORM_S8_UINT;
 
 	VkImageCreateInfo position_igm = vkinit::image_create_info(_positionImage._format, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, attachmentExtent);
 	VkImageCreateInfo normal_igm = vkinit::image_create_info(_normalImage._format, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, attachmentExtent);
@@ -1304,7 +1304,7 @@ void RenderEngine::create_deep_shadow_images(const int& lightsCount)
 	};
 
 	_directionalLightDepthBuffer._extent = extent;
-	_directionalLightDepthBuffer._format = VK_FORMAT_D32_SFLOAT;
+	_directionalLightDepthBuffer._format = VK_FORMAT_D24_UNORM_S8_UINT;
 
 	VkImageCreateInfo depth_igm = vkinit::image_create_info(_directionalLightDepthBuffer._format, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, extent);
 	
