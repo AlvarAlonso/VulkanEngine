@@ -32,6 +32,18 @@ const uint MAX_8UINT = 0x000000FF;
 const uint DEFAULT_VISIBILITY = 0x000000FF;
 const uint DEFAULT_MATERIAL_OPACITY = 0x0000000F;
 
+uint subtractionClamp0(uint a, uint b)
+{
+	if(a < b)
+	{
+		return 0;
+	}
+	else
+	{
+		return a - b;
+	}
+}
+
 uint computeVisibilitySample(uint depth, uint visibility)
 {
 	uint V = depth;
@@ -43,7 +55,7 @@ uint computeVisibilitySample(uint depth, uint visibility)
 
 uint computeNewVisibility(uint V, uint visibilityToAdd)
 {
-	uint visibility = (V & 0x000000FF) - visibilityToAdd;
+	uint visibility = subtractionClamp0(V & 0x000000FF, visibilityToAdd);
 
 	uint newV = V & 0xFFFFFF00;
 	newV = V | visibility;
@@ -53,11 +65,9 @@ uint computeNewVisibility(uint V, uint visibilityToAdd)
 
 uvec2 computeMiddleSamples(uint a, uint b, uint c, uint d)
 {
-	uint firstInterval = (a & MAX_8UINT) - (b & MAX_8UINT);
-	uint secondInterval = (b & MAX_8UINT) - (c & MAX_8UINT);
-	uint thirdInterval = (c & MAX_8UINT) - (d & MAX_8UINT);
-
-	//return uvec2(b, d);
+	uint firstInterval = subtractionClamp0(a & MAX_8UINT, b & MAX_8UINT);
+	uint secondInterval = subtractionClamp0(b & MAX_8UINT, c & MAX_8UINT);
+	uint thirdInterval = subtractionClamp0(c & MAX_8UINT, d & MAX_8UINT);
 
 	if(firstInterval > secondInterval && secondInterval > thirdInterval)
 	{
@@ -84,6 +94,11 @@ void main()
 	int matIndex = int(objectPushConstant.matIndex.x);
 	Material material = materials.m[matIndex];
 
+	uint opacity = 0;
+
+	opacity = uint(material.color.w * MAX_8UINT);
+	opacity = opacity & 0x000000FF;
+
 	int occlusionTextureIdx = int(material.emissive_metRough_occlusion_normal_indices.z);
 	vec3 occlusionTexture = texture(textures[occlusionTextureIdx], texCoord).xyz;
 	
@@ -99,9 +114,9 @@ void main()
 	uint v = 0;
 
 	// it is a min
-	if(depth < (currentDsmValues.x >> 8))
+	if(depth <= (currentDsmValues.x >> 8))
 	{
-		v = computeVisibilitySample(depth, DEFAULT_VISIBILITY - DEFAULT_MATERIAL_OPACITY);
+		v = computeVisibilitySample(depth, subtractionClamp0(DEFAULT_VISIBILITY, opacity));
 
 		if(currentDsmValues.x == MAX_UINT)
 		{
@@ -109,31 +124,31 @@ void main()
 		}
 		else if(currentDsmValues.w == 0)
 		{
-			currentDsmValues.w = computeNewVisibility(currentDsmValues.x, DEFAULT_MATERIAL_OPACITY);
+			currentDsmValues.w = computeNewVisibility(currentDsmValues.x, opacity);
 
 			imageStore(deepShadowImage, ivec2(gl_FragCoord.xy), uvec4(v, currentDsmValues.y, currentDsmValues.z, currentDsmValues.w));
 		}
 		else if(currentDsmValues.y == 0)
 		{
-			currentDsmValues.w = computeNewVisibility(currentDsmValues.w, DEFAULT_MATERIAL_OPACITY);
-			currentDsmValues.y = computeNewVisibility(currentDsmValues.x, DEFAULT_MATERIAL_OPACITY);
+			currentDsmValues.w = computeNewVisibility(currentDsmValues.w, opacity);
+			currentDsmValues.y = computeNewVisibility(currentDsmValues.x, opacity);
 
 			imageStore(deepShadowImage, ivec2(gl_FragCoord.xy), uvec4(v, currentDsmValues.y, currentDsmValues.z, currentDsmValues.w));
 		}
 		else if(currentDsmValues.z == 0)
 		{
-			currentDsmValues.w = computeNewVisibility(currentDsmValues.w, DEFAULT_MATERIAL_OPACITY);
-			currentDsmValues.z = computeNewVisibility(currentDsmValues.y, DEFAULT_MATERIAL_OPACITY);
-			currentDsmValues.y = computeNewVisibility(currentDsmValues.x, DEFAULT_MATERIAL_OPACITY);
+			currentDsmValues.w = computeNewVisibility(currentDsmValues.w, opacity);
+			currentDsmValues.z = computeNewVisibility(currentDsmValues.y, opacity);
+			currentDsmValues.y = computeNewVisibility(currentDsmValues.x, opacity);
 
 			imageStore(deepShadowImage, ivec2(gl_FragCoord.xy), uvec4(v, currentDsmValues.y, currentDsmValues.z, currentDsmValues.w));
 		}
 		else
 		{
-			currentDsmValues.w = computeNewVisibility(currentDsmValues.w, DEFAULT_MATERIAL_OPACITY);
-			currentDsmValues.z = computeNewVisibility(currentDsmValues.z, DEFAULT_MATERIAL_OPACITY);
-			currentDsmValues.y = computeNewVisibility(currentDsmValues.y, DEFAULT_MATERIAL_OPACITY);
-			currentDsmValues.x = computeNewVisibility(currentDsmValues.x, DEFAULT_MATERIAL_OPACITY);
+			currentDsmValues.w = computeNewVisibility(currentDsmValues.w, opacity);
+			currentDsmValues.z = computeNewVisibility(currentDsmValues.z, opacity);
+			currentDsmValues.y = computeNewVisibility(currentDsmValues.y, opacity);
+			currentDsmValues.x = computeNewVisibility(currentDsmValues.x, opacity);
 
 			currentDsmValues.yz = computeMiddleSamples(v, currentDsmValues.x, currentDsmValues.y, currentDsmValues.z);
 
@@ -141,17 +156,17 @@ void main()
 		}
 	}
 	// it is a max
-	else if(depth > (currentDsmValues.w >> 8))
+	else if(depth >= (currentDsmValues.w >> 8))
 	{
 		if(currentDsmValues.w == 0)
 		{
-			v = computeVisibilitySample(depth, (currentDsmValues.x & MAX_8UINT) - DEFAULT_MATERIAL_OPACITY);
+			v = computeVisibilitySample(depth, subtractionClamp0(currentDsmValues.x & MAX_8UINT, opacity));
 
 			imageStore(deepShadowImage, ivec2(gl_FragCoord.xy), uvec4(currentDsmValues.x, currentDsmValues.y, currentDsmValues.z, v));
 		}
 		else if(currentDsmValues.y == 0)
 		{
-			v = computeVisibilitySample(depth, (currentDsmValues.w & MAX_8UINT) - DEFAULT_MATERIAL_OPACITY);
+			v = computeVisibilitySample(depth, subtractionClamp0(currentDsmValues.w & MAX_8UINT, opacity));
 
 			currentDsmValues.y = currentDsmValues.w;
 
@@ -159,7 +174,7 @@ void main()
 		}
 		else if(currentDsmValues.z == 0)
 		{
-			v = computeVisibilitySample(depth, (currentDsmValues.w & MAX_8UINT) - DEFAULT_MATERIAL_OPACITY);
+			v = computeVisibilitySample(depth, subtractionClamp0(currentDsmValues.w & MAX_8UINT, opacity));
 
 			currentDsmValues.z = currentDsmValues.w;
 
@@ -167,7 +182,7 @@ void main()
 		}
 		else
 		{
-			v = computeVisibilitySample(depth, (currentDsmValues.w & MAX_8UINT) - DEFAULT_MATERIAL_OPACITY);
+			v = computeVisibilitySample(depth, subtractionClamp0(currentDsmValues.w & MAX_8UINT, opacity));
 
 			currentDsmValues.yz = computeMiddleSamples(currentDsmValues.x, currentDsmValues.y, currentDsmValues.z, currentDsmValues.w);
 
@@ -179,52 +194,52 @@ void main()
 	{
 		if(currentDsmValues.y == 0)
 		{
-			v = computeVisibilitySample(depth, (currentDsmValues.x & MAX_8UINT) - DEFAULT_MATERIAL_OPACITY);
+			v = computeVisibilitySample(depth, subtractionClamp0(currentDsmValues.x & MAX_8UINT, opacity));
 
-			currentDsmValues.w = computeNewVisibility(currentDsmValues.w, DEFAULT_MATERIAL_OPACITY);
+			currentDsmValues.w = computeNewVisibility(currentDsmValues.w, opacity);
 
 			imageStore(deepShadowImage, ivec2(gl_FragCoord.xy), uvec4(currentDsmValues.x, v, currentDsmValues.z, currentDsmValues.w));
 		}
 		else if(currentDsmValues.z == 0)
 		{
-			if(depth < (currentDsmValues.y >> 8))
+			if(depth <= (currentDsmValues.y >> 8))
 			{
-				v = computeVisibilitySample(depth, (currentDsmValues.x & MAX_8UINT) - DEFAULT_MATERIAL_OPACITY);
+				v = computeVisibilitySample(depth, subtractionClamp0(currentDsmValues.x & MAX_8UINT, opacity));
 				
-				currentDsmValues.w = computeNewVisibility(currentDsmValues.w, DEFAULT_MATERIAL_OPACITY);
-				currentDsmValues.z = computeNewVisibility(currentDsmValues.y, DEFAULT_MATERIAL_OPACITY);
+				currentDsmValues.w = computeNewVisibility(currentDsmValues.w, opacity);
+				currentDsmValues.z = computeNewVisibility(currentDsmValues.y, opacity);
 
 				imageStore(deepShadowImage, ivec2(gl_FragCoord.xy), uvec4(currentDsmValues.x, v, currentDsmValues.z, currentDsmValues.w));
 			}
 			else
 			{
-				v = computeVisibilitySample(depth, (currentDsmValues.y & MAX_8UINT) - DEFAULT_MATERIAL_OPACITY);
+				v = computeVisibilitySample(depth, subtractionClamp0(currentDsmValues.y & MAX_8UINT, opacity));
 
-				currentDsmValues.w = computeNewVisibility(currentDsmValues.w, DEFAULT_MATERIAL_OPACITY);
+				currentDsmValues.w = computeNewVisibility(currentDsmValues.w, opacity);
 
 				imageStore(deepShadowImage, ivec2(gl_FragCoord.xy), uvec4(currentDsmValues.x, currentDsmValues.y, v, currentDsmValues.w));
 			}
 		}
 		else
 		{
-			if(depth < (currentDsmValues.y >> 8))
+			if(depth <= (currentDsmValues.y >> 8))
 			{
-				v = computeVisibilitySample(depth, (currentDsmValues.x & MAX_8UINT) - DEFAULT_MATERIAL_OPACITY);
+				v = computeVisibilitySample(depth, subtractionClamp0(currentDsmValues.x & MAX_8UINT, opacity));
 
-				currentDsmValues.w = computeNewVisibility(currentDsmValues.w, DEFAULT_MATERIAL_OPACITY);
-				currentDsmValues.z = computeNewVisibility(currentDsmValues.z, DEFAULT_MATERIAL_OPACITY);
-				currentDsmValues.y = computeNewVisibility(currentDsmValues.y, DEFAULT_MATERIAL_OPACITY);
+				currentDsmValues.w = computeNewVisibility(currentDsmValues.w, opacity);
+				currentDsmValues.z = computeNewVisibility(currentDsmValues.z, opacity);
+				currentDsmValues.y = computeNewVisibility(currentDsmValues.y, opacity);
 
 				currentDsmValues.yz = computeMiddleSamples(currentDsmValues.x, v, currentDsmValues.y, currentDsmValues.z);
 
 				imageStore(deepShadowImage, ivec2(gl_FragCoord.xy), uvec4(currentDsmValues.x, currentDsmValues.y, currentDsmValues.z, currentDsmValues.w));
 			}
-			else if(depth < (currentDsmValues.z >> 8))
+			else if(depth <= (currentDsmValues.z >> 8))
 			{
-				v = computeVisibilitySample(depth, (currentDsmValues.y & MAX_8UINT) - DEFAULT_MATERIAL_OPACITY);
+				v = computeVisibilitySample(depth, subtractionClamp0(currentDsmValues.y & MAX_8UINT, opacity));
 				
-				currentDsmValues.w = computeNewVisibility(currentDsmValues.w, DEFAULT_MATERIAL_OPACITY);
-				currentDsmValues.z = computeNewVisibility(currentDsmValues.z, DEFAULT_MATERIAL_OPACITY);
+				currentDsmValues.w = computeNewVisibility(currentDsmValues.w, opacity);
+				currentDsmValues.z = computeNewVisibility(currentDsmValues.z, opacity);
 
 				currentDsmValues.yz = computeMiddleSamples(currentDsmValues.x, currentDsmValues.y, v, currentDsmValues.z);
 
@@ -232,9 +247,9 @@ void main()
 			}
 			else
 			{
-				v = computeVisibilitySample(depth, (currentDsmValues.z & MAX_8UINT) - DEFAULT_MATERIAL_OPACITY);
+				v = computeVisibilitySample(depth, subtractionClamp0(currentDsmValues.z & MAX_8UINT, opacity));
 
-				currentDsmValues.w = computeNewVisibility(currentDsmValues.w, DEFAULT_MATERIAL_OPACITY);
+				currentDsmValues.w = computeNewVisibility(currentDsmValues.w, opacity);
 
 				currentDsmValues.yz = computeMiddleSamples(currentDsmValues.x, currentDsmValues.y, currentDsmValues.z, v);
 

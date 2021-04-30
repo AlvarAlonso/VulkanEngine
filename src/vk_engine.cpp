@@ -47,7 +47,7 @@ void VulkanEngine::init()
 
 	load_images();
 
-	load_meshes();
+	//load_meshes();
 
 	VKE::Texture* texture = VKE::Texture::sTexturesLoaded["default"];
 	VKE::Material* defaultMaterial = new VKE::Material(texture);
@@ -318,50 +318,110 @@ void VulkanEngine::load_images()
 	grassTexture->_id = VKE::Texture::sTexturesLoaded.size();
 	grassTexture->register_texture("grass");
 
+	// Maple tree
 
-	VKE::Texture* barkTexture = new VKE::Texture();
+	VKE::Texture* mapleBarkTexture = new VKE::Texture();
+	vkutil::load_image_from_file(&std::string("../assets/vegetation/maple/maple_bark.png"), mapleBarkTexture->_image);
+	VkImageViewCreateInfo mapleBarkTexView = vkinit::imageview_create_info(VK_FORMAT_R8G8B8A8_UNORM, mapleBarkTexture->_image._image, VK_IMAGE_ASPECT_COLOR_BIT);
+	vkCreateImageView(RenderEngine::_device, &mapleBarkTexView, nullptr, &mapleBarkTexture->_imageView);
+	mapleBarkTexture->_id = VKE::Texture::sTexturesLoaded.size();
+	mapleBarkTexture->register_texture("maple_bark");
 
-	vkutil::load_image_from_file(&std::string("../assets/maple_bark.png"), barkTexture->_image);
+	VKE::Texture* mapleLeavesTexture = new VKE::Texture();
+	vkutil::load_image_from_file(&std::string("../assets/vegetation/maple/maple_leaf.png"), mapleLeavesTexture->_image);
+	VkImageViewCreateInfo mapleLeavesTexView = vkinit::imageview_create_info(VK_FORMAT_R8G8B8A8_UNORM, mapleLeavesTexture->_image._image, VK_IMAGE_ASPECT_COLOR_BIT);
+	vkCreateImageView(RenderEngine::_device, &mapleLeavesTexView, nullptr, &mapleLeavesTexture->_imageView);
+	mapleLeavesTexture->_id = VKE::Texture::sTexturesLoaded.size();
+	mapleLeavesTexture->register_texture("maple_leaf");
 
-	VkImageViewCreateInfo barTexView = vkinit::imageview_create_info(VK_FORMAT_R8G8B8A8_UNORM, barkTexture->_image._image, VK_IMAGE_ASPECT_COLOR_BIT);
-	vkCreateImageView(RenderEngine::_device, &barTexView, nullptr, &barkTexture->_imageView);
+	VKE::Texture* mapleLeavesOcclusionTexture = new VKE::Texture();
+	vkutil::load_image_from_file(&std::string("../assets/vegetation/maple/maple_leaf_Mask.jpg"), mapleLeavesOcclusionTexture->_image);
+	VkImageViewCreateInfo mapleLeavesOcclusionView = vkinit::imageview_create_info(VK_FORMAT_R8G8B8A8_UNORM, mapleLeavesOcclusionTexture->_image._image, VK_IMAGE_ASPECT_COLOR_BIT);
+	vkCreateImageView(RenderEngine::_device, &mapleLeavesOcclusionView, nullptr, &mapleLeavesOcclusionTexture->_imageView);
+	mapleLeavesOcclusionTexture->_id = VKE::Texture::sTexturesLoaded.size();
+	mapleLeavesOcclusionTexture->register_texture("maple_leaf_occlusion");
 
-	barkTexture->_id = VKE::Texture::sTexturesLoaded.size();
-	barkTexture->register_texture("bark");
+	// Oak tree
 
+	VKE::Texture* oakBarkTexture = new VKE::Texture();
+	vkutil::load_image_from_file(&std::string("../assets/vegetation/oak/bark_tree.jpg"), oakBarkTexture->_image);
+	VkImageViewCreateInfo oakBarkTexView = vkinit::imageview_create_info(VK_FORMAT_R8G8B8A8_UNORM, oakBarkTexture->_image._image, VK_IMAGE_ASPECT_COLOR_BIT);
+	vkCreateImageView(RenderEngine::_device, &oakBarkTexView, nullptr, &oakBarkTexture->_imageView);
+	oakBarkTexture->_id = VKE::Texture::sTexturesLoaded.size();
+	oakBarkTexture->register_texture("oak_bark");
 
-	VKE::Texture* leavesTexture = new VKE::Texture();
+	VKE::Texture* oakLeavesTexture = new VKE::Texture();
+	vkutil::load_image_from_file(&std::string("../assets/vegetation/oak/leaves_01.jpg"), oakLeavesTexture->_image);
+	VkImageViewCreateInfo oakLeavesTexView = vkinit::imageview_create_info(VK_FORMAT_R8G8B8A8_UNORM, oakLeavesTexture->_image._image, VK_IMAGE_ASPECT_COLOR_BIT);
+	vkCreateImageView(RenderEngine::_device, &oakLeavesTexView, nullptr, &oakLeavesTexture->_imageView);
+	oakLeavesTexture->_id = VKE::Texture::sTexturesLoaded.size();
+	oakLeavesTexture->register_texture("oak_leaf");
 
-	vkutil::load_image_from_file(&std::string("../assets/maple_leaf.png"), leavesTexture->_image);
+	VKE::Texture* oakLeavesOcclusionTexture = new VKE::Texture();
+	vkutil::load_image_from_file(&std::string("../assets/vegetation/oak/leaves_alpha_inverted.jpg"), oakLeavesOcclusionTexture->_image);
+	VkImageViewCreateInfo oakLeavesOcclusionView = vkinit::imageview_create_info(VK_FORMAT_R8G8B8A8_UNORM, oakLeavesOcclusionTexture->_image._image, VK_IMAGE_ASPECT_COLOR_BIT);
+	vkCreateImageView(RenderEngine::_device, &oakLeavesOcclusionView, nullptr, &oakLeavesOcclusionTexture->_imageView);
+	oakLeavesOcclusionTexture->_id = VKE::Texture::sTexturesLoaded.size();
+	oakLeavesTexture->register_texture("oak_leaf_occlusion");
 
-	VkImageViewCreateInfo leavesTexView = vkinit::imageview_create_info(VK_FORMAT_R8G8B8A8_UNORM, leavesTexture->_image._image, VK_IMAGE_ASPECT_COLOR_BIT);
-	vkCreateImageView(RenderEngine::_device, &leavesTexView, nullptr, &leavesTexture->_imageView);
+	// Broadleaf tree
 
-	leavesTexture->_id = VKE::Texture::sTexturesLoaded.size();
-	leavesTexture->register_texture("leaf");
+	VKE::Texture* broadleafBarkTexture = new VKE::Texture();
+	vkutil::load_image_from_file(&std::string("../assets/vegetation/broadleaf/bark.png"), broadleafBarkTexture->_image);
+	VkImageViewCreateInfo broadleafBarkTexView = vkinit::imageview_create_info(VK_FORMAT_R8G8B8A8_UNORM, broadleafBarkTexture->_image._image, VK_IMAGE_ASPECT_COLOR_BIT);
+	vkCreateImageView(RenderEngine::_device, &broadleafBarkTexView, nullptr, &broadleafBarkTexture->_imageView);
+	broadleafBarkTexture->_id = VKE::Texture::sTexturesLoaded.size();
+	broadleafBarkTexture->register_texture("broadleaf_bark");
 
+	VKE::Texture* broadleafLeavesTexture = new VKE::Texture();
+	vkutil::load_image_from_file(&std::string("../assets/vegetation/broadleaf/leaf.png"), broadleafLeavesTexture->_image);
+	VkImageViewCreateInfo broadleafLeavesTexView = vkinit::imageview_create_info(VK_FORMAT_R8G8B8A8_UNORM, broadleafLeavesTexture->_image._image, VK_IMAGE_ASPECT_COLOR_BIT);
+	vkCreateImageView(RenderEngine::_device, &broadleafLeavesTexView, nullptr, &broadleafLeavesTexture->_imageView);
+	broadleafLeavesTexture->_id = VKE::Texture::sTexturesLoaded.size();
+	broadleafBarkTexture->register_texture("broadleaf_leaf");
 
-	VKE::Texture* leavesOcclusionTexture = new VKE::Texture();
+	// Rainforest tree
 
-	vkutil::load_image_from_file(&std::string("../assets/maple_leaf_Mask.jpg"), leavesOcclusionTexture->_image);
+	VKE::Texture* rainforestBarkTexture = new VKE::Texture();
+	vkutil::load_image_from_file(&std::string("../assets/vegetation/rainforest_tree/bark.jpg"), rainforestBarkTexture->_image);
+	VkImageViewCreateInfo rainforestBarkTexView = vkinit::imageview_create_info(VK_FORMAT_R8G8B8A8_UNORM, rainforestBarkTexture->_image._image, VK_IMAGE_ASPECT_COLOR_BIT);
+	vkCreateImageView(RenderEngine::_device, &rainforestBarkTexView, nullptr, &rainforestBarkTexture->_imageView);
+	rainforestBarkTexture->_id = VKE::Texture::sTexturesLoaded.size();
+	rainforestBarkTexture->register_texture("rainforest_bark");
 
-	VkImageViewCreateInfo leavesOcclusionView = vkinit::imageview_create_info(VK_FORMAT_R8G8B8A8_UNORM, leavesOcclusionTexture->_image._image, VK_IMAGE_ASPECT_COLOR_BIT);
-	vkCreateImageView(RenderEngine::_device, &leavesOcclusionView, nullptr, &leavesOcclusionTexture->_imageView);
+	VKE::Texture* rainforestLeavesTexture = new VKE::Texture();
+	vkutil::load_image_from_file(&std::string("../assets/vegetation/rainforest_tree/leaves_winter.png"), rainforestLeavesTexture->_image);
+	VkImageViewCreateInfo rainforestLeavesTexView = vkinit::imageview_create_info(VK_FORMAT_R8G8B8A8_UNORM, rainforestLeavesTexture->_image._image, VK_IMAGE_ASPECT_COLOR_BIT);
+	vkCreateImageView(RenderEngine::_device, &rainforestLeavesTexView, nullptr, &rainforestLeavesTexture->_imageView);
+	rainforestLeavesTexture->_id = VKE::Texture::sTexturesLoaded.size();
+	rainforestLeavesTexture->register_texture("rainforest_leaf");
 
-	leavesOcclusionTexture->_id = VKE::Texture::sTexturesLoaded.size();
-	leavesOcclusionTexture->register_texture("leaf_occlusion");
 
 	RenderEngine::_mainDeletionQueue.push_function([=]() {
 		vkDestroyImageView(RenderEngine::_device, defaultTexture->_imageView, nullptr);
 		vkDestroyImageView(RenderEngine::_device, grassTexture->_imageView, nullptr);
-		vkDestroyImageView(RenderEngine::_device, barkTexture->_imageView, nullptr);
-		vkDestroyImageView(RenderEngine::_device, leavesTexture->_imageView, nullptr);
-		vkDestroyImageView(RenderEngine::_device, leavesOcclusionTexture->_imageView, nullptr);
+		vkDestroyImageView(RenderEngine::_device, mapleBarkTexture->_imageView, nullptr);
+		vkDestroyImageView(RenderEngine::_device, mapleLeavesTexture->_imageView, nullptr);
+		vkDestroyImageView(RenderEngine::_device, mapleLeavesOcclusionTexture->_imageView, nullptr);
+		vkDestroyImageView(RenderEngine::_device, oakBarkTexture->_imageView, nullptr);
+		vkDestroyImageView(RenderEngine::_device, oakLeavesTexture->_imageView, nullptr);
+		vkDestroyImageView(RenderEngine::_device, oakLeavesOcclusionTexture->_imageView, nullptr);
+		vkDestroyImageView(RenderEngine::_device, broadleafBarkTexture->_imageView, nullptr);
+		vkDestroyImageView(RenderEngine::_device, broadleafLeavesTexture->_imageView, nullptr);
+		vkDestroyImageView(RenderEngine::_device, rainforestBarkTexture->_imageView, nullptr);
+		vkDestroyImageView(RenderEngine::_device, rainforestLeavesTexture->_imageView, nullptr);
 
 		vmaDestroyImage(RenderEngine::_allocator, defaultTexture->_image._image, nullptr);
 		vmaDestroyImage(RenderEngine::_allocator, grassTexture->_image._image, nullptr);
-		vmaDestroyImage(RenderEngine::_allocator, barkTexture->_image._image, nullptr);
-		vmaDestroyImage(RenderEngine::_allocator, leavesTexture->_image._image, nullptr);
-		vmaDestroyImage(RenderEngine::_allocator, leavesOcclusionTexture->_image._image, nullptr);
+		vmaDestroyImage(RenderEngine::_allocator, mapleBarkTexture->_image._image, nullptr);
+		vmaDestroyImage(RenderEngine::_allocator, mapleLeavesTexture->_image._image, nullptr);
+		vmaDestroyImage(RenderEngine::_allocator, mapleLeavesOcclusionTexture->_image._image, nullptr);
+		vmaDestroyImage(RenderEngine::_allocator, oakBarkTexture->_image._image, nullptr);
+		vmaDestroyImage(RenderEngine::_allocator, oakLeavesTexture->_image._image, nullptr);
+		vmaDestroyImage(RenderEngine::_allocator, oakLeavesOcclusionTexture->_image._image, nullptr);
+		vmaDestroyImage(RenderEngine::_allocator, broadleafBarkTexture->_image._image, nullptr);
+		vmaDestroyImage(RenderEngine::_allocator, broadleafLeavesTexture->_image._image, nullptr);
+		vmaDestroyImage(RenderEngine::_allocator, rainforestBarkTexture->_image._image, nullptr);
+		vmaDestroyImage(RenderEngine::_allocator, rainforestLeavesTexture->_image._image, nullptr);
 		});
 }

@@ -351,8 +351,8 @@ void Renderer::create_raytracing_descriptor_sets()
 	for (const auto& material : materialsAux)
 	{
 		_materialInfos[i]._color_type = material->_color;
-		_materialInfos[i]._color_type.w = material->_type;
 		_materialInfos[i]._emissive_factor = material->_emissive_factor;
+		_materialInfos[i]._emissive_factor.w = material->_type;
 
 		glm::vec4* factors = &glm::vec4{
 			material->_roughness_factor, material->_metallic_factor,
@@ -1409,8 +1409,8 @@ void Renderer::init_descriptors()
 	for(const auto& material : materialsAux)
 	{
 		_materialInfos[i]._color_type = material->_color;
-		_materialInfos[i]._color_type.w = material->_type;
 		_materialInfos[i]._emissive_factor = material->_emissive_factor;
+		_materialInfos[i]._emissive_factor.w = material->_type;
 
 		glm::vec4* factors = &glm::vec4{
 			material->_roughness_factor, material->_metallic_factor,

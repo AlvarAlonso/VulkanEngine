@@ -15,42 +15,39 @@ void Scene::generate_sample_scene()
 {	
 	// TODO raytracing must accept glTFs with no indices
 	
-	/*
-	Prefab* duckPrefab = Prefab::get("../assets/Duck.glb");
-	duckPrefab->register_prefab("pato");
-
-	RenderObject* duck = new RenderObject();
-	duck->_model = glm::translate(glm::vec3{ 10, 10, -10 });
-	duck->_prefab = duckPrefab;
-	*/
-	
 	// TODO: Rework renderables created on code to work with raytracing
 	
-	VKE::Material* stemMaterial = new VKE::Material(Texture::get("bark"));
-	stemMaterial->_type = VKE::DIFFUSE;
-	stemMaterial->_id = VKE::Material::sMaterials.size();
-	stemMaterial->register_material("stem");
+	VKE::Material* mapleStemMaterial = new VKE::Material(Texture::get("maple_bark"));
+	mapleStemMaterial->_type = VKE::DIFFUSE;
+	mapleStemMaterial->_id = VKE::Material::sMaterials.size();
+	mapleStemMaterial->_color = glm::vec4{ 1.0, 1.0, 1.0, 1.0 };
+	mapleStemMaterial->register_material("maple_stem");
 
-	VKE::Mesh* treeStemMesh = VKE::Mesh::get("../assets/MapleTreeStem.obj");
-	Prefab* stemPrefab = new VKE::Prefab(*treeStemMesh, "stem");
+	VKE::Mesh* mapleStemMesh = VKE::Mesh::get("../assets/vegetation/maple/MapleTreeStem.obj");
+	Prefab* mapleStemPrefab = new VKE::Prefab(*mapleStemMesh, "maple_stem");
+
+	VKE::Material* mapleLeavesMaterial = new VKE::Material(Texture::get("maple_leaf"));
+	mapleLeavesMaterial->_type = VKE::REFRACTIVE;
+	mapleLeavesMaterial->_occlusion_texture = Texture::get("maple_leaf_occlusion");
+	mapleLeavesMaterial->_id = VKE::Material::sMaterials.size();
+	mapleLeavesMaterial->_color = glm::vec4{ 1.0, 1.0, 1.0, 0.5 };
+	mapleLeavesMaterial->register_material("maple_leaves");
+
+	VKE::Mesh* mapleLeavesMesh = VKE::Mesh::get("../assets/vegetation/maple/MapleTreeLeaves.obj");
+	Prefab* mapleLeavesPrefab = new VKE::Prefab(*mapleLeavesMesh, "maple_leaves");
+
+	//VKE::Mesh* treesMesh = VKE::Mesh::get("../assets/vegetation/trees9.obj");
+	//Prefab* treesMeshPrefab = new VKE::Prefab(*treesMesh, "maple_stem");
+
+	// Trees render objects definitions
 
 	RenderObject* treeStem = new RenderObject();
 	treeStem->_model = glm::translate(glm::vec3{ 0, 0, 0 });
-	treeStem->_prefab = stemPrefab;
-
-
-	VKE::Material* leavesMaterial = new VKE::Material(Texture::get("leaf"));
-	leavesMaterial->_type = VKE::REFRACTIVE;
-	leavesMaterial->_occlusion_texture = Texture::get("leaf_occlusion");
-	leavesMaterial->_id = VKE::Material::sMaterials.size();
-	leavesMaterial->register_material("leaves");
-
-	VKE::Mesh* treeLeavesMesh = VKE::Mesh::get("../assets/MapleTreeLeaves.obj");
-	Prefab* leavesPrefab = new VKE::Prefab(*treeLeavesMesh, "leaves");
+	treeStem->_prefab = mapleStemPrefab;
 
 	RenderObject* treeLeaves = new RenderObject();
 	treeLeaves->_model = glm::translate(glm::vec3{ 0, 0, 0 });
-	treeLeaves->_prefab = leavesPrefab;
+	treeLeaves->_prefab = mapleLeavesPrefab;
 
 	_renderables.push_back(*treeStem);
 	_renderables.push_back(*treeLeaves);
@@ -83,6 +80,7 @@ void Scene::generate_sample_scene()
 	VKE::Material* grassMaterial = new VKE::Material(Texture::get("grass"));
 	grassMaterial->_tilling_factor = 10.0f;
 	grassMaterial->_id = VKE::Material::sMaterials.size();
+	grassMaterial->_color = glm::vec4{ 1.0f, 1.0f, 1.0f, 1.0f };
 	grassMaterial->register_material("grass");
 	
 	VKE::Mesh* planeMesh = new VKE::Mesh();
@@ -96,35 +94,22 @@ void Scene::generate_sample_scene()
 	plane->_model *= glm::scale(glm::mat4(1), glm::vec3{ 500, 500, 1 });
 	plane->_prefab = planePrefab;
 
-	RenderObject* plane2 = new RenderObject();
-	plane2->_model = glm::translate(glm::vec3{ 0.0, -50.0, 0.0 });
-	plane2->_model = glm::rotate(plane2->_model, glm::radians(-90.0f), glm::vec3{ 1, 0, 0 });
-	plane2->_model *= glm::scale(glm::mat4(1), glm::vec3{ 500, 500, 1 });
-	plane2->_prefab = planePrefab;
-
-	RenderObject* plane3 = new RenderObject();
-	plane3->_model = glm::translate(glm::vec3{ 0.0, -100.0, 0.0 });
-	plane3->_model = glm::rotate(plane3->_model, glm::radians(-90.0f), glm::vec3{ 1, 0, 0 });
-	plane3->_model *= glm::scale(glm::mat4(1), glm::vec3{ 500, 500, 1 });
-	plane3->_prefab = planePrefab;
-
-	RenderObject* plane4 = new RenderObject();
-	plane4->_model = glm::translate(glm::vec3{ 0.0, -150.0, 0.0 });
-	plane4->_model = glm::rotate(plane4->_model, glm::radians(-90.0f), glm::vec3{ 1, 0, 0 });
-	plane4->_model *= glm::scale(glm::mat4(1), glm::vec3{ 500, 500, 1 });
-	plane4->_prefab = planePrefab;
-	
-	RenderObject* plane5 = new RenderObject();
-	plane5->_model = glm::translate(glm::vec3{ 0.0, -250.0, 0.0 });
-	plane5->_model = glm::rotate(plane5->_model, glm::radians(-90.0f), glm::vec3{ 1, 0, 0 });
-	plane5->_model *= glm::scale(glm::mat4(1), glm::vec3{ 500, 500, 1 });
-	plane5->_prefab = planePrefab;
-
-	//_renderables.push_back(*plane3);
 	_renderables.push_back(*plane);
-	_renderables.push_back(*plane2);
-	_renderables.push_back(*plane3);
-	_renderables.push_back(*plane4);
+
+	plane->_model = glm::translate(glm::vec3{ 0.0, -50.0, 0.0 });
+	plane->_model = glm::rotate(plane->_model, glm::radians(-90.0f), glm::vec3{ 1, 0, 0 });
+	plane->_model *= glm::scale(glm::mat4(1), glm::vec3{ 500, 500, 1 });
+	_renderables.push_back(*plane);
+
+	plane->_model = glm::translate(glm::vec3{ 0.0, -100.0, 0.0 });
+	plane->_model = glm::rotate(plane->_model, glm::radians(-90.0f), glm::vec3{ 1, 0, 0 });
+	plane->_model *= glm::scale(glm::mat4(1), glm::vec3{ 500, 500, 1 });
+	_renderables.push_back(*plane);
+
+	plane->_model = glm::translate(glm::vec3{ 0.0, -150.0, 0.0 });
+	plane->_model = glm::rotate(plane->_model, glm::radians(-90.0f), glm::vec3{ 1, 0, 0 });
+	plane->_model *= glm::scale(glm::mat4(1), glm::vec3{ 500, 500, 1 });
+	_renderables.push_back(*plane);
 
 	VKE::Texture* cubeMap = new VKE::Texture();
 
@@ -141,22 +126,6 @@ void Scene::generate_sample_scene()
 	_skybox._renderable = box;
 	_skybox._cubeMap = cubeMap;
 
-	/*
-	Prefab* carPrefab = Prefab::get("../assets/gmc/scene.gltf");
-	carPrefab->register_prefab("cotxu");
-
-	RenderObject* car = new RenderObject();
-	car->_model = glm::scale(glm::vec3{ 0.02, 0.02, 0.02 });
-	car->_model *= glm::translate(glm::vec3{ 0, 0, 0 });
-	car->_prefab = carPrefab;
-	*/
-	/*
-	Prefab* sponzaPrefab = Prefab::get("../assets/sponza/Sponza.gltf");
-	sponzaPrefab->register_prefab("sponza");
-
-	RenderObject* sponza = new RenderObject();
-	sponza->_prefab = sponzaPrefab;
-	*/
 	Light point_light1;
 	point_light1._model = glm::translate(glm::vec3{ 0, 150, 100 });
 	point_light1._color = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
@@ -165,22 +134,6 @@ void Scene::generate_sample_scene()
 	point_light1._maxDist = 300.0f;
 	point_light1._type = DIRECTIONAL;
 	point_light1._targetPosition = glm::vec3(0.0, 0.0, 0.0);
-
-	Light point_light2;
-	point_light2._model = glm::translate(glm::vec3{ -50, 100, 0 });
-	point_light2._color = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
-	point_light2._radius = 1.0f;
-	point_light2._intensity = 1.0f;
-	point_light2._maxDist = 300.0f;
-	
-	//_renderables.push_back(*box);
-	//_renderables.push_back(*duck);
-	//_renderables.push_back(*fox);
-	//_renderables.push_back(*helmet);
-	//_renderables.push_back(*sponza);
-
-	//_renderables.push_back(*cornellBox);
-	//_renderables.push_back(*car);
 
 	_lights.push_back(point_light1);
 }                                

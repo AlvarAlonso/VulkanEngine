@@ -66,6 +66,23 @@ void main()
 		{
 			dsmiValue = imageLoad(deepShadowMap, ivec2(gl_FragCoord.xy)).w;
 		}
+		
+		/*
+		uvec4 dsmiValues = imageLoad(deepShadowMap, ivec2(gl_FragCoord.xy));
+		dsmiValues.x = dsmiValues.x >> 8;
+		dsmiValues.y = dsmiValues.y >> 8;
+		dsmiValues.z = dsmiValues.z >> 8;
+		dsmiValues.w = dsmiValues.w >> 8;
+
+		if(dsmiValues.x <= dsmiValues.y && dsmiValues.y <= dsmiValues.z && dsmiValues.z <= dsmiValues.w)
+		{
+			outFragColor = vec4(1.0, 0.0, 0.0, 1.0);
+		}
+		else
+		{
+			outFragColor = vec4(0.0, 1.0, 0.0, 1.0);
+		}
+		*/
 
 		if(shaderFlags.flags.y == 1)
 		{

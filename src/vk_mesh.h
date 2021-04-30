@@ -80,6 +80,7 @@ namespace VKE
 	class Mesh
 	{
 	public:
+		std::string _name;
 		static std::map<std::string, Mesh*> sMeshesLoaded;
 		Mesh();
 		~Mesh();
@@ -107,7 +108,7 @@ namespace VKE
 
 		//loader
 		static Mesh* get(const char* filename, bool skip_load = false);
-		void register_mesh(std::string name);
+		void register_mesh(const char* name);
 	};
 }
 

@@ -364,11 +364,19 @@ Mesh* VKE::Mesh::get(const char* filename, bool skip_load)
     mesh->load_from_obj(filename);
     mesh->upload_to_gpu();
     return mesh;
+    /*
+    assert(name);
+    std::map<std::string, VKE::Texture*>::iterator it = sTexturesLoaded.find(name);
+    if (it != sTexturesLoaded.end())
+        return it->second;
+    return nullptr;
+    */
 }
 
-void VKE::Mesh::register_mesh(std::string name)
+void VKE::Mesh::register_mesh(const char* name)
 {
-    // TODO:
+    _name = name;
+    sMeshesLoaded[name] = this;
 }
 
 void Primitive::primitive_to_vulkan_geometry(VkDeviceOrHostAddressConstKHR& vertexBufferDeviceAddress, VkDeviceOrHostAddressConstKHR& indexBufferDeviceAddress, std::vector<BlasInput>& inputVector)

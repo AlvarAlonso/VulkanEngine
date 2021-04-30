@@ -705,8 +705,6 @@ void RenderEngine::init_pipelines()
 	pipelineBuilder._scissor.offset = { 0, 0 };
 	pipelineBuilder._scissor.extent = _windowExtent;
 
-	// Depth-stencil
-	pipelineBuilder._depthStencil = vkinit::depth_stencil_create_info(true, true, VK_COMPARE_OP_LESS_OR_EQUAL);
 	// Rasterizer
 	pipelineBuilder._rasterizer = vkinit::rasterization_state_create_info(VK_POLYGON_MODE_FILL);
 	// Multisampling
@@ -760,6 +758,9 @@ void RenderEngine::init_pipelines()
 		pipelineBuilder._vertexInputInfo.vertexBindingDescriptionCount = static_cast<uint32_t>(vertexDescription.bindings.size());
 		pipelineBuilder._vertexInputInfo.pVertexBindingDescriptions = vertexDescription.bindings.data();
 
+		// Depth-stencil
+		pipelineBuilder._depthStencil = vkinit::depth_stencil_create_info(false, false, VK_COMPARE_OP_NEVER);
+
 		// Deferred Color Blend Attachment
 		pipelineBuilder._colorBlendAttachment.clear();
 		pipelineBuilder._colorBlendAttachment.push_back(vkinit::color_blend_attachment_state());
@@ -789,7 +790,10 @@ void RenderEngine::init_pipelines()
 			vkDestroyPipelineLayout(_device, _dsmPipelineLayout, nullptr);
 			});
 	}
-	
+
+	// Depth-stencil
+	pipelineBuilder._depthStencil = vkinit::depth_stencil_create_info(true, true, VK_COMPARE_OP_LESS_OR_EQUAL);
+
 	pipelineBuilder._viewport.width = (float)_windowExtent.width;
 	pipelineBuilder._viewport.height = (float)_windowExtent.height;
 
