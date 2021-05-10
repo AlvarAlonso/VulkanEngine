@@ -18,7 +18,7 @@ namespace VKE
 		//Manager to cache loaded textures
 		static int textureCount;
 		static std::map<std::string, Texture*> sTexturesLoaded;
-		static VKE::Texture* get(const char* filename);
+		static VKE::Texture* get(const char* name);
 		void register_texture(const char* name);
 
 		static bool ComparePtrToTexture(const VKE::Texture* l, const VKE::Texture* r) {	

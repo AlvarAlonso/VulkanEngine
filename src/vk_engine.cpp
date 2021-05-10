@@ -55,7 +55,9 @@ void VulkanEngine::init()
 	defaultMaterial->register_material("default");
 
 	scene = new Scene();
-	scene->generate_sample_scene();
+	scene->load_resources();
+	//scene->generate_sample_scene();
+	scene->generate_random_sample_scene();
 
 	renderer->currentScene = scene;
 
@@ -395,6 +397,63 @@ void VulkanEngine::load_images()
 	vkCreateImageView(RenderEngine::_device, &rainforestLeavesTexView, nullptr, &rainforestLeavesTexture->_imageView);
 	rainforestLeavesTexture->_id = VKE::Texture::sTexturesLoaded.size();
 	rainforestLeavesTexture->register_texture("rainforest_leaf");
+
+	// Random trees
+	VKE::Texture* walnutTexture = new VKE::Texture();
+	vkutil::load_image_from_file(&std::string("../assets/vegetation/trees/Texture/Walnut_L.jpg"), walnutTexture->_image);
+	VkImageViewCreateInfo walnutTexView = vkinit::imageview_create_info(VK_FORMAT_R8G8B8A8_UNORM, walnutTexture->_image._image, VK_IMAGE_ASPECT_COLOR_BIT);
+	vkCreateImageView(RenderEngine::_device, &walnutTexView, nullptr, &walnutTexture->_imageView);
+	walnutTexture->_id = VKE::Texture::sTexturesLoaded.size();
+	walnutTexture->register_texture("walnut");
+
+	VKE::Texture* mossyTexture = new VKE::Texture();
+	vkutil::load_image_from_file(&std::string("../assets/vegetation/trees/Texture/Mossy_Tr.jpg"), mossyTexture->_image);
+	VkImageViewCreateInfo mossyTexView = vkinit::imageview_create_info(VK_FORMAT_R8G8B8A8_UNORM, mossyTexture->_image._image, VK_IMAGE_ASPECT_COLOR_BIT);
+	vkCreateImageView(RenderEngine::_device, &mossyTexView, nullptr, &mossyTexture->_imageView);
+	mossyTexture->_id = VKE::Texture::sTexturesLoaded.size();
+	mossyTexture->register_texture("mossy");
+
+	VKE::Texture* bark_STexture = new VKE::Texture();
+	vkutil::load_image_from_file(&std::string("../assets/vegetation/trees/Texture/Bark___S.jpg"), bark_STexture->_image);
+	VkImageViewCreateInfo bark_STexView = vkinit::imageview_create_info(VK_FORMAT_R8G8B8A8_UNORM, bark_STexture->_image._image, VK_IMAGE_ASPECT_COLOR_BIT);
+	vkCreateImageView(RenderEngine::_device, &bark_STexView, nullptr, &bark_STexture->_imageView);
+	bark_STexture->_id = VKE::Texture::sTexturesLoaded.size();
+	bark_STexture->register_texture("bark_s");
+
+	VKE::Texture* bark_0Texture = new VKE::Texture();
+	vkutil::load_image_from_file(&std::string("../assets/vegetation/trees/Texture/Bark___0.jpg"), bark_0Texture->_image);
+	VkImageViewCreateInfo bark_0TexView = vkinit::imageview_create_info(VK_FORMAT_R8G8B8A8_UNORM, bark_0Texture->_image._image, VK_IMAGE_ASPECT_COLOR_BIT);
+	vkCreateImageView(RenderEngine::_device, &bark_0TexView, nullptr, &bark_0Texture->_imageView);
+	bark_0Texture->_id = VKE::Texture::sTexturesLoaded.size();
+	bark_0Texture->register_texture("bark_0");
+
+	VKE::Texture* bottom_TTexture = new VKE::Texture();
+	vkutil::load_image_from_file(&std::string("../assets/vegetation/trees/Texture/Bottom_T.jpg"), bottom_TTexture->_image);
+	VkImageViewCreateInfo bottom_TTexView = vkinit::imageview_create_info(VK_FORMAT_R8G8B8A8_UNORM, bottom_TTexture->_image._image, VK_IMAGE_ASPECT_COLOR_BIT);
+	vkCreateImageView(RenderEngine::_device, &bottom_TTexView, nullptr, &bottom_TTexture->_imageView);
+	bottom_TTexture->_id = VKE::Texture::sTexturesLoaded.size();
+	bottom_TTexture->register_texture("bottom_t");
+
+	VKE::Texture* sonneratTexture = new VKE::Texture();
+	vkutil::load_image_from_file(&std::string("../assets/vegetation/trees/Texture/Sonnerat.jpg"), sonneratTexture->_image);
+	VkImageViewCreateInfo sonneratTexView = vkinit::imageview_create_info(VK_FORMAT_R8G8B8A8_UNORM, sonneratTexture->_image._image, VK_IMAGE_ASPECT_COLOR_BIT);
+	vkCreateImageView(RenderEngine::_device, &sonneratTexView, nullptr, &sonneratTexture->_imageView);
+	sonneratTexture->_id = VKE::Texture::sTexturesLoaded.size();
+	sonneratTexture->register_texture("sonnerat");
+
+	VKE::Texture* bark_1Texture = new VKE::Texture();
+	vkutil::load_image_from_file(&std::string("../assets/vegetation/trees/Texture/Bark___1.jpg"), bark_1Texture->_image);
+	VkImageViewCreateInfo bark_1TexView = vkinit::imageview_create_info(VK_FORMAT_R8G8B8A8_UNORM, bark_1Texture->_image._image, VK_IMAGE_ASPECT_COLOR_BIT);
+	vkCreateImageView(RenderEngine::_device, &bark_1TexView, nullptr, &bark_1Texture->_imageView);
+	bark_1Texture->_id = VKE::Texture::sTexturesLoaded.size();
+	bark_1Texture->register_texture("bark_1");
+
+	VKE::Texture* oak_LTexture = new VKE::Texture();
+	vkutil::load_image_from_file(&std::string("../assets/vegetation/trees/Texture/Oak_Leav.jpg"), oak_LTexture->_image);
+	VkImageViewCreateInfo oak_LTexView = vkinit::imageview_create_info(VK_FORMAT_R8G8B8A8_UNORM, oak_LTexture->_image._image, VK_IMAGE_ASPECT_COLOR_BIT);
+	vkCreateImageView(RenderEngine::_device, &oak_LTexView, nullptr, &oak_LTexture->_imageView);
+	oak_LTexture->_id = VKE::Texture::sTexturesLoaded.size();
+	oak_LTexture->register_texture("oak_l");
 
 
 	RenderEngine::_mainDeletionQueue.push_function([=]() {

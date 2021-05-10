@@ -95,8 +95,6 @@ namespace VKE
 
 		void upload_to_gpu();
 
-		bool load_from_obj(const char* filename);
-
 		void create_vertex_buffer();
 		void create_index_buffer();
 
@@ -107,9 +105,14 @@ namespace VKE
 		void create_cube();
 
 		//loader
-		static Mesh* get(const char* filename, bool skip_load = false);
+		static Mesh* get(const char* name);
 		void register_mesh(const char* name);
 	};
+}
+
+namespace vkutil
+{
+	bool load_meshes_from_obj(const std::string* filename, const std::string* customName);
 }
 
 

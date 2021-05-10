@@ -28,7 +28,9 @@ public:
 
 	Scene();
 
+	void load_resources();
 	void generate_sample_scene();
+	void generate_random_sample_scene();
 
 	int primitiveCount;
 	std::vector<RenderObject> _renderables;

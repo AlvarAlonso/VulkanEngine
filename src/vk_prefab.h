@@ -80,7 +80,7 @@ namespace VKE
 		//Manager to cache loaded prefabs
 		static std::map<std::string, Prefab*> sPrefabsLoaded;
 		static Prefab* get(const char* filename);
-		void register_prefab(std::string name);
+		void register_prefab(const char* name);
 	};
 }
 

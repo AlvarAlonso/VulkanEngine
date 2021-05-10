@@ -277,12 +277,12 @@ Prefab* Prefab::get(const char* filename)
         return nullptr;
     }
 
-    std::string name = filename;
+    const char* name = filename;
     prefab->register_prefab(name);
     return prefab;
 }
 
-void Prefab::register_prefab(std::string name)
+void Prefab::register_prefab(const char* name)
 {
     _name = name;
     sPrefabsLoaded[name] = this;
