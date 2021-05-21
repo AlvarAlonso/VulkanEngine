@@ -36,8 +36,8 @@ layout(location = 1) rayPayloadEXT ShadowRayPayload shadowPrd;
 
 const uint MAX_RECURSION = 10;
 
-const float SHADOW_MAP_WIDTH = 1024;
-const float SHADOW_MAP_HEIGHT = 1024;
+const float SHADOW_MAP_WIDTH = 1920;
+const float SHADOW_MAP_HEIGHT = 1080;
 
 const uint MAX_UINT = 0xFFFFFFFF;
 const uint MAX_24UINT = 0x00FFFFFF;
@@ -47,62 +47,35 @@ float getVisibilitySample(float real_depth, vec2 shadow_uv)
 {
 	uvec4 iDepth_Visibility = texture(deepShadowMap, shadow_uv);
 
-	double xDepth = double(iDepth_Visibility.x >> 8) / MAX_24UINT;
-	double yDepth = double(iDepth_Visibility.y >> 8) / MAX_24UINT;
-	double zDepth = double(iDepth_Visibility.z >> 8) / MAX_24UINT;
-	double wDepth = double(iDepth_Visibility.w >> 8) / MAX_24UINT;
+	uint samplesVisibility[4] = { iDepth_Visibility.x & 0x000000FF, iDepth_Visibility.y & 0x000000FF, 
+	iDepth_Visibility.z & 0x000000FF, iDepth_Visibility.w & 0x000000FF };
+
+	double samplesDepth[4] = { double(iDepth_Visibility.x >> 8) / MAX_24UINT, double(iDepth_Visibility.y >> 8) / MAX_24UINT, 
+	double(iDepth_Visibility.z >> 8) / MAX_24UINT, double(iDepth_Visibility.w >> 8) / MAX_24UINT };
 
 	// TODO: Possible bug when not all channels are used
 	float distanceX = 0;
 	float distanceY = 0;
 
-	if(real_depth > wDepth)
+	if(real_depth > samplesDepth[3])
 	{
 		return float(iDepth_Visibility.w & 0x000000FF) / MAX_8UINT;
 	}
-	else if(real_depth > zDepth)
-	{
-		distanceX = abs(real_depth - float(wDepth));
-		distanceY = abs(real_depth - float(zDepth));
 
-		/*
-		if(zDepth != 0)
+	for(int numSample = 2; numSample >= 0; numSample--)
+	{
+		if(real_depth > samplesDepth[numSample])
 		{
-			distanceY = abs(real_depth - float(zDepth));
+			distanceX = abs(real_depth - float(samplesDepth[numSample + 1]));
+			distanceY = abs(real_depth - float(samplesDepth[numSample]));
+
+			float alpha = distanceX / (distanceX + distanceY);
+
+			return float(mix(iDepth_Visibility.w & 0x000000FF, samplesVisibility[numSample] & 0x000000FF, alpha)) / MAX_8UINT;
 		}
-		else if(yDepth != 0)
-		{
-			distanceY = abs(real_depth - float(zDepth));
-		}
-		else
-		*/
-
-		float alpha = distanceX / (distanceX + distanceY);
-
-		return float(mix(iDepth_Visibility.w & 0x000000FF, iDepth_Visibility.z & 0x000000FF, alpha)) / MAX_8UINT;
 	}
-	else if(real_depth > yDepth)
-	{
-		distanceX = abs(real_depth - float(zDepth));
-		distanceY = abs(real_depth - float(yDepth));
 
-		float alpha = distanceX / (distanceX + distanceY);
-
-		return float(mix(iDepth_Visibility.z & 0x000000FF, iDepth_Visibility.y & 0x000000FF, alpha)) / MAX_8UINT;
-	}
-	else if(real_depth > xDepth)
-	{
-		distanceX = abs(real_depth - float(yDepth));
-		distanceY = abs(real_depth - float(xDepth));
-
-		float alpha = distanceX / (distanceX + distanceY);
-
-		return float(mix(iDepth_Visibility.y & 0x000000FF, iDepth_Visibility.x & 0x000000FF, alpha)) / MAX_8UINT;
-	}
-	else
-	{
-		return 1.0;
-	}
+	return 1.0;
 }
 
 void main() 
@@ -193,11 +166,8 @@ void main()
 					{
 						vec2 current_shadow_uv = shadow_uv + vec2(float(i) / SHADOW_MAP_WIDTH, float(j) / SHADOW_MAP_HEIGHT);
 
-						uint shadowi_depth = texture(deepShadowMap, current_shadow_uv).x;
+						float shadow_depth = texture(deepShadowMap, current_shadow_uv).x;
 						
-						shadowi_depth = shadowi_depth >> 8;
-						double shadow_depth = double(shadowi_depth) / double(MAX_24UINT);
-
 						if((float(shadow_depth) < real_depth) || (shadow_uv.x > 1.0 || shadow_uv.x < 0.0 || shadow_uv.y > 1.0 || shadow_uv.y < 0.0))
 						{
 							shadowHits++;
@@ -207,8 +177,14 @@ void main()
 
 				shadowFactor -= float(shadowHits) / pow(float(KERNEL_SIZE) * 2.0 + 1.0,  2.0);
 				shadowFactor = clamp(shadowFactor, 0.0, 1.0);
+				
+				if(shadowFactor == 0.0)
+				{
+					imageStore(shadowTextures[0], ivec2(gl_LaunchIDEXT.xy), vec4(vec3(shadowFactor), 1.0));
+					return;
+				}
 				*/
-
+				
 				if(shadow_uv.x > 1.0 || shadow_uv.x < 0.0 || shadow_uv.y > 1.0 || shadow_uv.y < 0.0)
 				{
 					imageStore(shadowTextures[0], ivec2(gl_LaunchIDEXT.xy), vec4(vec3(1.0), 1.0));
@@ -229,14 +205,6 @@ void main()
 					imageStore(shadowTextures[0], ivec2(gl_LaunchIDEXT.xy), vec4(vec3(visibility), 1.0));
 					return;
 				}
-
-				/*
-				if((shadowFactor >= 0.0 && shadowFactor <= 0.001) || (shadowFactor <= 1.0 && shadowFactor >= 0.999))
-				{
-					imageStore(shadowTextures[0], ivec2(gl_LaunchIDEXT.xy), vec4(vec3(shadowFactor), 1.0));
-					return;
-				}
-				*/
 			}
 
 			vec3 direction;
@@ -266,7 +234,7 @@ void main()
 			float tMin   = 0.001;
 			float tMax   = length(lightDistance);
 			uint  flags = gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsOpaqueEXT | gl_RayFlagsSkipClosestHitShaderEXT;
-			shadowPrd.alpha = 0.0f;
+			shadowPrd.alpha = 1.0f;
 			shadowPrd.hardShadowed = true;
 			
 			vec3 origin = worldPos + direction * 0.1;
@@ -315,13 +283,12 @@ void main()
 			0,           // missIndex
 			origin,      // ray origin
 			tMin,        // ray min range
-			direction,          // ray direction
+			direction,   // ray direction
 			tMax,        // ray max range
 			1            // payload (location = 1)
 			);
 
-			clamp(shadowPrd.alpha, 0.0, 1.0);
-			shadowFactor = 1.0 - shadowPrd.alpha;
+			shadowFactor = shadowPrd.alpha;
 
 			float a         = 1.0f / float(pushConstant.frame_bias.x + 1);
 			vec3  old_shadow = imageLoad(shadowTextures[i], reprojectedTexCoord).xyz;

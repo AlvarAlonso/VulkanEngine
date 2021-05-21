@@ -121,7 +121,7 @@ void main()
 	//finalColor = albedo * totalLight * 0.95 + ambientLight.xyz * 0.05; // TODO: Hardcoded
 	finalColor = albedo * totalLight;
 
-	//vec3 shadowColor = imageLoad(denoisedShadowImages[0], ivec2(gl_LaunchIDEXT.xy)).xyz;
-	//imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(shadowColor, 1.0f));
-	imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(finalColor, 1.0f));
+	vec3 shadowColor = imageLoad(denoisedShadowImages[0], ivec2(gl_LaunchIDEXT.xy)).xyz;
+	imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(shadowColor, 1.0f));
+	//imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(finalColor, 1.0f));
 }

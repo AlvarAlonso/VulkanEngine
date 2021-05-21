@@ -21,7 +21,7 @@ layout(binding = 9, set = 0) uniform sampler2D textures[]; //image2D ?
 
 void main()
 {
-	if(prd.alpha == 1.0) // if already hard shadow, return
+	if(prd.alpha <= 0.01) // if already hard shadow, return
 	{
 		return;
 	}
@@ -70,6 +70,6 @@ void main()
 		return;
 	}
 
-	prd.alpha += 0.7;
+	prd.alpha *= 0.3;
 }
 

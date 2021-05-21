@@ -1559,9 +1559,14 @@ void Renderer::render_raytracing()
 	update_descriptors(currentScene->_renderables.data(), currentScene->_renderables.size());
 
 	VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
+	
+	std::cout << "\n\n[RENDER PASS]:\n" << std::endl;
 
 	// DEEP SHADOW MAPS PASS
-	record_deep_shadow_map_command_buffer(currentScene->_renderables.data(), currentScene->_renderables.size());
+	{
+		//Timer dsmCommandsGenerationTimer("Record deep shadow map command buffer");
+		record_deep_shadow_map_command_buffer(currentScene->_renderables.data(), currentScene->_renderables.size());
+	}
 
 	VkSubmitInfo submit_info_dsm_pass = vkinit::submit_info(&_dsmCommandBuffer);
 	submit_info_dsm_pass.pWaitDstStageMask = waitStages;
@@ -1572,8 +1577,9 @@ void Renderer::render_raytracing()
 
 	VK_CHECK(vkQueueSubmit(_graphicsQueue, 1, &submit_info_dsm_pass, nullptr));
 
-	// SKYBOX PASS
+	VK_CHECK(vkQueueWaitIdle(_graphicsQueue));
 
+	// SKYBOX PASS
 	VkSubmitInfo submit_info_skybox_pass = vkinit::submit_info(&_skyboxCommandBuffer);
 	submit_info_skybox_pass.pWaitDstStageMask = waitStages;
 	submit_info_skybox_pass.waitSemaphoreCount = 1;
@@ -1581,10 +1587,18 @@ void Renderer::render_raytracing()
 	submit_info_skybox_pass.signalSemaphoreCount = 1;
 	submit_info_skybox_pass.pSignalSemaphores = &_skyboxSemaphore;
 
-	VK_CHECK(vkQueueSubmit(_graphicsQueue, 1, &submit_info_skybox_pass, nullptr));
+	{
+		Timer firstPassTimer("Deep shadow map pass");
+		VK_CHECK(vkQueueSubmit(_graphicsQueue, 1, &submit_info_skybox_pass, nullptr));
+
+		VK_CHECK(vkQueueWaitIdle(_graphicsQueue));
+	}
 
 	// G-BUFFER PASS
-	record_gbuffers_command_buffers(currentScene->_renderables.data(), currentScene->_renderables.size());
+	{
+		//Timer gbuffersCommandsGenerationTimer("Record G-Buffers command buffer");
+		record_gbuffers_command_buffers(currentScene->_renderables.data(), currentScene->_renderables.size());
+	}
 
 	VkSubmitInfo submit_info_gbuffer_pass = vkinit::submit_info(&_gbuffersCommandBuffer);
 	submit_info_gbuffer_pass.pWaitDstStageMask = waitStages;
@@ -1595,8 +1609,13 @@ void Renderer::render_raytracing()
 
 	VK_CHECK(vkQueueSubmit(_graphicsQueue, 1, &submit_info_gbuffer_pass, nullptr));
 
+	VK_CHECK(vkQueueWaitIdle(_graphicsQueue));
+
 	// RT SHADOWS & DENOISING PASS
-	record_rtShadows_command_buffer();
+	{
+		//Timer rtShadowsCommandsGenerationTimer("Record Rt-Shadows command buffer");
+		record_rtShadows_command_buffer();
+	}
 
 	VkSubmitInfo submit_info_rtShadows_pass = vkinit::submit_info(&_rtShadowsCommandBuffer);
 	submit_info_rtShadows_pass.pWaitDstStageMask = waitStages;
@@ -1607,8 +1626,13 @@ void Renderer::render_raytracing()
 
 	VK_CHECK(vkQueueSubmit(_graphicsQueue, 1, &submit_info_rtShadows_pass, nullptr));
 
+	VK_CHECK(vkQueueWaitIdle(_graphicsQueue));
+
 	// RT PASS
-	record_rtFinal_command_buffer();
+	{
+		//Timer rtFinalCommandsGenerationTimer("Record Rt-Final command buffer");
+		record_rtFinal_command_buffer();
+	}
 
 	VkSubmitInfo submit_info_rtFinal_pass = vkinit::submit_info(&_rtFinalCommandBuffer);
 	submit_info_rtFinal_pass.pWaitDstStageMask = waitStages;
@@ -1622,10 +1646,15 @@ void Renderer::render_raytracing()
 
 	VK_CHECK(vkQueueSubmit(_graphicsQueue, 1, &submit_info_rtFinal_pass, nullptr));
 
+	VK_CHECK(vkQueueWaitIdle(_graphicsQueue));
+
 	// POSTPROCESSING PASS
 	VkCommandBuffer cmd = _frames[get_current_frame_index()]._mainCommandBuffer;
 
-	record_pospo_command_buffer(cmd, swapchainImageIndex);
+	{
+		//Timer pospoCommandsGenerationTimer("Record postprocessing");
+		record_pospo_command_buffer(cmd, swapchainImageIndex);
+	}
 
 	VkSubmitInfo pospo_submit_info = vkinit::submit_info(&cmd);
 
@@ -1638,6 +1667,8 @@ void Renderer::render_raytracing()
 	pospo_submit_info.pSignalSemaphores = &_frames[get_current_frame_index()]._renderSemaphore;
 
 	VK_CHECK(vkQueueSubmit(_graphicsQueue, 1, &pospo_submit_info, _frames[get_current_frame_index()]._renderFence));
+
+	VK_CHECK(vkQueueWaitIdle(_graphicsQueue));
 
 	VkPresentInfoKHR presentInfo = {};
 	presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;

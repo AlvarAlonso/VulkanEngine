@@ -44,6 +44,29 @@ uint subtractionClamp0(uint a, uint b)
 	}
 }
 
+uint multiplyDecimalUint(uint a, uint b)
+{
+/*
+	float first = float(a) / MAX_8UINT;
+	float second = float(b) / MAX_8UINT;
+
+	float result = first * second;
+
+	return uint(result * MAX_8UINT);
+*/
+
+	if(a > b)
+	{
+		uint quocient = a / b;
+		return b / quocient;
+	}
+	else
+	{
+		uint quocient = b / a;
+		return a / quocient;
+	}
+}
+
 uint computeVisibilitySample(uint depth, uint visibility)
 {
 	uint V = depth;
@@ -53,9 +76,10 @@ uint computeVisibilitySample(uint depth, uint visibility)
 	return V;
 }
 
+//TODO: it must not subtract, it has to calculate it accordint to the percentage
 uint computeNewVisibility(uint V, uint visibilityToAdd)
 {
-	uint visibility = subtractionClamp0(V & 0x000000FF, visibilityToAdd);
+	uint visibility = multiplyDecimalUint(V & 0x000000FF, visibilityToAdd);
 
 	uint newV = V & 0xFFFFFF00;
 	newV = V | visibility;
@@ -69,11 +93,12 @@ uvec2 computeMiddleSamples(uint a, uint b, uint c, uint d)
 	uint secondInterval = subtractionClamp0(b & MAX_8UINT, c & MAX_8UINT);
 	uint thirdInterval = subtractionClamp0(c & MAX_8UINT, d & MAX_8UINT);
 
-	if(firstInterval > secondInterval && secondInterval > thirdInterval)
+	// return the samples that conform the two largest intervals
+	if(firstInterval < secondInterval && firstInterval < thirdInterval)
 	{
 		return uvec2(c, d);
 	}
-	else if(secondInterval > firstInterval && secondInterval > thirdInterval)
+	else if(secondInterval < firstInterval && secondInterval < thirdInterval)
 	{
 		return uvec2(b, d);
 	}
@@ -97,7 +122,7 @@ void main()
 	uint opacity = 0;
 
 	opacity = uint(material.color.w * MAX_8UINT);
-	opacity = opacity & 0x000000FF;
+	opacity = MAX_8UINT - opacity & 0x000000FF;
 
 	int occlusionTextureIdx = int(material.emissive_metRough_occlusion_normal_indices.z);
 	vec3 occlusionTexture = texture(textures[occlusionTextureIdx], texCoord).xyz;
@@ -108,7 +133,6 @@ void main()
 	}
 	
 	uint depth = uint(gl_FragCoord.z * MAX_24UINT);
-	
 	uvec4 currentDsmValues = imageLoad(deepShadowImage, ivec2(gl_FragCoord.xy));
 
 	uint v = 0;
@@ -116,7 +140,7 @@ void main()
 	// it is a min
 	if(depth <= (currentDsmValues.x >> 8))
 	{
-		v = computeVisibilitySample(depth, subtractionClamp0(DEFAULT_VISIBILITY, opacity));
+		v = computeVisibilitySample(depth, multiplyDecimalUint(DEFAULT_VISIBILITY, opacity));
 
 		if(currentDsmValues.x == MAX_UINT)
 		{
@@ -160,13 +184,13 @@ void main()
 	{
 		if(currentDsmValues.w == 0)
 		{
-			v = computeVisibilitySample(depth, subtractionClamp0(currentDsmValues.x & MAX_8UINT, opacity));
+			v = computeVisibilitySample(depth, multiplyDecimalUint(currentDsmValues.x & MAX_8UINT, opacity));
 
 			imageStore(deepShadowImage, ivec2(gl_FragCoord.xy), uvec4(currentDsmValues.x, currentDsmValues.y, currentDsmValues.z, v));
 		}
 		else if(currentDsmValues.y == 0)
 		{
-			v = computeVisibilitySample(depth, subtractionClamp0(currentDsmValues.w & MAX_8UINT, opacity));
+			v = computeVisibilitySample(depth, multiplyDecimalUint(currentDsmValues.w & MAX_8UINT, opacity));
 
 			currentDsmValues.y = currentDsmValues.w;
 
@@ -174,7 +198,7 @@ void main()
 		}
 		else if(currentDsmValues.z == 0)
 		{
-			v = computeVisibilitySample(depth, subtractionClamp0(currentDsmValues.w & MAX_8UINT, opacity));
+			v = computeVisibilitySample(depth, multiplyDecimalUint(currentDsmValues.w & MAX_8UINT, opacity));
 
 			currentDsmValues.z = currentDsmValues.w;
 
@@ -182,7 +206,7 @@ void main()
 		}
 		else
 		{
-			v = computeVisibilitySample(depth, subtractionClamp0(currentDsmValues.w & MAX_8UINT, opacity));
+			v = computeVisibilitySample(depth, multiplyDecimalUint(currentDsmValues.w & MAX_8UINT, opacity));
 
 			currentDsmValues.yz = computeMiddleSamples(currentDsmValues.x, currentDsmValues.y, currentDsmValues.z, currentDsmValues.w);
 
@@ -194,7 +218,7 @@ void main()
 	{
 		if(currentDsmValues.y == 0)
 		{
-			v = computeVisibilitySample(depth, subtractionClamp0(currentDsmValues.x & MAX_8UINT, opacity));
+			v = computeVisibilitySample(depth, multiplyDecimalUint(currentDsmValues.x & MAX_8UINT, opacity));
 
 			currentDsmValues.w = computeNewVisibility(currentDsmValues.w, opacity);
 
@@ -204,7 +228,7 @@ void main()
 		{
 			if(depth <= (currentDsmValues.y >> 8))
 			{
-				v = computeVisibilitySample(depth, subtractionClamp0(currentDsmValues.x & MAX_8UINT, opacity));
+				v = computeVisibilitySample(depth, multiplyDecimalUint(currentDsmValues.x & MAX_8UINT, opacity));
 				
 				currentDsmValues.w = computeNewVisibility(currentDsmValues.w, opacity);
 				currentDsmValues.z = computeNewVisibility(currentDsmValues.y, opacity);
@@ -213,7 +237,7 @@ void main()
 			}
 			else
 			{
-				v = computeVisibilitySample(depth, subtractionClamp0(currentDsmValues.y & MAX_8UINT, opacity));
+				v = computeVisibilitySample(depth, multiplyDecimalUint(currentDsmValues.y & MAX_8UINT, opacity));
 
 				currentDsmValues.w = computeNewVisibility(currentDsmValues.w, opacity);
 
@@ -224,7 +248,7 @@ void main()
 		{
 			if(depth <= (currentDsmValues.y >> 8))
 			{
-				v = computeVisibilitySample(depth, subtractionClamp0(currentDsmValues.x & MAX_8UINT, opacity));
+				v = computeVisibilitySample(depth, multiplyDecimalUint(currentDsmValues.x & MAX_8UINT, opacity));
 
 				currentDsmValues.w = computeNewVisibility(currentDsmValues.w, opacity);
 				currentDsmValues.z = computeNewVisibility(currentDsmValues.z, opacity);
@@ -236,7 +260,7 @@ void main()
 			}
 			else if(depth <= (currentDsmValues.z >> 8))
 			{
-				v = computeVisibilitySample(depth, subtractionClamp0(currentDsmValues.y & MAX_8UINT, opacity));
+				v = computeVisibilitySample(depth, multiplyDecimalUint(currentDsmValues.y & MAX_8UINT, opacity));
 				
 				currentDsmValues.w = computeNewVisibility(currentDsmValues.w, opacity);
 				currentDsmValues.z = computeNewVisibility(currentDsmValues.z, opacity);
@@ -247,7 +271,7 @@ void main()
 			}
 			else
 			{
-				v = computeVisibilitySample(depth, subtractionClamp0(currentDsmValues.z & MAX_8UINT, opacity));
+				v = computeVisibilitySample(depth, multiplyDecimalUint(currentDsmValues.z & MAX_8UINT, opacity));
 
 				currentDsmValues.w = computeNewVisibility(currentDsmValues.w, opacity);
 
