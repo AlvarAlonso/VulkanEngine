@@ -12,7 +12,9 @@ class Camera;
 struct RenderObject;
 struct SDL_Window;
 struct RenderEngine;
+struct Timer;
 
+const int NUM_DEBUG_SAMPLES = 1000;
 constexpr unsigned int FRAME_OVERLAP = 2;
 
 RenderMode operator++(RenderMode& m, int);
@@ -48,6 +50,11 @@ public:
 	void switch_render_mode();
 
 	void draw_scene();
+
+	void reset_timers_count();
+
+	// Button
+	bool _isUsingWaitIdle = false;
 
 	// Shader flags
 	FlagsPushConstant _shaderFlags;
@@ -126,6 +133,12 @@ private:
 	//Queues
 	VkQueue _graphicsQueue;
 	uint32_t _graphicsQueueFamily;
+
+	//Timers
+	Timer* _preShadowTimer;
+	Timer* _dsmTimer;
+	Timer* _shadowTimer;
+	Timer* _totalTimer;
 
 	//INIT RENDER STRUCTURES AND PIPELINES
 

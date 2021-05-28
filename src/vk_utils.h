@@ -13,9 +13,16 @@ struct Timer
 	std::chrono::time_point<std::chrono::steady_clock> start, end;
 	std::chrono::duration<float> duration;
 
+	float totalDuration;
+	int timerCount;
+
 	Timer(const std::string& name = "");
 
 	~Timer();
+
+	void stop_timer();
+	void reset_timer();
+	void print_average_duration();
 };
 
 namespace vkutil {

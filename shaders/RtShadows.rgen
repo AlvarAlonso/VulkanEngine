@@ -36,8 +36,8 @@ layout(location = 1) rayPayloadEXT ShadowRayPayload shadowPrd;
 
 const uint MAX_RECURSION = 10;
 
-const float SHADOW_MAP_WIDTH = 1920;
-const float SHADOW_MAP_HEIGHT = 1080;
+const float SHADOW_MAP_WIDTH = 512;
+const float SHADOW_MAP_HEIGHT = 512;
 
 const uint MAX_UINT = 0xFFFFFFFF;
 const uint MAX_24UINT = 0x00FFFFFF;
@@ -47,24 +47,23 @@ float getVisibilitySample(float real_depth, vec2 shadow_uv)
 {
 	uvec4 iDepth_Visibility = texture(deepShadowMap, shadow_uv);
 
-	uint samplesVisibility[4] = { iDepth_Visibility.x & 0x000000FF, iDepth_Visibility.y & 0x000000FF, 
+	uint samplesVisibility[NUM_SAMPLES] = { iDepth_Visibility.x & 0x000000FF, iDepth_Visibility.y & 0x000000FF, 
 	iDepth_Visibility.z & 0x000000FF, iDepth_Visibility.w & 0x000000FF };
 
-	double samplesDepth[4] = { double(iDepth_Visibility.x >> 8) / MAX_24UINT, double(iDepth_Visibility.y >> 8) / MAX_24UINT, 
+	double samplesDepth[NUM_SAMPLES] = { double(iDepth_Visibility.x >> 8) / MAX_24UINT, double(iDepth_Visibility.y >> 8) / MAX_24UINT, 
 	double(iDepth_Visibility.z >> 8) / MAX_24UINT, double(iDepth_Visibility.w >> 8) / MAX_24UINT };
 
-	// TODO: Possible bug when not all channels are used
-	float distanceX = 0;
-	float distanceY = 0;
-
-	if(real_depth > samplesDepth[3])
+	if(samplesDepth[MAX_SAMPLE] != 0 && real_depth > samplesDepth[MAX_SAMPLE])
 	{
 		return float(iDepth_Visibility.w & 0x000000FF) / MAX_8UINT;
 	}
 
-	for(int numSample = 2; numSample >= 0; numSample--)
+	float distanceX = 0;
+	float distanceY = 0;
+
+	for(int numSample = THIRD_SAMPLE; numSample >= MIN_SAMPLE; numSample--)
 	{
-		if(real_depth > samplesDepth[numSample])
+		if(samplesDepth[numSample] != 0 && real_depth > samplesDepth[numSample])
 		{
 			distanceX = abs(real_depth - float(samplesDepth[numSample + 1]));
 			distanceY = abs(real_depth - float(samplesDepth[numSample]));
@@ -135,6 +134,7 @@ void main()
 				float real_depth = (proj_pos.z - pushConstant.frame_bias.y) / proj_pos.w;
 				real_depth = real_depth * 0.5 + 0.5;
 
+				// Shadow map
 				/*
 				if(pushConstant.flags.x == 1)
 				{
@@ -157,6 +157,8 @@ void main()
 					return;
 				}
 				*/
+
+				// Shadow map with filter
 				/*
 				int shadowHits = 0;
 
@@ -175,7 +177,7 @@ void main()
 					}
 				}
 
-				shadowFactor -= float(shadowHits) / pow(float(KERNEL_SIZE) * 2.0 + 1.0,  2.0);
+				shadowFactor -= float(shadowHits) / pow(float(KERNEL_SIZE) * 2.0 + 1.0, 2.0);
 				shadowFactor = clamp(shadowFactor, 0.0, 1.0);
 				
 				if(shadowFactor == 0.0)
@@ -196,7 +198,15 @@ void main()
 
 				if(pushConstant.flags.x == 1)
 				{
-					imageStore(shadowTextures[0], ivec2(gl_LaunchIDEXT.xy), vec4(vec3(visibility), 1.0));
+					if(visibility > 0.95)
+					{
+						imageStore(shadowTextures[0], ivec2(gl_LaunchIDEXT.xy), vec4(vec3(1.0), 1.0));
+					}
+					else
+					{
+						imageStore(shadowTextures[0], ivec2(gl_LaunchIDEXT.xy), vec4(vec3(0.0), 1.0));
+					}
+					//imageStore(shadowTextures[0], ivec2(gl_LaunchIDEXT.xy), vec4(vec3(visibility), 1.0));
 					return;
 				}
 
@@ -240,17 +250,7 @@ void main()
 			vec3 origin = worldPos + direction * 0.1;
 
 			// trace to the first opaque surface
-			traceRayEXT(topLevelAS,
-			flags,
-			0xFE,
-			0,
-			0,
-			0,
-			origin,
-			tMin,
-			direction,
-			tMax,
-			1);
+			traceRayEXT(topLevelAS, flags, 0xFE, 0, 0, 0, origin, tMin, direction, tMax, 1);
 			
 			if(shadowPrd.hardShadowed == true)
 			{
@@ -275,18 +275,7 @@ void main()
 			
 			flags = gl_RayFlagsSkipClosestHitShaderEXT;
 
-			traceRayEXT(topLevelAS,  // acceleration structure
-			flags,       // rayFlags
-			0xFD,        // cullMask TODO: 0xFD
-			0,           // sbtRecordOffset
-			0,           // sbtRecordStride
-			0,           // missIndex
-			origin,      // ray origin
-			tMin,        // ray min range
-			direction,   // ray direction
-			tMax,        // ray max range
-			1            // payload (location = 1)
-			);
+			traceRayEXT(topLevelAS, flags, 0xFD, 0, 0, 0, origin, tMin, direction, tMax, 1);
 
 			shadowFactor = shadowPrd.alpha;
 

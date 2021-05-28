@@ -76,7 +76,7 @@ uint computeVisibilitySample(uint depth, uint visibility)
 	return V;
 }
 
-//TODO: it must not subtract, it has to calculate it accordint to the percentage
+//TODO: it must not subtract, it has to calculate it according to the percentage
 uint computeNewVisibility(uint V, uint visibilityToAdd)
 {
 	uint visibility = multiplyDecimalUint(V & 0x000000FF, visibilityToAdd);

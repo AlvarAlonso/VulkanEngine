@@ -36,6 +36,7 @@ void Scene::load_resources()
 	grassMaterial->_tilling_factor = 10.0f;
 	grassMaterial->_id = VKE::Material::sMaterials.size();
 	grassMaterial->_color = glm::vec4{ 1.0f, 1.0f, 1.0f, 1.0f };
+	grassMaterial->_tilling_factor = 150.0f;
 	grassMaterial->register_material("grass");
 
 	// Mesh generation
@@ -79,37 +80,51 @@ void Scene::generate_sample_scene()
 	_renderables.push_back(*treeLeaves2);
 
 	treeStem->_model = glm::translate(glm::vec3{ 10, 0, 10 });
+	treeStem->_model = glm::scale(treeStem->_model, glm::vec3{ 0.8f, 0.8f, 0.8f });
 	treeLeaves->_model = glm::translate(glm::vec3{ 10, 0, 10 });
+	treeLeaves->_model = glm::scale(treeLeaves->_model, glm::vec3{ 0.8f, 0.8f, 0.8f });
 	treeLeaves2->_model = glm::translate(glm::vec3{ 10, 0, 10 });
+	treeLeaves2->_model = glm::scale(treeLeaves2->_model, glm::vec3{ 0.8f, 0.8f, 0.8f });
+
+	_renderables.push_back(*treeStem);
+	_renderables.push_back(*treeLeaves);
+	_renderables.push_back(*treeLeaves2);
+	
+	treeStem->_model = glm::translate(glm::vec3{ -5, 0, 12 });
+	treeStem->_model = glm::scale(treeStem->_model, glm::vec3{ 0.5f, 0.5f, 0.5f });
+	treeLeaves->_model = glm::translate(glm::vec3{ -5, 0, 12 });
+	treeLeaves->_model = glm::scale(treeLeaves->_model, glm::vec3{ 0.5f, 0.5f, 0.5f });
+	treeLeaves2->_model = glm::translate(glm::vec3{ -5, 0, 12 });
+	treeLeaves2->_model = glm::scale(treeLeaves2->_model, glm::vec3{ 0.5f, 0.5f, 0.5f });
+	
+	_renderables.push_back(*treeStem);
+	_renderables.push_back(*treeLeaves);
+	_renderables.push_back(*treeLeaves2);
+	
+	
+	treeStem->_model = glm::translate(glm::vec3{ 7, 0, -10 });
+	treeStem->_model = glm::scale(treeStem->_model, glm::vec3{ 1.2f, 1.2f, 1.2f });
+	treeLeaves->_model = glm::translate(glm::vec3{ 7, 0, -10 });
+	treeLeaves->_model = glm::scale(treeLeaves->_model, glm::vec3{ 1.2f, 1.2f, 1.2f });
+	treeLeaves2->_model = glm::translate(glm::vec3{ 7, 0, -10 });
+	treeLeaves2->_model = glm::scale(treeLeaves2->_model, glm::vec3{ 1.2f, 1.2f, 1.2f });
 
 	_renderables.push_back(*treeStem);
 	_renderables.push_back(*treeLeaves);
 	_renderables.push_back(*treeLeaves2);
 
-	treeStem->_model = glm::translate(glm::vec3{ -10, 0, 10 });
-	treeLeaves->_model = glm::translate(glm::vec3{ -10, 0, 10 });
-	treeLeaves2->_model = glm::translate(glm::vec3{ -10, 0, 10 });
+	treeStem->_model = glm::translate(glm::vec3{ -2, 0, -15 });
+	treeStem->_model = glm::scale(treeStem->_model, glm::vec3{ 0.8f, 0.8f, 0.8f });
+	treeLeaves->_model = glm::translate(glm::vec3{ -2, 0, -15 });
+	treeLeaves->_model = glm::scale(treeLeaves->_model, glm::vec3{ 0.8f, 0.8f, 0.8f });
+	treeLeaves2->_model = glm::translate(glm::vec3{ -2, 0, -15 });
+	treeLeaves2->_model = glm::scale(treeLeaves2->_model, glm::vec3{ 0.8f, 0.8f, 0.8f });
 
 	_renderables.push_back(*treeStem);
 	_renderables.push_back(*treeLeaves);
 	_renderables.push_back(*treeLeaves2);
-
-	treeStem->_model = glm::translate(glm::vec3{ 10, 0, -10 });
-	treeLeaves->_model = glm::translate(glm::vec3{ 10, 0, -10 });
-	treeLeaves2->_model = glm::translate(glm::vec3{ 10, 0, -10 });
-
-	_renderables.push_back(*treeStem);
-	_renderables.push_back(*treeLeaves);
-	_renderables.push_back(*treeLeaves2);
-
-	treeStem->_model = glm::translate(glm::vec3{ 20, 0, 10 });
-	treeLeaves->_model = glm::translate(glm::vec3{ 20, 0, 10 });
-	treeLeaves2->_model = glm::translate(glm::vec3{ 20, 0, 10 });
-
-	_renderables.push_back(*treeStem);
-	_renderables.push_back(*treeLeaves);
-	_renderables.push_back(*treeLeaves2);
-
+	
+	/*
 	treeStem->_model = glm::translate(glm::vec3{ 50, 0, 20 });
 	treeStem->_model = glm::scale(treeStem->_model, glm::vec3{ 0.5, 0.5, 0.5 });
 	treeLeaves->_model = glm::translate(glm::vec3{ 50, 0, 20 });
@@ -153,29 +168,29 @@ void Scene::generate_sample_scene()
 	_renderables.push_back(*treeStem);
 	_renderables.push_back(*treeLeaves);
 	_renderables.push_back(*treeLeaves2);
-
+	*/
 
 	RenderObject* plane = new RenderObject();
 	plane->_model = glm::translate(glm::vec3{ 0.0, 0.0, 0.0 });
 	plane->_model = glm::rotate(plane->_model, glm::radians(-90.0f), glm::vec3{ 1, 0, 0 });
-	plane->_model *= glm::scale(glm::mat4(1), glm::vec3{ 500, 500, 1 });
+	plane->_model *= glm::scale(glm::mat4(1), glm::vec3{ 1000, 1000, 1 });
 	plane->_prefab = VKE::Prefab::get("plane");
 
 	_renderables.push_back(*plane);
 
 	plane->_model = glm::translate(glm::vec3{ 0.0, -50.0, 0.0 });
 	plane->_model = glm::rotate(plane->_model, glm::radians(-90.0f), glm::vec3{ 1, 0, 0 });
-	plane->_model *= glm::scale(glm::mat4(1), glm::vec3{ 500, 500, 1 });
+	plane->_model *= glm::scale(glm::mat4(1), glm::vec3{ 1000, 1000, 1 });
 	_renderables.push_back(*plane);
 
 	plane->_model = glm::translate(glm::vec3{ 0.0, -100.0, 0.0 });
 	plane->_model = glm::rotate(plane->_model, glm::radians(-90.0f), glm::vec3{ 1, 0, 0 });
-	plane->_model *= glm::scale(glm::mat4(1), glm::vec3{ 500, 500, 1 });
+	plane->_model *= glm::scale(glm::mat4(1), glm::vec3{ 1000, 1000, 1 });
 	_renderables.push_back(*plane);
 
 	plane->_model = glm::translate(glm::vec3{ 0.0, -150.0, 0.0 });
 	plane->_model = glm::rotate(plane->_model, glm::radians(-90.0f), glm::vec3{ 1, 0, 0 });
-	plane->_model *= glm::scale(glm::mat4(1), glm::vec3{ 500, 500, 1 });
+	plane->_model *= glm::scale(glm::mat4(1), glm::vec3{ 1000, 1000, 1 });
 	_renderables.push_back(*plane);
 
 	// Skybox
@@ -194,18 +209,17 @@ void Scene::generate_sample_scene()
 	_skybox._renderable = box;
 	_skybox._cubeMap = cubeMap;
 
-
 	// Light sources
-	Light point_light1;
-	point_light1._model = glm::translate(glm::vec3{ 0, 150, 100 });
-	point_light1._color = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
-	point_light1._radius = 1.0f;
-	point_light1._intensity = 1.0f;
-	point_light1._maxDist = 300.0f;
-	point_light1._type = DIRECTIONAL;
-	point_light1._targetPosition = glm::vec3(0.0, 0.0, 0.0);
+	Light* point_light1 = new Light();
+	point_light1->_model = glm::translate(glm::vec3{ 100, 150, 0 });
+	point_light1->_color = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
+	point_light1->_radius = 1.0f;
+	point_light1->_intensity = 1.0f;
+	point_light1->_maxDist = 300.0f;
+	point_light1->_type = DIRECTIONAL;
+	point_light1->_targetPosition = glm::vec3(-15.0, 0.0, 0.0);
 
-	_lights.push_back(point_light1);
+	_lights.push_back(*point_light1);
 }
 
 void Scene::generate_random_sample_scene()

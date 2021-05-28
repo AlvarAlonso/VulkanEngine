@@ -1642,7 +1642,7 @@ void RenderEngine::create_raytracing_pipelines(const Scene& scene)
 				std::cout << "Error when building the shadow miss shader module" << std::endl;
 			}
 			else {
-				std::cout << "Shadw miss shader succesfully loaded" << std::endl;
+				std::cout << "Shadow miss shader succesfully loaded" << std::endl;
 			}
 			VkPipelineShaderStageCreateInfo shader_stage_info = vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_MISS_BIT_KHR, shadowMissShader);
 
@@ -1803,7 +1803,7 @@ void RenderEngine::create_raytracing_pipelines(const Scene& scene)
 			textureBufferBinding,
 			resultImageLayoutBinding,
 			denoisedShadowsImagesBinding,
-			skyboxImageLayoutBinding
+			//skyboxImageLayoutBinding
 			});
 
 		VkDescriptorSetLayoutCreateInfo desc_set_layout_info{};

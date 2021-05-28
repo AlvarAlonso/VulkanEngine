@@ -56,8 +56,8 @@ void VulkanEngine::init()
 
 	scene = new Scene();
 	scene->load_resources();
-	//scene->generate_sample_scene();
-	scene->generate_random_sample_scene();
+	scene->generate_sample_scene();
+	//scene->generate_random_sample_scene();
 
 	renderer->currentScene = scene;
 
@@ -112,6 +112,11 @@ void VulkanEngine::run()
 					{
 						rm = 0;
 					}
+				}
+
+				if(e.key.keysym.sym == SDLK_r)
+				{
+					renderer->reset_timers_count();
 				}
 
 				if(e.key.keysym.sym == SDLK_ESCAPE)
@@ -206,6 +211,9 @@ void VulkanEngine::render_debug_GUI()
 	ImGui::SliderFloat("Shadow Bias", &renderer->_rtPushConstant.frame_bias.y, 0.0f, 5.0f, "%.4f", 2.0f);
 
 	ImGui::SliderInt("Kernel Size", &renderer->_rtPushConstant.flags.y, 1, 10, "%d");
+
+	if (ImGui::Button("Use wait idle"))
+		renderer->_isUsingWaitIdle = !renderer->_isUsingWaitIdle;
 
 	// Lights
 	for(int i = 0; i < scene->_lights.size(); i++)

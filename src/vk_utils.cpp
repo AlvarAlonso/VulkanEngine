@@ -127,6 +127,8 @@ Timer::Timer(const std::string& name)
 {
 	_name = name;
 	start = std::chrono::high_resolution_clock::now();
+	totalDuration = 0.0f;
+	timerCount = 0;
 }
 
 Timer::~Timer()
@@ -136,4 +138,26 @@ Timer::~Timer()
 
 	float ms = duration.count() * 1000.0f;
 	std::cout << "TIMER: " << _name << " took " << ms << "ms\n";
+}
+
+void Timer::stop_timer()
+{
+	end = std::chrono::high_resolution_clock::now();
+	duration = end - start;
+	totalDuration += duration.count();
+	timerCount++;
+
+	//float ms = duration.count() * 1000.0f;
+	//std::cout << "TIMER: " << _name << " took " << ms << "ms\n";
+}
+
+void Timer::reset_timer()
+{
+	start = std::chrono::high_resolution_clock::now();
+}
+
+void Timer::print_average_duration()
+{
+	float ms = totalDuration * 1000.0f / timerCount;
+	std::cout << "TIMER: " << _name << " took an average of " << ms << "ms " << "after " << timerCount << " samples\n";
 }

@@ -41,6 +41,10 @@ Renderer::Renderer()
 	_graphicsQueue = re->_graphicsQueue;
 	_graphicsQueueFamily = re->_graphicsQueueFamily;
 	_renderMode = RENDER_MODE_RAYTRACING;
+	_preShadowTimer = new Timer("Pre shadow timer");
+	_dsmTimer = new Timer("DSM timer");
+	_shadowTimer = new Timer("Shadow timer");
+	_totalTimer = new Timer("Total timer");
 	re->reset_imgui();
 
 	init_renderer();
@@ -77,7 +81,8 @@ void Renderer::init_renderer()
 {
 	_lightCamera = new Camera();
 	//_lightCamera->setPerspective(60.0f, 1920.0f / 1080.0f, 0.1f, 512.0f);
-	_lightCamera->setOrthographic(-128, 128, -128, 128, -500, 500);
+	//_lightCamera->setOrthographic(-128, 128, -128, 128, -500, 500);
+	_lightCamera->setOrthographic(-64, 64, -64, 64, -500, 500);
 
 	init_commands();
 	init_sync_structures();
@@ -108,7 +113,7 @@ void Renderer::draw_scene()
 		if(currentScene->_lights.size() > 0)
 		{
 			_lightCamera->_position = currentScene->_lights[0]._model[3];
-			_lightCamera->_direction = glm::vec3(0) - _lightCamera->_position;
+			_lightCamera->_direction = currentScene->_lights[0]._targetPosition - _lightCamera->_position;
 		}
 		else
 		{
@@ -128,6 +133,18 @@ void Renderer::draw_scene()
 	render_raytracing();
 
 	re->create_top_level_acceleration_structure(*currentScene, true);
+}
+
+void Renderer::reset_timers_count()
+{
+	_preShadowTimer->timerCount = 0;
+	_preShadowTimer->totalDuration = 0.0f;
+	_dsmTimer->timerCount = 0;
+	_dsmTimer->totalDuration = 0.0f;
+	_shadowTimer->timerCount = 0;
+	_shadowTimer->totalDuration = 0.0f;
+	_totalTimer->timerCount = 0;
+	_totalTimer->totalDuration = 0.0f;
 }
 
 void Renderer::create_uniform_buffer()
@@ -619,7 +636,7 @@ void Renderer::create_raytracing_descriptor_sets()
 		VkWriteDescriptorSet textureImagesWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, _rtFinalDescriptorSet, textureImageInfos.data(), 9, textureImageInfos.size());
 		VkWriteDescriptorSet resultImageWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, _rtFinalDescriptorSet, &storageImageDescriptor, 10);
 		VkWriteDescriptorSet denoisedShadowImagesWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, _rtFinalDescriptorSet, denoisedShadowImageInfos.data(), 11, static_cast<uint32_t>(denoisedShadowImageInfos.size()));
-		VkWriteDescriptorSet cubeMapWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, _rtFinalDescriptorSet, &cubeMapInfo, 12);
+		//VkWriteDescriptorSet cubeMapWrite = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, _rtFinalDescriptorSet, &cubeMapInfo, 12);
 
 		std::vector<VkWriteDescriptorSet> writeDescriptorSets = {
 			accelerationStructureWrite,
@@ -634,7 +651,7 @@ void Renderer::create_raytracing_descriptor_sets()
 			textureImagesWrite,		
 			resultImageWrite,
 			denoisedShadowImagesWrite,
-			cubeMapWrite
+			//cubeMapWrite
 		};
 
 		vkUpdateDescriptorSets(_device, static_cast<uint32_t>(writeDescriptorSets.size()), writeDescriptorSets.data(), 0, VK_NULL_HANDLE);
@@ -728,33 +745,6 @@ void Renderer::record_deep_shadow_map_command_buffer(RenderObject* first, int co
 
 	vkCmdEndRenderPass(_dsmCommandBuffer);
 
-	{
-		VkImageMemoryBarrier barrier = {};
-		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-		barrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
-		barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		barrier.image = re->_deepShadowImage._image;
-		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		barrier.subresourceRange.baseMipLevel = 0;
-		barrier.subresourceRange.levelCount = 1;
-		barrier.subresourceRange.baseArrayLayer = 0;
-		barrier.subresourceRange.layerCount = 1;
-
-		barrier.srcAccessMask = 0;
-		barrier.dstAccessMask = VK_ACCESS_INPUT_ATTACHMENT_READ_BIT;
-
-		vkCmdPipelineBarrier(
-			_dsmCommandBuffer,
-			VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-			0,
-			0, nullptr,
-			0, nullptr,
-			1, &barrier
-		);
-	}
-
 	VK_CHECK(vkEndCommandBuffer(_dsmCommandBuffer));
 }
 
@@ -787,31 +777,6 @@ void Renderer::record_skybox_command_buffer()
 	vkCmdDrawIndexed(_skyboxCommandBuffer, skybox._renderable->_prefab->_indices.count, 1, 0, 0, 0);
 
 	vkCmdEndRenderPass(_skyboxCommandBuffer);
-	
-	VkImageMemoryBarrier barrier = {};
-	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-	barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-	barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
-	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	barrier.image = re->_albedoImage._image;
-	barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-	barrier.subresourceRange.baseMipLevel = 0;
-	barrier.subresourceRange.levelCount = 1;
-	barrier.subresourceRange.baseArrayLayer = 0;
-	barrier.subresourceRange.layerCount = 1;
-
-	barrier.srcAccessMask = 0;
-	barrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-
-	vkCmdPipelineBarrier(
-		_skyboxCommandBuffer,
-		VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-		0,
-		0, nullptr,
-		0, nullptr,
-		1, &barrier
-	);
 
 	VK_CHECK(vkEndCommandBuffer(_skyboxCommandBuffer));
 }
@@ -821,6 +786,33 @@ void Renderer::record_gbuffers_command_buffers(RenderObject* first, int count)
 	VkCommandBufferBeginInfo gbuffersCmdBeginInfo = vkinit::command_buffer_begin_info(VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT);
 
 	VK_CHECK(vkBeginCommandBuffer(_gbuffersCommandBuffer, &gbuffersCmdBeginInfo));
+
+	{
+		VkImageMemoryBarrier barrier = {};
+		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+		barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.image = re->_albedoImage._image;
+		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		barrier.subresourceRange.baseMipLevel = 0;
+		barrier.subresourceRange.levelCount = 1;
+		barrier.subresourceRange.baseArrayLayer = 0;
+		barrier.subresourceRange.layerCount = 1;
+
+		barrier.srcAccessMask = 0;
+		barrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+
+		vkCmdPipelineBarrier(
+			_gbuffersCommandBuffer,
+			VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+			0,
+			0, nullptr,
+			0, nullptr,
+			1, &barrier
+		);
+	}
 
 	VkClearValue first_clearValue;
 	first_clearValue.color = { {0.2f, 0.2f, 0.2f, 1.0f} };
@@ -863,30 +855,32 @@ void Renderer::record_gbuffers_command_buffers(RenderObject* first, int count)
 
 	vkCmdEndRenderPass(_gbuffersCommandBuffer);
 
-	VkImageMemoryBarrier barrier = {};
-	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-	barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-	barrier.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	barrier.image = re->_depthImage._image;
-	barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
-	barrier.subresourceRange.baseMipLevel = 0;
-	barrier.subresourceRange.levelCount = 1;
-	barrier.subresourceRange.baseArrayLayer = 0;
-	barrier.subresourceRange.layerCount = 1;
+	{
+		VkImageMemoryBarrier barrier = {};
+		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+		barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		barrier.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.image = re->_depthImage._image;
+		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
+		barrier.subresourceRange.baseMipLevel = 0;
+		barrier.subresourceRange.levelCount = 1;
+		barrier.subresourceRange.baseArrayLayer = 0;
+		barrier.subresourceRange.layerCount = 1;
 
-	barrier.srcAccessMask = 0;
-	barrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+		barrier.srcAccessMask = 0;
+		barrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
 
-	vkCmdPipelineBarrier(
-		_gbuffersCommandBuffer,
-		VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-		0,
-		0, nullptr,
-		0, nullptr,
-		1, &barrier
-	);
+		vkCmdPipelineBarrier(
+			_gbuffersCommandBuffer,
+			VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+			0,
+			0, nullptr,
+			0, nullptr,
+			1, &barrier
+		);
+	}
 
 	VK_CHECK(vkEndCommandBuffer(_gbuffersCommandBuffer));
 }
@@ -900,6 +894,33 @@ void Renderer::record_rtShadows_command_buffer()
 	VkImageSubresourceRange subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
 
 	VK_CHECK(vkBeginCommandBuffer(cmd, &cmdBufInfo));
+
+	{
+		VkImageMemoryBarrier barrier = {};
+		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+		barrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+		barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.image = re->_deepShadowImage._image;
+		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		barrier.subresourceRange.baseMipLevel = 0;
+		barrier.subresourceRange.levelCount = 1;
+		barrier.subresourceRange.baseArrayLayer = 0;
+		barrier.subresourceRange.layerCount = 1;
+
+		barrier.srcAccessMask = 0;
+		barrier.dstAccessMask = VK_ACCESS_INPUT_ATTACHMENT_READ_BIT;
+
+		vkCmdPipelineBarrier(
+			cmd,
+			VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+			0,
+			0, nullptr,
+			0, nullptr,
+			1, &barrier
+		);
+	}
 
 	/*
 		Setup the buffer regions pointing to the shaders in our shader binding table
@@ -1490,7 +1511,7 @@ void Renderer::init_descriptors()
 void Renderer::update_descriptors(RenderObject* first, size_t count)
 {
 	_lightCamera->_position = currentScene->_lights[0]._model[3];
-	_lightCamera->_direction = glm::vec3(0) - _lightCamera->_position;
+	_lightCamera->_direction = currentScene->_lights[0]._targetPosition - _lightCamera->_position;
 
 	glm::mat4 projection = VulkanEngine::cinstance->camera->getProjection();
 
@@ -1549,10 +1570,11 @@ void Renderer::render_raytracing()
 {
 	VK_CHECK(vkWaitForFences(_device, 1, &_frames[get_current_frame_index()]._renderFence, true, UINT64_MAX));
 	VK_CHECK(vkResetFences(_device, 1, &_frames[get_current_frame_index()]._renderFence));
-
 	//request image from the swapchain
 	uint32_t swapchainImageIndex;
 	VK_CHECK(vkAcquireNextImageKHR(_device, re->_swapchain, 0, _frames[get_current_frame_index()]._presentSemaphore, nullptr, &swapchainImageIndex));
+
+	_totalTimer->reset_timer();
 
 	update_frame();
 	update_uniform_buffers();
@@ -1560,73 +1582,134 @@ void Renderer::render_raytracing()
 
 	VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
 	
-	std::cout << "\n\n[RENDER PASS]:\n" << std::endl;
+	//std::cout << "\n\n[RENDER PASS]:\n" << std::endl;
 
 	// DEEP SHADOW MAPS PASS
-	{
-		//Timer dsmCommandsGenerationTimer("Record deep shadow map command buffer");
-		record_deep_shadow_map_command_buffer(currentScene->_renderables.data(), currentScene->_renderables.size());
-	}
-
-	VkSubmitInfo submit_info_dsm_pass = vkinit::submit_info(&_dsmCommandBuffer);
-	submit_info_dsm_pass.pWaitDstStageMask = waitStages;
-	submit_info_dsm_pass.waitSemaphoreCount = 1;
-	submit_info_dsm_pass.pWaitSemaphores = &_frames[get_current_frame_index()]._presentSemaphore;
-	submit_info_dsm_pass.signalSemaphoreCount = 1;
-	submit_info_dsm_pass.pSignalSemaphores = &_dsmSemaphore;
-
-	VK_CHECK(vkQueueSubmit(_graphicsQueue, 1, &submit_info_dsm_pass, nullptr));
-
-	VK_CHECK(vkQueueWaitIdle(_graphicsQueue));
-
-	// SKYBOX PASS
-	VkSubmitInfo submit_info_skybox_pass = vkinit::submit_info(&_skyboxCommandBuffer);
-	submit_info_skybox_pass.pWaitDstStageMask = waitStages;
-	submit_info_skybox_pass.waitSemaphoreCount = 1;
-	submit_info_skybox_pass.pWaitSemaphores = &_dsmSemaphore;
-	submit_info_skybox_pass.signalSemaphoreCount = 1;
-	submit_info_skybox_pass.pSignalSemaphores = &_skyboxSemaphore;
-
-	{
-		Timer firstPassTimer("Deep shadow map pass");
-		VK_CHECK(vkQueueSubmit(_graphicsQueue, 1, &submit_info_skybox_pass, nullptr));
-
-		VK_CHECK(vkQueueWaitIdle(_graphicsQueue));
-	}
+	record_deep_shadow_map_command_buffer(currentScene->_renderables.data(), currentScene->_renderables.size());
 
 	// G-BUFFER PASS
+	record_gbuffers_command_buffers(currentScene->_renderables.data(), currentScene->_renderables.size());
+
+	bool usingPureRayTracing = _rtPushConstant.flags.x == 0;
+
 	{
-		//Timer gbuffersCommandsGenerationTimer("Record G-Buffers command buffer");
-		record_gbuffers_command_buffers(currentScene->_renderables.data(), currentScene->_renderables.size());
+		_preShadowTimer->reset_timer();
+
+		if (!usingPureRayTracing)
+		{
+			/*
+			// DEEP SHADOW MAPS PASS
+			{
+				//Timer dsmCommandsGenerationTimer("Record deep shadow map command buffer");
+				record_deep_shadow_map_command_buffer(currentScene->_renderables.data(), currentScene->_renderables.size());
+			}
+			*/
+			VkSubmitInfo submit_info_dsm_pass = vkinit::submit_info(&_dsmCommandBuffer);
+			submit_info_dsm_pass.pWaitDstStageMask = waitStages;
+			submit_info_dsm_pass.waitSemaphoreCount = 1;
+			submit_info_dsm_pass.pWaitSemaphores = &_frames[get_current_frame_index()]._presentSemaphore;
+			submit_info_dsm_pass.signalSemaphoreCount = 1;
+			submit_info_dsm_pass.pSignalSemaphores = &_dsmSemaphore;
+
+			_dsmTimer->reset_timer();
+			{
+				VK_CHECK(vkQueueSubmit(_graphicsQueue, 1, &submit_info_dsm_pass, nullptr));
+				if(_isUsingWaitIdle)
+				{
+					VK_CHECK(vkQueueWaitIdle(_graphicsQueue));
+				}
+			}
+			_dsmTimer->stop_timer();
+
+			if (_dsmTimer->timerCount == NUM_DEBUG_SAMPLES)
+			{
+				std::cout << "\n" << std::endl;
+				_dsmTimer->print_average_duration();
+			}
+		}
+
+		/*
+		// SKYBOX PASS
+		VkSubmitInfo submit_info_skybox_pass = vkinit::submit_info(&_skyboxCommandBuffer);
+		submit_info_skybox_pass.pWaitDstStageMask = waitStages;
+		submit_info_skybox_pass.waitSemaphoreCount = 1;
+		submit_info_skybox_pass.pWaitSemaphores = _rtPushConstant.flags.x != 0 ? &_dsmSemaphore : &_frames[get_current_frame_index()]._presentSemaphore;
+		submit_info_skybox_pass.signalSemaphoreCount = 1;
+		submit_info_skybox_pass.pSignalSemaphores = &_skyboxSemaphore;
+
+		{
+			Timer skyboxTimer("Skybox pass");
+			VK_CHECK(vkQueueSubmit(_graphicsQueue, 1, &submit_info_skybox_pass, nullptr));
+
+			VK_CHECK(vkQueueWaitIdle(_graphicsQueue));
+		}
+		*/
+
+		/*
+		// G-BUFFER PASS
+		{
+			record_gbuffers_command_buffers(currentScene->_renderables.data(), currentScene->_renderables.size());
+		}
+		*/
+
+		VkSubmitInfo submit_info_gbuffer_pass = vkinit::submit_info(&_gbuffersCommandBuffer);
+		submit_info_gbuffer_pass.pWaitDstStageMask = usingPureRayTracing ? waitStages : 0;
+		submit_info_gbuffer_pass.waitSemaphoreCount = usingPureRayTracing ? 1 : 0;
+		submit_info_gbuffer_pass.pWaitSemaphores = usingPureRayTracing ? &_frames[get_current_frame_index()]._presentSemaphore : nullptr;
+		submit_info_gbuffer_pass.signalSemaphoreCount = 1;
+		submit_info_gbuffer_pass.pSignalSemaphores = &_gbufferSemaphore;
+
+		{
+			VK_CHECK(vkQueueSubmit(_graphicsQueue, 1, &submit_info_gbuffer_pass, nullptr));
+
+			if(_isUsingWaitIdle)
+			{
+				VK_CHECK(vkQueueWaitIdle(_graphicsQueue));
+			}
+		}
+
+		_preShadowTimer->stop_timer();
+
+		if(_preShadowTimer->timerCount == NUM_DEBUG_SAMPLES)
+		{
+			_preShadowTimer->print_average_duration();
+		}
 	}
 
-	VkSubmitInfo submit_info_gbuffer_pass = vkinit::submit_info(&_gbuffersCommandBuffer);
-	submit_info_gbuffer_pass.pWaitDstStageMask = waitStages;
-	submit_info_gbuffer_pass.waitSemaphoreCount = 1;
-	submit_info_gbuffer_pass.pWaitSemaphores = &_skyboxSemaphore;
-	submit_info_gbuffer_pass.signalSemaphoreCount = 1;
-	submit_info_gbuffer_pass.pSignalSemaphores = &_gbufferSemaphore;
-
-	VK_CHECK(vkQueueSubmit(_graphicsQueue, 1, &submit_info_gbuffer_pass, nullptr));
-
-	VK_CHECK(vkQueueWaitIdle(_graphicsQueue));
-
+	
 	// RT SHADOWS & DENOISING PASS
 	{
 		//Timer rtShadowsCommandsGenerationTimer("Record Rt-Shadows command buffer");
 		record_rtShadows_command_buffer();
 	}
+	
+	std::array<VkSemaphore, 2> semaphores = { _dsmSemaphore, _gbufferSemaphore };
+	std::array<VkPipelineStageFlags, 2> stageFlags = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
 
 	VkSubmitInfo submit_info_rtShadows_pass = vkinit::submit_info(&_rtShadowsCommandBuffer);
-	submit_info_rtShadows_pass.pWaitDstStageMask = waitStages;
-	submit_info_rtShadows_pass.waitSemaphoreCount = 1;
-	submit_info_rtShadows_pass.pWaitSemaphores = &_gbufferSemaphore;
+	submit_info_rtShadows_pass.pWaitDstStageMask = usingPureRayTracing ? waitStages : stageFlags.data();
+	submit_info_rtShadows_pass.waitSemaphoreCount = usingPureRayTracing ? 1 : 2;
+	submit_info_rtShadows_pass.pWaitSemaphores = usingPureRayTracing ? &_gbufferSemaphore : semaphores.data();
 	submit_info_rtShadows_pass.signalSemaphoreCount = 1;
 	submit_info_rtShadows_pass.pSignalSemaphores = &_rtShadowsSemaphore;
 
-	VK_CHECK(vkQueueSubmit(_graphicsQueue, 1, &submit_info_rtShadows_pass, nullptr));
+	_shadowTimer->reset_timer();
+	{
+		//Timer RtShadowspass("Rt-Shadows pass");
+		VK_CHECK(vkQueueSubmit(_graphicsQueue, 1, &submit_info_rtShadows_pass, nullptr));
 
-	VK_CHECK(vkQueueWaitIdle(_graphicsQueue));
+		if(_isUsingWaitIdle)
+		{
+			VK_CHECK(vkQueueWaitIdle(_graphicsQueue));
+		}
+	}
+
+	_shadowTimer->stop_timer();
+
+	if (_shadowTimer->timerCount == NUM_DEBUG_SAMPLES)
+	{
+		_shadowTimer->print_average_duration();
+	}
 
 	// RT PASS
 	{
@@ -1644,9 +1727,15 @@ void Renderer::render_raytracing()
 	//submit_info_rtFinal_pass.pWaitSemaphores = &_gbufferSemaphore;
 	//submit_info_rtFinal_pass.pSignalSemaphores = &_rtFinalSemaphore;
 
-	VK_CHECK(vkQueueSubmit(_graphicsQueue, 1, &submit_info_rtFinal_pass, nullptr));
+	{
+		//Timer RtFinalPass("Rt-Final pass");
+		VK_CHECK(vkQueueSubmit(_graphicsQueue, 1, &submit_info_rtFinal_pass, nullptr));
 
-	VK_CHECK(vkQueueWaitIdle(_graphicsQueue));
+		if(_isUsingWaitIdle)
+		{
+			VK_CHECK(vkQueueWaitIdle(_graphicsQueue));
+		}
+	}
 
 	// POSTPROCESSING PASS
 	VkCommandBuffer cmd = _frames[get_current_frame_index()]._mainCommandBuffer;
@@ -1666,9 +1755,15 @@ void Renderer::render_raytracing()
 	pospo_submit_info.signalSemaphoreCount = 1;
 	pospo_submit_info.pSignalSemaphores = &_frames[get_current_frame_index()]._renderSemaphore;
 
-	VK_CHECK(vkQueueSubmit(_graphicsQueue, 1, &pospo_submit_info, _frames[get_current_frame_index()]._renderFence));
+	{
+		//Timer pospoTimer("Pospo pass");
+		VK_CHECK(vkQueueSubmit(_graphicsQueue, 1, &pospo_submit_info, _frames[get_current_frame_index()]._renderFence));
 
-	VK_CHECK(vkQueueWaitIdle(_graphicsQueue));
+		if(_isUsingWaitIdle)
+		{
+			VK_CHECK(vkQueueWaitIdle(_graphicsQueue));
+		}
+	}
 
 	VkPresentInfoKHR presentInfo = {};
 	presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
@@ -1685,6 +1780,15 @@ void Renderer::render_raytracing()
 	VK_CHECK(vkQueuePresentKHR(_graphicsQueue, &presentInfo));
 
 	_frameNumber++;
+
+	VK_CHECK(vkQueueWaitIdle(_graphicsQueue));
+	_totalTimer->stop_timer();
+
+	if (_totalTimer->timerCount == NUM_DEBUG_SAMPLES)
+	{
+		_totalTimer->print_average_duration();
+		std::cout << "\n" << std::endl;
+	}
 }
 
 FrameData& Renderer::get_current_frame()

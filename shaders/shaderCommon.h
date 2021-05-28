@@ -6,6 +6,14 @@
 
 #define PI 3.1415926535897932384626433832795
 
+// sample names
+const int MIN_SAMPLE = 0;
+const int SECOND_SAMPLE = 1;
+const int THIRD_SAMPLE = 2;
+const int MAX_SAMPLE = 3;
+
+const int NUM_SAMPLES = 4;
+
 // vec4 origin = 0 means it has ignored the hit
 struct RayPayload {
 	vec4 color_dist;
