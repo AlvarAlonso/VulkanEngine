@@ -25,7 +25,7 @@ layout(binding = 12, set = 0) uniform ShadowCamera
 } shadowCam;
 
 layout( push_constant ) uniform RtPushConstant {
-	vec4 frame_bias;
+	vec4 frame_bias; // x = frame number, y = shadow bias, z = visibility bias
 	ivec4 flags; // x = render mode (0 = full any-hit, 1 = shadow map, 2 = shadow map + any-hit)
 				 // y = kernel size
 } pushConstant;
@@ -36,8 +36,8 @@ layout(location = 1) rayPayloadEXT ShadowRayPayload shadowPrd;
 
 const uint MAX_RECURSION = 10;
 
-const float SHADOW_MAP_WIDTH = 512;
-const float SHADOW_MAP_HEIGHT = 512;
+const float SHADOW_MAP_WIDTH = 1024;
+const float SHADOW_MAP_HEIGHT = 1024;
 
 const uint MAX_UINT = 0xFFFFFFFF;
 const uint MAX_24UINT = 0x00FFFFFF;
@@ -118,8 +118,7 @@ void main()
 		
 		// Tracing shadow ray only if the light is visible from the surface
 		
-		//if(NdotL > 0.0)
-		if(true)
+		if(NdotL > 0.0)
 		{
 			if(pushConstant.flags.x != 0)
 			{
@@ -133,59 +132,6 @@ void main()
 
 				float real_depth = (proj_pos.z - pushConstant.frame_bias.y) / proj_pos.w;
 				real_depth = real_depth * 0.5 + 0.5;
-
-				// Shadow map
-				/*
-				if(pushConstant.flags.x == 1)
-				{
-					uint shadowi_depth = texture(deepShadowMap, shadow_uv).x;
-					double shadow_depth = double(shadowi_depth) / double(MAX_24UINT);
-
-					//float shadow_depth = float(texture(deepShadowMap, shadow_uv).x) / 4294967295;
-
-					if(float(shadow_depth) < real_depth)
-					{
-						shadowFactor = 0.0;
-					}
-
-					if((shadow_uv.x > 1.0 || shadow_uv.x < 0.0 || shadow_uv.y > 1.0 || shadow_uv.y < 0.0))
-					{
-						shadowFactor = 0.5;
-					}
-
-					imageStore(shadowTextures[0], ivec2(gl_LaunchIDEXT.xy), vec4(vec3(shadowFactor), 1.0));
-					return;
-				}
-				*/
-
-				// Shadow map with filter
-				/*
-				int shadowHits = 0;
-
-				for(int i = -KERNEL_SIZE; i <= KERNEL_SIZE; i++)
-				{
-					for(int j = -KERNEL_SIZE; j <= KERNEL_SIZE; j++)
-					{
-						vec2 current_shadow_uv = shadow_uv + vec2(float(i) / SHADOW_MAP_WIDTH, float(j) / SHADOW_MAP_HEIGHT);
-
-						float shadow_depth = texture(deepShadowMap, current_shadow_uv).x;
-						
-						if((float(shadow_depth) < real_depth) || (shadow_uv.x > 1.0 || shadow_uv.x < 0.0 || shadow_uv.y > 1.0 || shadow_uv.y < 0.0))
-						{
-							shadowHits++;
-						}
-					}
-				}
-
-				shadowFactor -= float(shadowHits) / pow(float(KERNEL_SIZE) * 2.0 + 1.0, 2.0);
-				shadowFactor = clamp(shadowFactor, 0.0, 1.0);
-				
-				if(shadowFactor == 0.0)
-				{
-					imageStore(shadowTextures[0], ivec2(gl_LaunchIDEXT.xy), vec4(vec3(shadowFactor), 1.0));
-					return;
-				}
-				*/
 				
 				if(shadow_uv.x > 1.0 || shadow_uv.x < 0.0 || shadow_uv.y > 1.0 || shadow_uv.y < 0.0)
 				{
@@ -198,19 +144,52 @@ void main()
 
 				if(pushConstant.flags.x == 1)
 				{
+
+					imageStore(shadowTextures[0], ivec2(gl_LaunchIDEXT.xy), vec4(vec3(visibility), 1.0));
+
+					/*
 					if(visibility > 0.95)
 					{
-						imageStore(shadowTextures[0], ivec2(gl_LaunchIDEXT.xy), vec4(vec3(1.0), 1.0));
+						imageStore(shadowTextures[0], ivec2(gl_LaunchIDEXT.xy), vec4(vec3(visibility), 1.0));
 					}
 					else
 					{
 						imageStore(shadowTextures[0], ivec2(gl_LaunchIDEXT.xy), vec4(vec3(0.0), 1.0));
 					}
-					//imageStore(shadowTextures[0], ivec2(gl_LaunchIDEXT.xy), vec4(vec3(visibility), 1.0));
+					*/
+
 					return;
 				}
 
 				if((visibility >= 0.0 && visibility <= 0.001) || (visibility <= 1.0 && visibility >= 0.999))
+				{
+					imageStore(shadowTextures[0], ivec2(gl_LaunchIDEXT.xy), vec4(vec3(visibility), 1.0));
+					return;
+				}
+
+				// kernel to compute variance around the pixel and decide if a ray must be cast or not
+				bool castRay = false;
+				for(int i = -KERNEL_SIZE; i <= KERNEL_SIZE; i++)
+				{
+					for(int j = -KERNEL_SIZE; j <= KERNEL_SIZE; j++)
+					{
+						vec2 current_shadow_uv = shadow_uv + vec2(float(i) / SHADOW_MAP_WIDTH, float(j) / SHADOW_MAP_HEIGHT);
+
+						float current_visibility = getVisibilitySample(real_depth, current_shadow_uv);
+
+						if(abs(visibility - current_visibility) > pushConstant.frame_bias.z)
+						{
+							castRay = true;
+						}
+					}
+
+					if(castRay)
+					{
+						break;
+					}
+				}
+
+				if(!castRay)
 				{
 					imageStore(shadowTextures[0], ivec2(gl_LaunchIDEXT.xy), vec4(vec3(visibility), 1.0));
 					return;
@@ -258,7 +237,6 @@ void main()
 				vec3  old_shadow = imageLoad(shadowTextures[i], reprojectedTexCoord).xyz;
 				vec3 shadow = vec3(0);
 
-				/*
 				if(pushConstant.frame_bias.x > 0)
 				{
 					imageStore(shadowTextures[i], ivec2(gl_LaunchIDEXT.xy), vec4(mix(old_shadow, shadow, a), 1.0f));
@@ -268,8 +246,7 @@ void main()
 					shadow = alpha * (shadow) + (1.0f - alpha) * old_shadow;
 					imageStore(shadowTextures[i], ivec2(gl_LaunchIDEXT.xy), vec4(shadow, 1.0));
 				}
-				*/
-				imageStore(shadowTextures[i], ivec2(gl_LaunchIDEXT.xy), vec4(shadow, 1.0));
+				
 				continue;
 			}
 			
@@ -284,13 +261,7 @@ void main()
 			vec3 shadow = vec3(shadowFactor);
 
 			ivec2 storePos = ivec2(gl_LaunchIDEXT.xy);
-			//ivec2 storePos = ivec2(0);
-			//storePos.x = int(gl_LaunchIDEXT.x + 5 - rnd(prd.seed) * 10);
-			//storePos.y = int(gl_LaunchIDEXT.y + 5 - rnd(prd.seed) * 10);
 
-			//shadow = alpha * (shadow) + (1.0f - alpha) * old_shadow;
-			//vec3 currentShadow = imageLoad(shadowTextures[i], storePos).xyz;
-			/*
 			if(pushConstant.frame_bias.x > 0)
 			{
 				imageStore(shadowTextures[i], storePos, vec4(mix(old_shadow, shadow, a), 1.0f));
@@ -300,15 +271,11 @@ void main()
 				shadow = alpha * (shadow) + (1.0f - alpha) * old_shadow;
 				imageStore(shadowTextures[i], storePos, vec4(shadow, 1.0));
 			}
-			*/
-			imageStore(shadowTextures[i], storePos, vec4(shadow, 1.0));
 		}
 		else
 		{
 			// No shadow, store white color
 			imageStore(shadowTextures[i], ivec2(gl_LaunchIDEXT.xy), vec4(1.0));
-		}
-		
-		//imageStore(shadowTextures[i], ivec2(gl_LaunchIDEXT.xy), vec4(1.0));
+		}		
 	}
 }

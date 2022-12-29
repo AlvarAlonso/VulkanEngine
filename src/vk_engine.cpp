@@ -210,6 +210,8 @@ void VulkanEngine::render_debug_GUI()
 
 	ImGui::SliderFloat("Shadow Bias", &renderer->_rtPushConstant.frame_bias.y, 0.0f, 5.0f, "%.4f", 2.0f);
 
+	ImGui::SliderFloat("Visibility Bias", &renderer->_rtPushConstant.frame_bias.z, 0.0f, 1.0f, "%.4f", 2.0f);
+
 	ImGui::SliderInt("Kernel Size", &renderer->_rtPushConstant.flags.y, 1, 10, "%d");
 
 	if (ImGui::Button("Use wait idle"))

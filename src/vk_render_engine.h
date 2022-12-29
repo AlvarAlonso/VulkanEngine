@@ -18,8 +18,8 @@ const int MAX_MATERIALS = 100;
 const int MAX_TEXTURES = 100;
 const int GBUFFER_NUM = 5;
 const float SHADOW_BIAS = 0.65f;
-const float SHADOW_MAP_WIDTH = 512.0f;
-const float SHADOW_MAP_HEIGHT = 512.0f;
+const float SHADOW_MAP_WIDTH = 1024.0f;
+const float SHADOW_MAP_HEIGHT = 1024.0f;
 
 struct RenderObject;
 class Scene;

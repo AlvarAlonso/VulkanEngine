@@ -46,15 +46,6 @@ uint subtractionClamp0(uint a, uint b)
 
 uint multiplyDecimalUint(uint a, uint b)
 {
-/*
-	float first = float(a) / MAX_8UINT;
-	float second = float(b) / MAX_8UINT;
-
-	float result = first * second;
-
-	return uint(result * MAX_8UINT);
-*/
-
 	if(a > b)
 	{
 		uint quocient = a / b;
@@ -76,7 +67,6 @@ uint computeVisibilitySample(uint depth, uint visibility)
 	return V;
 }
 
-//TODO: it must not subtract, it has to calculate it according to the percentage
 uint computeNewVisibility(uint V, uint visibilityToAdd)
 {
 	uint visibility = multiplyDecimalUint(V & 0x000000FF, visibilityToAdd);
