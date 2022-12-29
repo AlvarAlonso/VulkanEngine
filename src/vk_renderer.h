@@ -8,10 +8,13 @@ namespace VKE
 	struct MaterialToShader;
 }
 
+class Camera;
 struct RenderObject;
 struct SDL_Window;
 struct RenderEngine;
+struct Timer;
 
+const int NUM_DEBUG_SAMPLES = 1000;
 constexpr unsigned int FRAME_OVERLAP = 2;
 
 RenderMode operator++(RenderMode& m, int);
@@ -48,6 +51,15 @@ public:
 
 	void draw_scene();
 
+	void reset_timers_count();
+
+	// Button
+	bool _isUsingWaitIdle = false;
+
+	// Shader flags
+	FlagsPushConstant _shaderFlags;
+	RtPushConstant	  _rtPushConstant;
+
 	VKE::Mesh render_quad;
 
 	AllocatedBuffer _camBuffer; //cam parameters
@@ -59,28 +71,45 @@ public:
 	AllocatedBuffer _texturesBuffer;
 	AllocatedBuffer _textureIndicesBuffer;
 
+	Camera* _lightCamera;
+	AllocatedBuffer _lightCamBuffer;
+
 	std::vector<VKE::MaterialToShader> _materialInfos;
 
 	FrameData _frames[FRAME_OVERLAP];
+
+	glm::mat4 _lastFrame_viewProj;
 
 	//Commands
 	VkCommandPool _forwardCommandPool;
 	VkCommandPool _deferredCommandPool;
 
-	VkCommandBuffer _deferredCommandBuffer;
-	VkCommandBuffer _raytracingCommandBuffer;
-	VkSemaphore _offscreenSemaphore;
+	VkCommandBuffer _dsmCommandBuffer;
+	VkCommandBuffer _skyboxCommandBuffer;
+	VkCommandBuffer _gbuffersCommandBuffer;
+	VkCommandBuffer _rtShadowsCommandBuffer;
+	VkCommandBuffer _rtFinalCommandBuffer;
+	VkSemaphore		_dsmSemaphore;
+	VkSemaphore		_skyboxSemaphore;
+	VkSemaphore		_gbufferSemaphore;
+	VkSemaphore		_rtShadowsSemaphore;
+	VkSemaphore		_rtFinalSemaphore;
 
+	VkDescriptorSet _skyboxDescriptorSet;
 	VkDescriptorSet _camDescriptorSet;
 	VkDescriptorSet _objectDescriptorSet;
 	VkDescriptorSet _materialsDescriptorSet;
+	VkDescriptorSet _lightCamDescriptorSet;
+	VkDescriptorSet _deepShadowMapDescriptorSet;
 
-	GPUSceneData _sceneParameters;
+	GPUSceneData	_sceneParameters;
 	AllocatedBuffer _sceneParameterBuffer;
 
 	//RAY TRACING PIPELINE
 
-	VkDescriptorSet _rayTracingDescriptorSet;
+	VkDescriptorSet _rtFinalDescriptorSet;
+	VkDescriptorSet _rtShadowsDescriptorSet;
+	VkDescriptorSet	_denoiserDescriptorSet;
 	AllocatedBuffer _ubo;
 
 	struct UniformData {
@@ -105,6 +134,12 @@ private:
 	VkQueue _graphicsQueue;
 	uint32_t _graphicsQueueFamily;
 
+	//Timers
+	Timer* _preShadowTimer;
+	Timer* _dsmTimer;
+	Timer* _shadowTimer;
+	Timer* _totalTimer;
+
 	//INIT RENDER STRUCTURES AND PIPELINES
 
 	//Init ray tracing structures
@@ -118,11 +153,19 @@ private:
 
 	void create_uniform_buffer();
 
-	void update_uniform_buffers(RenderObject* first, size_t count);
+	void update_uniform_buffers();
 
 	void create_raytracing_descriptor_sets();
 
-	void record_raytracing_command_buffer();
+	void record_deep_shadow_map_command_buffer(RenderObject* first, int count);
+
+	void record_skybox_command_buffer();
+
+	void record_gbuffers_command_buffers(RenderObject* first, int count);
+
+	void record_rtShadows_command_buffer();
+
+	void record_rtFinal_command_buffer();
 
 	void record_pospo_command_buffer(VkCommandBuffer cmd, uint32_t swapchainImageIndex);
 
@@ -134,8 +177,6 @@ private:
 
 	void create_descriptor_buffers();
 
-	void record_deferred_command_buffers(RenderObject* first, int count);
-
 	void init_descriptors();
 
 	//update descriptors
@@ -144,20 +185,11 @@ private:
 
 	//draw functions
 
-	void render_deferred();
-
 	void render_raytracing();
-
-
-	void draw_deferred(VkCommandBuffer cmd, int imageIndex);		
 
 	FrameData& get_current_frame();
 
 	void reset_frame();
 
 	void update_frame();
-
-	void get_primitive_to_shader_info(const VKE::Node* parent, VKE::Node& node, const glm::mat4& model, std::vector<PrimitiveToShader>& primitivesInfo, std::vector<glm::mat4>& transforms, const int renderableIndex);
-
-	void get_nodes_transforms(const VKE::Node* parent, VKE::Node& node, const glm::mat4& model, std::vector<glm::mat4>& transforms);
 };

@@ -6,7 +6,7 @@
 #include "vk_renderer.h"
 #include "Camera.h"
 
-const glm::vec3 camera_default_position = { 0.0f, 2.0f, 10.0f };
+const glm::vec3 camera_default_position = { 0.0f, 10.0f, 40.0f };
 
 //constexpr unsigned int FRAME_OVERLAP = 2;
 
@@ -14,6 +14,7 @@ struct GPUCameraData {
 	glm::mat4 view;
 	glm::mat4 projection;
 	glm::mat4 viewproj;
+	glm::mat4 viewproj_lastFrame; // for spatio-temporal accumulation
 };
 
 class VulkanEngine {
@@ -29,6 +30,7 @@ public:
 	//Scene components
 
 	Scene* scene;
+	Entity* gizmoEntity;
 	
 	Camera* camera;
 	bool mouse_locked = true;
@@ -47,5 +49,7 @@ public:
 
 private:
 
-	void render_imgui();
+	void render_debug_GUI();
+
+	void render_debug_gizmo();
 };

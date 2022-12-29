@@ -190,6 +190,7 @@ VkPipelineMultisampleStateCreateInfo vkinit::multisampling_state_create_info()
 	info.alphaToOneEnable = VK_FALSE;
 	return info;
 }
+
 VkPipelineColorBlendAttachmentState vkinit::color_blend_attachment_state() {
 	VkPipelineColorBlendAttachmentState colorBlendAttachment = {};
 	colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
@@ -197,6 +198,7 @@ VkPipelineColorBlendAttachmentState vkinit::color_blend_attachment_state() {
 	colorBlendAttachment.blendEnable = VK_FALSE;
 	return colorBlendAttachment;
 }
+
 VkPipelineLayoutCreateInfo vkinit::pipeline_layout_create_info() {
 	VkPipelineLayoutCreateInfo info{};
 	info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;

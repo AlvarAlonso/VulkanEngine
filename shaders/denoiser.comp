@@ -1,23 +1,31 @@
 #version 460
+#extension GL_EXT_nonuniform_qualifier : enable
 
 layout(local_size_x = 16, local_size_y = 8, local_size_z = 1) in;
 
-layout(set = 0, binding = 0, rgba8) uniform image2D inputImage;
+layout(set = 0, binding = 0, rgba32f) uniform image2D shadowImages[];
+layout(set = 0, binding = 1, rgba32f) uniform image2D denoisedShadowImages[];
+
+const int MAX_LIGHTS = 5;
 
 void main()
 {
-  // The resolution of the image:
-  const ivec2 resolution = imageSize(inputImage);
+	// The resolution of the image:
+	const ivec2 resolution = imageSize(shadowImages[0]);
 
-  const ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+	const ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
 
-  // If the pixel is outside of the image, don't do anything:
-  if((pixel.x >= resolution.x) || (pixel.y >= resolution.y))
-  {
-    return;
-  }
+	// If the pixel is outside of the image, don't do anything:
+	if((pixel.x >= resolution.x) || (pixel.y >= resolution.y))
+	{
+	return;
+	}
 
-  vec4 finalColor = imageLoad(inputImage, pixel);
-  imageStore(inputImage, pixel, finalColor);
-  // TODO: Blur for shadows
+	// TODO: Filter for shadows
+  
+	for(int i = 0; i < MAX_LIGHTS; i++)
+	{
+		vec3 shadowColor = imageLoad(shadowImages[i], pixel).xyz;
+		imageStore(denoisedShadowImages[i], pixel, vec4(shadowColor, 1.0));
+	}
 }

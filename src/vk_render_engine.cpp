@@ -1,9 +1,9 @@
 #include <SDL.h>
 #include <SDL_vulkan.h>
 
-#include <imgui.h>
-#include <imgui_impl_sdl.h>
-#include <imgui_impl_vulkan.h>
+#include <extra/imgui/imgui.h>
+#include <extra/imgui/imgui_impl_sdl.h>
+#include <extra/imgui/imgui_impl_vulkan.h>
 
 #include "vk_initializers.h"
 #include "vk_utils.h"
@@ -85,6 +85,18 @@ void RenderEngine::init()
 
 	vkCreateDescriptorSetLayout(_device, &set3Info, nullptr, &_singleTextureSetLayout);
 
+	// Storage Texture Set Layout
+	VkDescriptorSetLayoutBinding storageBind = vkinit::descriptorset_layout_binding(VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_FRAGMENT_BIT, 0);
+
+	VkDescriptorSetLayoutCreateInfo storageLayoutInfo{};
+	storageLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	storageLayoutInfo.pNext = nullptr;
+	storageLayoutInfo.bindingCount = 1;
+	storageLayoutInfo.flags = 0;
+	storageLayoutInfo.pBindings = &storageBind;
+
+	vkCreateDescriptorSetLayout(_device, &storageLayoutInfo, nullptr, &_storageTextureSetLayout);
+
 	init_raster_structures();
 	init_raytracing_structures();
 
@@ -117,10 +129,14 @@ void RenderEngine::init_vulkan()
 	//use vkbootstrap to select a gpu
 	//We want a gpu that can write to the SDL surface and supports Vulkan 1.1
 	vkb::PhysicalDeviceSelector selector{ vkb_inst };
+	VkPhysicalDeviceFeatures required_device_features{};
+	required_device_features.fragmentStoresAndAtomics = VK_TRUE;
+	required_device_features.shaderFloat64 = VK_TRUE;
 	vkb::PhysicalDevice physicalDevice = selector
 		.set_minimum_version(1, 1)
 		.set_surface(_surface)
 		.add_required_extensions(required_device_extensions)
+		.set_required_features(required_device_features)
 		.select()
 		.value();
 
@@ -251,7 +267,21 @@ void RenderEngine::init_descriptor_set_layouts()
 	setInfo.flags = 0;
 	setInfo.pBindings = bindings.data();
 
-	vkCreateDescriptorSetLayout(_device, &setInfo, nullptr, &_globalSetLayout);
+	VK_CHECK(vkCreateDescriptorSetLayout(_device, &setInfo, nullptr, &_globalSetLayout));
+
+	VkDescriptorSetLayoutBinding cubeMapBind = vkinit::descriptorset_layout_binding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1);
+
+	std::array<VkDescriptorSetLayoutBinding, 2> skyboxBindings = { cameraBind, cubeMapBind };
+
+	VkDescriptorSetLayoutCreateInfo skyboxSetInfo = {};
+	skyboxSetInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	skyboxSetInfo.pNext = nullptr;
+	skyboxSetInfo.bindingCount = static_cast<uint32_t>(skyboxBindings.size());
+	skyboxSetInfo.flags = 0;
+	skyboxSetInfo.pBindings = skyboxBindings.data();
+
+	VK_CHECK(vkCreateDescriptorSetLayout(_device, &skyboxSetInfo, nullptr, &_skyboxSetLayout));
+
 
 	VkDescriptorSetLayoutCreateInfo camSetInfo = {};
 	camSetInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -261,7 +291,7 @@ void RenderEngine::init_descriptor_set_layouts()
 	camSetInfo.flags = 0;
 	camSetInfo.pBindings = &cameraBind;
 
-	vkCreateDescriptorSetLayout(_device, &camSetInfo, nullptr, &_camSetLayout);
+	VK_CHECK(vkCreateDescriptorSetLayout(_device, &camSetInfo, nullptr, &_camSetLayout));
 
 	VkDescriptorSetLayoutBinding objectBind = vkinit::descriptorset_layout_binding(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, 0);
 
@@ -272,7 +302,7 @@ void RenderEngine::init_descriptor_set_layouts()
 	set2Info.flags = 0;
 	set2Info.pBindings = &objectBind;
 
-	vkCreateDescriptorSetLayout(_device, &set2Info, nullptr, &_objectSetLayout);
+	VK_CHECK(vkCreateDescriptorSetLayout(_device, &set2Info, nullptr, &_objectSetLayout));
 
 	VkDescriptorSetLayoutBinding materialsBind = vkinit::descriptorset_layout_binding(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT, 0);
 	VkDescriptorSetLayoutBinding matTexturesBind = vkinit::descriptorset_layout_binding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1);
@@ -287,41 +317,17 @@ void RenderEngine::init_descriptor_set_layouts()
 	materialsSetInfo.flags = 0;
 	materialsSetInfo.pBindings = matBindings.data();
 
-	vkCreateDescriptorSetLayout(_device, &materialsSetInfo, nullptr, &_materialsSetLayout);
+	VK_CHECK(vkCreateDescriptorSetLayout(_device, &materialsSetInfo, nullptr, &_materialsSetLayout));
 }
 
 void RenderEngine::init_raster_structures()
 {
 	init_descriptor_set_pool();
-	init_depth_buffer();
 	init_deferred_attachments();
+	create_deep_shadow_images(1); // TODO
 	init_render_passes();
 	init_framebuffers();
-	init_gbuffer_descriptors();
-	
-}
-
-void RenderEngine::init_depth_buffer()
-{
-	VkExtent3D depthImageExtent = {
-		_windowExtent.width,
-		_windowExtent.height,
-		1
-	};
-
-	_depthImage._format = VK_FORMAT_D32_SFLOAT;
-
-	VkImageCreateInfo dimg_info = vkinit::image_create_info(_depthImage._format, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, depthImageExtent);
-
-	VmaAllocationCreateInfo dimg_allocinfo = {};
-	dimg_allocinfo.usage = VMA_MEMORY_USAGE_GPU_ONLY;
-	dimg_allocinfo.requiredFlags = VkMemoryPropertyFlagBits(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
-	vmaCreateImage(_allocator, &dimg_info, &dimg_allocinfo, &_depthImage._image, &_depthImage._allocation, nullptr);
-
-	VkImageViewCreateInfo dview_info = vkinit::imageview_create_info(_depthImage._format, _depthImage._image, VK_IMAGE_ASPECT_DEPTH_BIT);
-
-	VK_CHECK(vkCreateImageView(_device, &dview_info, nullptr, &_depthImage._view));
+	init_gbuffer_descriptors();	
 }
 
 void RenderEngine::init_deferred_attachments()
@@ -332,13 +338,23 @@ void RenderEngine::init_deferred_attachments()
 		1
 	};
 
+	_positionImage._extent = attachmentExtent;
+	_normalImage._extent = attachmentExtent;
+	_albedoImage._extent = attachmentExtent;
+	_motionVectorImage._extent = attachmentExtent;
+	_depthImage._extent = attachmentExtent;
+
 	_positionImage._format = VK_FORMAT_R16G16B16A16_SFLOAT;
 	_normalImage._format = VK_FORMAT_R16G16B16A16_SFLOAT;
 	_albedoImage._format = VK_FORMAT_R8G8B8A8_UNORM;
+	_motionVectorImage._format = VK_FORMAT_R16G16B16A16_SFLOAT;
+	_depthImage._format = VK_FORMAT_D24_UNORM_S8_UINT;
 
 	VkImageCreateInfo position_igm = vkinit::image_create_info(_positionImage._format, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, attachmentExtent);
 	VkImageCreateInfo normal_igm = vkinit::image_create_info(_normalImage._format, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, attachmentExtent);
 	VkImageCreateInfo albedo_igm = vkinit::image_create_info(_albedoImage._format, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, attachmentExtent);
+	VkImageCreateInfo motion_igm = vkinit::image_create_info(_motionVectorImage._format, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, attachmentExtent);
+	VkImageCreateInfo depth_igm = vkinit::image_create_info(_depthImage._format, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, attachmentExtent);
 
 	VmaAllocationCreateInfo img_alloc_info = {};
 	img_alloc_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
@@ -347,14 +363,20 @@ void RenderEngine::init_deferred_attachments()
 	vmaCreateImage(_allocator, &position_igm, &img_alloc_info, &_positionImage._image, &_positionImage._allocation, nullptr);
 	vmaCreateImage(_allocator, &normal_igm, &img_alloc_info, &_normalImage._image, &_normalImage._allocation, nullptr);
 	vmaCreateImage(_allocator, &albedo_igm, &img_alloc_info, &_albedoImage._image, &_albedoImage._allocation, nullptr);
+	vmaCreateImage(_allocator, &motion_igm, &img_alloc_info, &_motionVectorImage._image, &_motionVectorImage._allocation, nullptr);
+	vmaCreateImage(_allocator, &depth_igm, &img_alloc_info, &_depthImage._image, &_depthImage._allocation, nullptr);
 
-	VkImageViewCreateInfo position_view_igm = vkinit::imageview_create_info(VK_FORMAT_R16G16B16A16_SFLOAT, _positionImage._image, VK_IMAGE_ASPECT_COLOR_BIT);
-	VkImageViewCreateInfo normal_view_igm = vkinit::imageview_create_info(VK_FORMAT_R16G16B16A16_SFLOAT, _normalImage._image, VK_IMAGE_ASPECT_COLOR_BIT);
-	VkImageViewCreateInfo albedo_view_igm = vkinit::imageview_create_info(VK_FORMAT_R8G8B8A8_UNORM, _albedoImage._image, VK_IMAGE_ASPECT_COLOR_BIT);
+	VkImageViewCreateInfo position_view_igm = vkinit::imageview_create_info(_positionImage._format, _positionImage._image, VK_IMAGE_ASPECT_COLOR_BIT);
+	VkImageViewCreateInfo normal_view_igm = vkinit::imageview_create_info(_normalImage._format, _normalImage._image, VK_IMAGE_ASPECT_COLOR_BIT);
+	VkImageViewCreateInfo albedo_view_igm = vkinit::imageview_create_info(_albedoImage._format, _albedoImage._image, VK_IMAGE_ASPECT_COLOR_BIT);
+	VkImageViewCreateInfo motion_view_igm = vkinit::imageview_create_info(_motionVectorImage._format, _motionVectorImage._image, VK_IMAGE_ASPECT_COLOR_BIT);
+	VkImageViewCreateInfo depth_view_igm = vkinit::imageview_create_info(_depthImage._format, _depthImage._image, VK_IMAGE_ASPECT_DEPTH_BIT);
 
 	VK_CHECK(vkCreateImageView(_device, &position_view_igm, nullptr, &_positionImage._view));
 	VK_CHECK(vkCreateImageView(_device, &normal_view_igm, nullptr, &_normalImage._view));
 	VK_CHECK(vkCreateImageView(_device, &albedo_view_igm, nullptr, &_albedoImage._view));
+	VK_CHECK(vkCreateImageView(_device, &motion_view_igm, nullptr, &_motionVectorImage._view));
+	VK_CHECK(vkCreateImageView(_device, &depth_view_igm, nullptr, &_depthImage._view));
 
 	_mainDeletionQueue.push_function([=]() {
 		vkDestroyImageView(_device, _positionImage._view, nullptr);
@@ -363,67 +385,113 @@ void RenderEngine::init_deferred_attachments()
 		vmaDestroyImage(_allocator, _normalImage._image, _normalImage._allocation);
 		vkDestroyImageView(_device, _albedoImage._view, nullptr);
 		vmaDestroyImage(_allocator, _albedoImage._image, _albedoImage._allocation);
+		vkDestroyImageView(_device, _motionVectorImage._view, nullptr);
+		vmaDestroyImage(_allocator, _motionVectorImage._image, _motionVectorImage._allocation);
+		vkDestroyImageView(_device, _depthImage._view, nullptr);
+		vmaDestroyImage(_allocator, _depthImage._image, _depthImage._allocation);
 		});
 }
 
 void RenderEngine::init_render_passes()
 {
+	// single attachment pass
 	{
-		//DEFAULT RENDER PASS
+		VkAttachmentDescription depth_attachment = {};
+		depth_attachment.format = _depthImage._format;
+		depth_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
+		depth_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+		depth_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+		depth_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		depth_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		depth_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		depth_attachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+		VkAttachmentReference depth_ref;
+		depth_ref.attachment = 0;
+		depth_ref.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+		VkSubpassDescription subpass = {};
+		subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+		subpass.colorAttachmentCount = 0;
+		subpass.pColorAttachments = nullptr;
+		subpass.pDepthStencilAttachment = &depth_ref;
+
+		VkRenderPassCreateInfo single_attachment_pass = {};
+		single_attachment_pass.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+		single_attachment_pass.pNext = nullptr;
+		single_attachment_pass.attachmentCount = 1;
+		single_attachment_pass.pAttachments = &depth_attachment;
+		single_attachment_pass.subpassCount = 1;
+		single_attachment_pass.pSubpasses = &subpass;
+		single_attachment_pass.dependencyCount = 0;
+		single_attachment_pass.pDependencies = nullptr;
+
+		VK_CHECK(vkCreateRenderPass(_device, &single_attachment_pass, nullptr, &_singleAttachmentRenderPass));
+
+		_mainDeletionQueue.push_function([=]() {
+			vkDestroyRenderPass(_device, _singleAttachmentRenderPass, nullptr);
+			});
+	}
+
+	// skybox pass
+	{
 		VkAttachmentDescription color_attachment = {};
-		color_attachment.format = _swapchainImageFormat;
+		color_attachment.format = _albedoImage._format;
 		color_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
 		color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
 		color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 		color_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 		color_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 		color_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		color_attachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+		color_attachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-		VkAttachmentReference color_attachment_ref = {};
-		color_attachment_ref.attachment = 0;
-		color_attachment_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-		VkAttachmentDescription depth_attachment = {};
-		depth_attachment.flags = 0;
-		depth_attachment.format = _depthImage._format;
-		depth_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
-		depth_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-		depth_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-		depth_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-		depth_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		depth_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		depth_attachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-		VkAttachmentReference depth_attachment_ref = {};
-		depth_attachment_ref.attachment = 1;
-		depth_attachment_ref.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+		VkAttachmentReference color_reference;
+		color_reference.attachment = 0;
+		color_reference.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
 		VkSubpassDescription subpass = {};
 		subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
 		subpass.colorAttachmentCount = 1;
-		subpass.pColorAttachments = &color_attachment_ref;
-		subpass.pDepthStencilAttachment = &depth_attachment_ref;
+		subpass.pColorAttachments = &color_reference;
+		subpass.pDepthStencilAttachment = nullptr;
 
-		VkAttachmentDescription attachments[2] = { color_attachment, depth_attachment };
+		std::array<VkSubpassDependency, 2> dependencies;
 
-		VkRenderPassCreateInfo render_pass_info = {};
-		render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-		render_pass_info.attachmentCount = 2;
-		render_pass_info.pAttachments = &attachments[0];
-		render_pass_info.subpassCount = 1;
-		render_pass_info.pSubpasses = &subpass;
+		dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
+		dependencies[0].dstSubpass = 0;
+		dependencies[0].srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+		dependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		dependencies[0].srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+		dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		dependencies[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
-		VK_CHECK(vkCreateRenderPass(_device, &render_pass_info, nullptr, &_defaultRenderPass));
+		dependencies[1].srcSubpass = 0;
+		dependencies[1].dstSubpass = VK_SUBPASS_EXTERNAL;
+		dependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		dependencies[1].dstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+		dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+		dependencies[1].dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
+		dependencies[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+		VkRenderPassCreateInfo skybox_pass = {};
+		skybox_pass.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+		skybox_pass.pNext = nullptr;
+		skybox_pass.attachmentCount = 1;
+		skybox_pass.pAttachments = &color_attachment;
+		skybox_pass.subpassCount = 1;
+		skybox_pass.pSubpasses = &subpass;
+		skybox_pass.dependencyCount = static_cast<uint32_t>(dependencies.size());
+		skybox_pass.pDependencies = dependencies.data();
+
+		VK_CHECK(vkCreateRenderPass(_device, &skybox_pass, nullptr, &_skyboxRenderPass));
 
 		_mainDeletionQueue.push_function([=]() {
-			vkDestroyRenderPass(_device, _defaultRenderPass, nullptr);
-			});
+			vkDestroyRenderPass(_device, _skyboxRenderPass, nullptr);
+		});
 	}
 
+	// G-Buffers Pass
 	{
-		//DEFERRED RENDER PASS
-		//gBuffers Pass
 		VkAttachmentDescription position_attachment = {};
 		position_attachment.format = _positionImage._format;
 		position_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -443,16 +511,26 @@ void RenderEngine::init_render_passes()
 		normal_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 		normal_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 		normal_attachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
+		
 		VkAttachmentDescription albedo_attachment = {};
 		albedo_attachment.format = _albedoImage._format;
 		albedo_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
-		albedo_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+		albedo_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
 		albedo_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 		albedo_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 		albedo_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		albedo_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		albedo_attachment.initialLayout = VK_IMAGE_LAYOUT_GENERAL;
 		albedo_attachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+		VkAttachmentDescription motion_attachment = {};
+		motion_attachment.format = _motionVectorImage._format;
+		motion_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
+		motion_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		motion_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+		motion_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		motion_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		motion_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		motion_attachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
 		VkAttachmentDescription depth_attachment = {};
 		depth_attachment.format = _depthImage._format;
@@ -464,7 +542,14 @@ void RenderEngine::init_render_passes()
 		depth_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 		depth_attachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
-		std::array<VkAttachmentDescription, 4> attachment_descriptions = { position_attachment, normal_attachment, albedo_attachment, depth_attachment };
+		std::array<VkAttachmentDescription, 5> attachment_descriptions =
+		{
+			position_attachment,
+			normal_attachment,
+			albedo_attachment,
+			motion_attachment,
+			depth_attachment
+		};
 
 		VkAttachmentReference position_ref;
 		position_ref.attachment = 0;
@@ -478,10 +563,14 @@ void RenderEngine::init_render_passes()
 		albedo_ref.attachment = 2;
 		albedo_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-		std::array<VkAttachmentReference, 3> color_references = { position_ref, normal_ref, albedo_ref };
+		VkAttachmentReference motion_ref;
+		motion_ref.attachment = 3;
+		motion_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+		std::array<VkAttachmentReference, 4> color_references = { position_ref, normal_ref, albedo_ref, motion_ref };
 
 		VkAttachmentReference depth_ref;
-		depth_ref.attachment = 3;
+		depth_ref.attachment = 4;
 		depth_ref.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
 		VkSubpassDescription subpass = {};
@@ -508,81 +597,271 @@ void RenderEngine::init_render_passes()
 		dependencies[1].dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
 		dependencies[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
-		VkRenderPassCreateInfo deferred_pass = {};
-		deferred_pass.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-		deferred_pass.pNext = nullptr;
-		deferred_pass.attachmentCount = static_cast<uint32_t>(attachment_descriptions.size());
-		deferred_pass.pAttachments = attachment_descriptions.data();
-		deferred_pass.subpassCount = 1;
-		deferred_pass.pSubpasses = &subpass;
-		deferred_pass.dependencyCount = static_cast<uint32_t>(dependencies.size());
-		deferred_pass.pDependencies = dependencies.data();
+		VkRenderPassCreateInfo gbuffers_pass = {};
+		gbuffers_pass.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+		gbuffers_pass.pNext = nullptr;
+		gbuffers_pass.attachmentCount = static_cast<uint32_t>(attachment_descriptions.size());
+		gbuffers_pass.pAttachments = attachment_descriptions.data();
+		gbuffers_pass.subpassCount = 1;
+		gbuffers_pass.pSubpasses = &subpass;
+		gbuffers_pass.dependencyCount = static_cast<uint32_t>(dependencies.size());
+		gbuffers_pass.pDependencies = dependencies.data();
 
-		VK_CHECK(vkCreateRenderPass(_device, &deferred_pass, nullptr, &_deferredRenderPass));
+		VK_CHECK(vkCreateRenderPass(_device, &gbuffers_pass, nullptr, &_gbuffersRenderPass));
 
 		_mainDeletionQueue.push_function([=]() {
-			vkDestroyRenderPass(_device, _deferredRenderPass, nullptr);
-			});
+			vkDestroyRenderPass(_device, _gbuffersRenderPass, nullptr);
+		});
 	}
 }
 
 void RenderEngine::init_framebuffers()
 {
-	//OFFSCREEN FRAMEBUFFER
-	std::array<VkImageView, 4> attachments;
-	attachments[0] = _positionImage._view;
-	attachments[1] = _normalImage._view;
-	attachments[2] = _albedoImage._view;
-	attachments[3] = _depthImage._view;
-
-	VkFramebufferCreateInfo fb_info = {};
-	fb_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-	fb_info.pNext = nullptr;
-	fb_info.renderPass = _deferredRenderPass;
-	fb_info.attachmentCount = static_cast<uint32_t>(attachments.size());
-	fb_info.pAttachments = attachments.data();
-	fb_info.width = _windowExtent.width;
-	fb_info.height = _windowExtent.height;
-	fb_info.layers = 1;
-
-	VK_CHECK(vkCreateFramebuffer(_device, &fb_info, nullptr, &_offscreen_framebuffer));
-
-	//SWAPCHAIN FRAMEBUFFERS
-
-	VkFramebufferCreateInfo sc_fb_info = {};
-	sc_fb_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-	sc_fb_info.pNext = nullptr;
-
-	sc_fb_info.renderPass = _defaultRenderPass;
-	sc_fb_info.attachmentCount = 1;
-	sc_fb_info.width = _windowExtent.width;
-	sc_fb_info.height = _windowExtent.height;
-	sc_fb_info.layers = 1;
-
-	const uint32_t swapchain_imagecount = _swapchainImages.size();
-	_framebuffers = std::vector<VkFramebuffer>(swapchain_imagecount);
-
-	for (int i = 0; i < swapchain_imagecount; i++)
+	// Deep shadow map buffer
 	{
-		std::array<VkImageView, 2> attachments = { _swapchainImageViews[i], _depthImage._view };
+		VkFramebufferCreateInfo fb_info = {};
+		fb_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+		fb_info.pNext = nullptr;
+		fb_info.renderPass = _singleAttachmentRenderPass;
+		fb_info.attachmentCount = 1;
+		fb_info.pAttachments = &_directionalLightDepthBuffer._view;
+		fb_info.width = SHADOW_MAP_WIDTH;
+		fb_info.height = SHADOW_MAP_HEIGHT;
+		fb_info.layers = 1;
 
-		sc_fb_info.attachmentCount = static_cast<uint32_t>(attachments.size());
-		sc_fb_info.pAttachments = attachments.data();
-
-		VK_CHECK(vkCreateFramebuffer(_device, &sc_fb_info, nullptr, &_framebuffers[i]));
+		VK_CHECK(vkCreateFramebuffer(_device, &fb_info, nullptr, &_dsm_framebuffer));
 
 		_mainDeletionQueue.push_function([=]() {
-			vkDestroyFramebuffer(_device, _framebuffers[i], nullptr);
-			vkDestroyImageView(_device, _swapchainImageViews[i], nullptr);
+			vkDestroyFramebuffer(_device, _dsm_framebuffer, nullptr);
 			});
+	}
+
+	// Skybox buffer
+	{
+		VkFramebufferCreateInfo fb_info = {};
+		fb_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+		fb_info.pNext = nullptr;
+		fb_info.renderPass = _skyboxRenderPass;
+		fb_info.attachmentCount = 1;
+		fb_info.pAttachments = &_albedoImage._view;
+		fb_info.width = _windowExtent.width;
+		fb_info.height = _windowExtent.height;
+		fb_info.layers = 1;
+
+		VK_CHECK(vkCreateFramebuffer(_device, &fb_info, nullptr, &_skybox_framebuffer));
+
+		_mainDeletionQueue.push_function([=]() {
+			vkDestroyFramebuffer(_device, _skybox_framebuffer, nullptr);
+		});
+	}
+
+	// Offscreen buffer
+	{
+		std::array<VkImageView, 5> attachments;
+		attachments[0] = _positionImage._view;
+		attachments[1] = _normalImage._view;
+		attachments[2] = _albedoImage._view;
+		attachments[3] = _motionVectorImage._view;
+		attachments[4] = _depthImage._view;
+
+		VkFramebufferCreateInfo fb_info = {};
+		fb_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+		fb_info.pNext = nullptr;
+		fb_info.renderPass = _gbuffersRenderPass;
+		fb_info.attachmentCount = static_cast<uint32_t>(attachments.size());
+		fb_info.pAttachments = attachments.data();
+		fb_info.width = _windowExtent.width;
+		fb_info.height = _windowExtent.height;
+		fb_info.layers = 1;
+
+		VK_CHECK(vkCreateFramebuffer(_device, &fb_info, nullptr, &_offscreen_framebuffer));
+
+		_mainDeletionQueue.push_function([=]() {
+			vkDestroyFramebuffer(_device, _offscreen_framebuffer, nullptr);
+		});
 	}
 }
 
 void RenderEngine::init_pipelines()
 {
-	//DEFERRED PIPELINES
+	// RASTER PIPELINES
+
+	PipelineBuilder pipelineBuilder;
+
+	// Vertex description
+	pipelineBuilder._vertexInputInfo = vkinit::vertex_input_state_create_info();
+
+	// Input assembly
+	pipelineBuilder._inputAssembly = vkinit::input_assembly_create_info(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
+
+	// Viewport and Scissor
+	pipelineBuilder._viewport.x = 0.0f;
+	pipelineBuilder._viewport.y = 0.0f;
+	pipelineBuilder._viewport.width = (float)_windowExtent.width;
+	pipelineBuilder._viewport.height = (float)_windowExtent.height;
+	pipelineBuilder._viewport.minDepth = 0.0f;
+	pipelineBuilder._viewport.maxDepth = 1.0f;
+
+	pipelineBuilder._scissor.offset = { 0, 0 };
+	pipelineBuilder._scissor.extent = _windowExtent;
+
+	// Rasterizer
+	pipelineBuilder._rasterizer = vkinit::rasterization_state_create_info(VK_POLYGON_MODE_FILL);
+	// Multisampling
+	pipelineBuilder._multisampling = vkinit::multisampling_state_create_info();
+
+	// Flat geometry pipeline
 	{
-		//SHADERS LOADING
+		// Shaders loading
+		VkShaderModule flatVertex;
+		if (!vkutil::load_shader_module(_device, "../shaders/flat.vert.spv", &flatVertex))
+		{
+			std::cout << "Error when building the flat vertex shader" << std::endl;
+		}
+		else
+		{
+			std::cout << "Flat vertex shader succesfully loaded" << endl;
+		}
+
+		VkShaderModule flatFrag;
+		if (!vkutil::load_shader_module(_device, "../shaders/flat.frag.spv", &flatFrag))
+		{
+			std::cout << "Error when building the flat frag shader" << std::endl;
+		}
+		else
+		{
+			std::cout << "Flat vertex shader succesfully loaded" << endl;
+		}
+		
+		VkPipelineLayoutCreateInfo layoutInfo = vkinit::pipeline_layout_create_info();
+
+		std::array<VkDescriptorSetLayout, 3> dsmSetLayouts = { _camSetLayout, _materialsSetLayout, _storageTextureSetLayout };
+
+		VkPushConstantRange pushConstant = {};
+		pushConstant.offset = 0;
+		pushConstant.size = sizeof(GPUObjectData);
+		pushConstant.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+
+		std::vector<VkPushConstantRange> pushConstants = { pushConstant };
+
+		layoutInfo.pushConstantRangeCount = static_cast<uint32_t>(pushConstants.size());
+		layoutInfo.pPushConstantRanges = pushConstants.data();
+		layoutInfo.setLayoutCount = static_cast<uint32_t>(dsmSetLayouts.size());
+		layoutInfo.pSetLayouts = dsmSetLayouts.data();
+
+		VK_CHECK(vkCreatePipelineLayout(_device, &layoutInfo, nullptr, &_dsmPipelineLayout));
+
+		// Vertices description
+		VertexInputDescription vertexDescription = Vertex::get_vertex_description();
+		pipelineBuilder._vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertexDescription.attributes.size());
+		pipelineBuilder._vertexInputInfo.pVertexAttributeDescriptions = vertexDescription.attributes.data();
+		pipelineBuilder._vertexInputInfo.vertexBindingDescriptionCount = static_cast<uint32_t>(vertexDescription.bindings.size());
+		pipelineBuilder._vertexInputInfo.pVertexBindingDescriptions = vertexDescription.bindings.data();
+
+		// Depth-stencil
+		pipelineBuilder._depthStencil = vkinit::depth_stencil_create_info(false, false, VK_COMPARE_OP_NEVER);
+
+		// Deferred Color Blend Attachment
+		pipelineBuilder._colorBlendAttachment.clear();
+		pipelineBuilder._colorBlendAttachment.push_back(vkinit::color_blend_attachment_state());
+
+		// Viewport
+		pipelineBuilder._viewport.width = SHADOW_MAP_WIDTH;
+		pipelineBuilder._viewport.height = SHADOW_MAP_HEIGHT;
+
+		//Deferred Shaders
+		pipelineBuilder._shaderStages.clear();
+		pipelineBuilder._shaderStages.push_back(
+			vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT, flatVertex));
+		pipelineBuilder._shaderStages.push_back(
+			vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, flatFrag));
+
+		//Deferred Layout
+		pipelineBuilder._pipelineLayout = _dsmPipelineLayout;
+
+		_dsmPipeline = pipelineBuilder.build_pipeline(_device, _singleAttachmentRenderPass);
+
+		//DELETIONS
+		vkDestroyShaderModule(_device, flatFrag, nullptr);
+		vkDestroyShaderModule(_device, flatVertex, nullptr);
+
+		_mainDeletionQueue.push_function([=]() {
+			vkDestroyPipeline(_device, _dsmPipeline, nullptr);
+			vkDestroyPipelineLayout(_device, _dsmPipelineLayout, nullptr);
+			});
+	}
+
+	// Depth-stencil
+	pipelineBuilder._depthStencil = vkinit::depth_stencil_create_info(true, true, VK_COMPARE_OP_LESS_OR_EQUAL);
+
+	pipelineBuilder._viewport.width = (float)_windowExtent.width;
+	pipelineBuilder._viewport.height = (float)_windowExtent.height;
+
+	// Skybox pipeline
+	{
+		// Shaders loading
+		VkShaderModule skyboxVertex;
+		if (!vkutil::load_shader_module(_device, "../shaders/skybox.vert.spv", &skyboxVertex))
+		{
+			std::cout << "Error when building the skybox vertex shader" << std::endl;
+		}
+		else
+		{
+			std::cout << "Skybox vertex shader succesfully loaded" << endl;
+		}
+
+		VkShaderModule skyboxFrag;
+		if (!vkutil::load_shader_module(_device, "../shaders/skybox.frag.spv", &skyboxFrag))
+		{
+			std::cout << "Error when building the skybox frag shader" << std::endl;
+		}
+		else
+		{
+			std::cout << "Skybox vertex shader succesfully loaded" << endl;
+		}
+
+		VkPipelineLayoutCreateInfo layoutInfo = vkinit::pipeline_layout_create_info();
+		layoutInfo.setLayoutCount = 1;
+		layoutInfo.pSetLayouts = &_skyboxSetLayout;
+
+		VK_CHECK(vkCreatePipelineLayout(_device, &layoutInfo, nullptr, &_skyboxPipelineLayout));
+
+		// Vertices description
+		VertexInputDescription vertexDescription = Vertex::get_vertex_description(true);
+		pipelineBuilder._vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertexDescription.attributes.size());
+		pipelineBuilder._vertexInputInfo.pVertexAttributeDescriptions = vertexDescription.attributes.data();
+		pipelineBuilder._vertexInputInfo.vertexBindingDescriptionCount = static_cast<uint32_t>(vertexDescription.bindings.size());
+		pipelineBuilder._vertexInputInfo.pVertexBindingDescriptions = vertexDescription.bindings.data();
+
+		// Color blend
+		pipelineBuilder._colorBlendAttachment.clear();
+		pipelineBuilder._colorBlendAttachment.push_back(vkinit::color_blend_attachment_state());
+
+		// Skybox Shaders
+		pipelineBuilder._shaderStages.clear();
+		pipelineBuilder._shaderStages.push_back(
+			vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT, skyboxVertex));
+		pipelineBuilder._shaderStages.push_back(
+			vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, skyboxFrag));
+
+		// Skybox Layout
+		pipelineBuilder._pipelineLayout = _skyboxPipelineLayout;
+
+		_skyboxPipeline = pipelineBuilder.build_pipeline(_device, _skyboxRenderPass);
+
+		//DELETIONS
+		vkDestroyShaderModule(_device, skyboxFrag, nullptr);
+		vkDestroyShaderModule(_device, skyboxVertex, nullptr);
+
+		_mainDeletionQueue.push_function([=]() {
+			vkDestroyPipeline(_device, _skyboxPipeline, nullptr);
+			vkDestroyPipelineLayout(_device, _skyboxPipelineLayout, nullptr);
+		});
+	}
+
+	// G-Buffers & Deferred pipelines
+	{
+		// Shaders loading
 
 		VkShaderModule deferredVertex;
 		if (!vkutil::load_shader_module(_device, "../shaders/deferred.vert.spv", &deferredVertex))
@@ -604,26 +883,6 @@ void RenderEngine::init_pipelines()
 			std::cout << "Frag vertex shader succesfully loaded" << endl;
 		}
 
-		VkShaderModule lightVertex;
-		if (!vkutil::load_shader_module(_device, "../shaders/light.vert.spv", &lightVertex))
-		{
-			std::cout << "Error when building the light vertex shader" << std::endl;
-		}
-		else
-		{
-			std::cout << "Light vertex shader succesfully loaded" << endl;
-		}
-
-		VkShaderModule lightFrag;
-		if (!vkutil::load_shader_module(_device, "../shaders/light.frag.spv", &lightFrag))
-		{
-			std::cout << "Error when building the light frag shader" << std::endl;
-		}
-		else
-		{
-			std::cout << "Light frag shader succesfully loaded" << endl;
-		}
-
 		//LAYOUTS
 		VkPipelineLayoutCreateInfo layoutInfo = vkinit::pipeline_layout_create_info();
 
@@ -641,103 +900,42 @@ void RenderEngine::init_pipelines()
 		layoutInfo.setLayoutCount = static_cast<uint32_t>(deferredSetLayouts.size());
 		layoutInfo.pSetLayouts = deferredSetLayouts.data();
 
-		VK_CHECK(vkCreatePipelineLayout(_device, &layoutInfo, nullptr, &_deferredPipelineLayout));
+		VK_CHECK(vkCreatePipelineLayout(_device, &layoutInfo, nullptr, &_gbuffersPipelineLayout));
 
-		std::array<VkDescriptorSetLayout, 2> lightSetLayouts = { _globalSetLayout, _gbuffersSetLayout };
-
-		layoutInfo.setLayoutCount = static_cast<uint32_t>(lightSetLayouts.size());
-		layoutInfo.pSetLayouts = lightSetLayouts.data();
-
-		VK_CHECK(vkCreatePipelineLayout(_device, &layoutInfo, nullptr, &_lightPipelineLayout));
-
-
-		//DEFERRED PIPELINE CREATION
-		PipelineBuilder pipelineBuilder;
-
-		//Deferred Vertex Info
-		pipelineBuilder._vertexInputInfo = vkinit::vertex_input_state_create_info();
-
+		// Vertices description
 		VertexInputDescription vertexDescription = Vertex::get_vertex_description();
 		pipelineBuilder._vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertexDescription.attributes.size());
 		pipelineBuilder._vertexInputInfo.pVertexAttributeDescriptions = vertexDescription.attributes.data();
 		pipelineBuilder._vertexInputInfo.vertexBindingDescriptionCount = static_cast<uint32_t>(vertexDescription.bindings.size());
 		pipelineBuilder._vertexInputInfo.pVertexBindingDescriptions = vertexDescription.bindings.data();
 
-		//Deferred Assembly Info
-		pipelineBuilder._inputAssembly = vkinit::input_assembly_create_info(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
-
-		//Viewport and Scissor
-		pipelineBuilder._viewport.x = 0.0f;
-		pipelineBuilder._viewport.y = 0.0f;
-		pipelineBuilder._viewport.width = (float)_windowExtent.width;
-		pipelineBuilder._viewport.height = (float)_windowExtent.height;
-		pipelineBuilder._viewport.minDepth = 0.0f;
-		pipelineBuilder._viewport.maxDepth = 1.0f;
-
-		pipelineBuilder._scissor.offset = { 0, 0 };
-		pipelineBuilder._scissor.extent = _windowExtent;
-
-		//Deferred Depth Stencil
-		pipelineBuilder._depthStencil = vkinit::depth_stencil_create_info(true, true, VK_COMPARE_OP_LESS_OR_EQUAL);
-
-		//Deferred Rasterizer
-		pipelineBuilder._rasterizer = vkinit::rasterization_state_create_info(VK_POLYGON_MODE_FILL);
-
-		//Deferred Multisampling
-		pipelineBuilder._multisampling = vkinit::multisampling_state_create_info();
-
 		//Deferred Color Blend Attachment
+		pipelineBuilder._colorBlendAttachment.clear();
+		pipelineBuilder._colorBlendAttachment.push_back(vkinit::color_blend_attachment_state());
 		pipelineBuilder._colorBlendAttachment.push_back(vkinit::color_blend_attachment_state());
 		pipelineBuilder._colorBlendAttachment.push_back(vkinit::color_blend_attachment_state());
 		pipelineBuilder._colorBlendAttachment.push_back(vkinit::color_blend_attachment_state());
 
 		//Deferred Shaders
+		pipelineBuilder._shaderStages.clear();
 		pipelineBuilder._shaderStages.push_back(
 			vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT, deferredVertex));
 		pipelineBuilder._shaderStages.push_back(
 			vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, deferredFrag));
 
 		//Deferred Layout
-		pipelineBuilder._pipelineLayout = _deferredPipelineLayout;
+		pipelineBuilder._pipelineLayout = _gbuffersPipelineLayout;
 
-		_deferredPipeline = pipelineBuilder.build_pipeline(_device, _deferredRenderPass);
-
-		//LIGHT PIPELINE CREATION
-
-		//Light Depth Stencil
-		pipelineBuilder._depthStencil = vkinit::depth_stencil_create_info(false, false, VK_COMPARE_OP_ALWAYS);
-
-		//Deferred Color Blend Attachment
-		pipelineBuilder._colorBlendAttachment.clear();
-		pipelineBuilder._colorBlendAttachment.push_back(vkinit::color_blend_attachment_state());
-
-		//Light Shaders
-		pipelineBuilder._shaderStages.clear();
-		pipelineBuilder._shaderStages.push_back(
-			vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_VERTEX_BIT, lightVertex));
-		pipelineBuilder._shaderStages.push_back(
-			vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_FRAGMENT_BIT, lightFrag));
-
-		//Light Layout
-		pipelineBuilder._pipelineLayout = _lightPipelineLayout;
-
-		_lightPipeline = pipelineBuilder.build_pipeline(_device, _defaultRenderPass);
-
+		_gbuffersPipeline = pipelineBuilder.build_pipeline(_device, _gbuffersRenderPass);
 
 		//DELETIONS
-
-		vkDestroyShaderModule(_device, lightFrag, nullptr);
-		vkDestroyShaderModule(_device, lightVertex, nullptr);
 		vkDestroyShaderModule(_device, deferredFrag, nullptr);
 		vkDestroyShaderModule(_device, deferredVertex, nullptr);
 
 		_mainDeletionQueue.push_function([=]() {
-			vkDestroyPipeline(_device, _deferredPipeline, nullptr);
-			vkDestroyPipeline(_device, _lightPipeline, nullptr);
-
-			vkDestroyPipelineLayout(_device, _deferredPipelineLayout, nullptr);
-			vkDestroyPipelineLayout(_device, _lightPipelineLayout, nullptr);
-			});
+			vkDestroyPipeline(_device, _gbuffersPipeline, nullptr);
+			vkDestroyPipelineLayout(_device, _gbuffersPipelineLayout, nullptr);
+		});
 	}
 }
 
@@ -758,8 +956,9 @@ void RenderEngine::init_gbuffer_descriptors()
 	VkDescriptorSetLayoutBinding position_bind = vkinit::descriptorset_layout_binding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 0);
 	VkDescriptorSetLayoutBinding normal_bind = vkinit::descriptorset_layout_binding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 1);
 	VkDescriptorSetLayoutBinding albedo_bind = vkinit::descriptorset_layout_binding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 2);
+	VkDescriptorSetLayoutBinding motion_bind = vkinit::descriptorset_layout_binding(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT, 3);
 
-	std::array<VkDescriptorSetLayoutBinding, 3> deferred_set_layouts = { position_bind, normal_bind, albedo_bind };
+	std::array<VkDescriptorSetLayoutBinding, 4> deferred_set_layouts = { position_bind, normal_bind, albedo_bind, motion_bind };
 
 	VkDescriptorSetLayoutCreateInfo deferred_layout_info = {};
 	deferred_layout_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -794,11 +993,17 @@ void RenderEngine::init_gbuffer_descriptors()
 	albedo_descriptor_image.imageView = _albedoImage._view;
 	albedo_descriptor_image.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
+	VkDescriptorImageInfo motion_descriptor_image;
+	motion_descriptor_image.sampler = _defaultSampler;
+	motion_descriptor_image.imageView = _motionVectorImage._view;
+	motion_descriptor_image.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+
 	VkWriteDescriptorSet position_texture = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, _gbuffersDescriptorSet, &position_descriptor_image, 0);
 	VkWriteDescriptorSet normal_texture = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, _gbuffersDescriptorSet, &normal_descriptor_image, 1);
 	VkWriteDescriptorSet albedo_texture = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, _gbuffersDescriptorSet, &albedo_descriptor_image, 2);
+	VkWriteDescriptorSet motion_texture = vkinit::write_descriptor_image(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, _gbuffersDescriptorSet, &motion_descriptor_image, 3);
 
-	std::array<VkWriteDescriptorSet, 3> setWrites = { position_texture, normal_texture, albedo_texture };
+	std::array<VkWriteDescriptorSet, 4> setWrites = { position_texture, normal_texture, albedo_texture, motion_texture };
 
 	vkUpdateDescriptorSets(_device, static_cast<uint32_t>(setWrites.size()), setWrites.data(), 0, nullptr);
 }
@@ -842,6 +1047,8 @@ void RenderEngine::init_raytracing_structures()
 
 void RenderEngine::create_bottom_level_acceleration_structure(const Scene& scene)
 {
+	if (scene._renderables.size() == 0) return;
+
 	// TODO: resize according to primitive number (getter in scene class)
 	std::vector<BlasInput> allBlas;
 	allBlas.reserve(scene._renderables.size()); //per primitive
@@ -868,6 +1075,8 @@ void RenderEngine::create_bottom_level_acceleration_structure(const Scene& scene
 
 void RenderEngine::create_top_level_acceleration_structure(const Scene& scene, bool recreated)
 {
+	if (scene._renderables.size() == 0) return;
+
 	std::vector<VkAccelerationStructureInstanceKHR> instances;
 	instances.reserve(scene._renderables.size());
 
@@ -989,10 +1198,16 @@ void RenderEngine::create_top_level_acceleration_structure(const Scene& scene, b
 		}
 		else
 		{
+			/*
 			vkupload::immediate_submit([&](VkCommandBuffer cmd)
 				{
-					// TODO:
+					vkCmdBuildAccelerationStructuresKHR(
+						cmd,
+						1,
+						&accelerationBuildGeometryInfo,
+						accelerationBuildStructureRangeInfos.data());
 				});
+				*/
 		}
 	}
 
@@ -1022,7 +1237,10 @@ void RenderEngine::create_storage_image()
 		1
 	};
 
-	VkImageCreateInfo image = vkinit::image_create_info(VK_FORMAT_B8G8R8A8_UNORM, VK_IMAGE_USAGE_TRANSFER_SRC_BIT
+	//VkFormat format = VK_FORMAT_B8G8R8A8_UNORM;
+	VkFormat format = VK_FORMAT_R32G32B32A32_SFLOAT;
+
+	VkImageCreateInfo image = vkinit::image_create_info(format, VK_IMAGE_USAGE_TRANSFER_SRC_BIT
 		| VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, extent);
 	image.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 	VK_CHECK(vkCreateImage(_device, &image, nullptr, &_storageImage));
@@ -1038,7 +1256,7 @@ void RenderEngine::create_storage_image()
 	VK_CHECK(vkAllocateMemory(_device, &memoryAllocateInfo, nullptr, &_storageImageMemory));
 	VK_CHECK(vkBindImageMemory(_device, _storageImage, _storageImageMemory, 0));
 
-	VkImageViewCreateInfo colorImageView = vkinit::imageview_create_info(VK_FORMAT_B8G8R8A8_UNORM, _storageImage, VK_IMAGE_ASPECT_COLOR_BIT);
+	VkImageViewCreateInfo colorImageView = vkinit::imageview_create_info(format, _storageImage, VK_IMAGE_ASPECT_COLOR_BIT);
 
 	VK_CHECK(vkCreateImageView(_device, &colorImageView, nullptr, &_storageImageView));
 
@@ -1067,30 +1285,57 @@ void RenderEngine::create_storage_image()
 			0, nullptr,
 			1, &barrier
 		);
-
-		});
+	});
 }
 
-void RenderEngine::create_shadow_images()
+//TODO: ONLY CREATES ONE AT THE MOMENT
+void RenderEngine::create_deep_shadow_images(const int& lightsCount)
 {
+	/*
 	VkExtent3D extent =
 	{
 		_windowExtent.width,
 		_windowExtent.height,
 		1
 	};
-	
-	// TODO: Create an image for each light
-	VkImageCreateInfo image_info = vkinit::image_create_info(VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, extent);
+	*/
+
+	VkExtent3D extent =
+	{
+		SHADOW_MAP_WIDTH,
+		SHADOW_MAP_HEIGHT,
+		1
+	};
+
+	_directionalLightDepthBuffer._extent = extent;
+	_directionalLightDepthBuffer._format = VK_FORMAT_D24_UNORM_S8_UINT;
+
+	VkImageCreateInfo depth_igm = vkinit::image_create_info(_directionalLightDepthBuffer._format, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, extent);
 	
 	VmaAllocationCreateInfo img_alloc_info = {};
 	img_alloc_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
 	img_alloc_info.requiredFlags = VkMemoryPropertyFlagBits(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-	
-	VK_CHECK(vmaCreateImage(_allocator, &image_info, &img_alloc_info, &_shadowImage._image, &_shadowImage._allocation, nullptr));
 
-	VkImageViewCreateInfo image_view_info = vkinit::imageview_create_info(VK_FORMAT_R8G8B8A8_UNORM, _shadowImage._image, VK_IMAGE_ASPECT_COLOR_BIT);
-	VK_CHECK(vkCreateImageView(_device, &image_view_info, nullptr, &_shadowImage._view));
+	vmaCreateImage(_allocator, &depth_igm, &img_alloc_info, &_directionalLightDepthBuffer._image, &_directionalLightDepthBuffer._allocation, nullptr);
+	VkImageViewCreateInfo depth_view_igm = vkinit::imageview_create_info(_directionalLightDepthBuffer._format, _directionalLightDepthBuffer._image, VK_IMAGE_ASPECT_DEPTH_BIT);
+
+	VK_CHECK(vkCreateImageView(_device, &depth_view_igm, nullptr, &_directionalLightDepthBuffer._view));
+
+	_mainDeletionQueue.push_function([=]()
+	{
+		vkDestroyImageView(_device, _directionalLightDepthBuffer._view, nullptr);
+		vkDestroyImage(_device, _directionalLightDepthBuffer._image, nullptr);
+	});
+
+	_deepShadowImage._extent = extent;
+	_deepShadowImage._format = VK_FORMAT_R32G32B32A32_UINT;
+
+	VkImageCreateInfo image_info = vkinit::image_create_info(_deepShadowImage._format, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, extent);
+
+	VK_CHECK(vmaCreateImage(_allocator, &image_info, &img_alloc_info, &_deepShadowImage._image, &_deepShadowImage._allocation, nullptr));
+
+	VkImageViewCreateInfo image_view_info = vkinit::imageview_create_info(_deepShadowImage._format, _deepShadowImage._image, VK_IMAGE_ASPECT_COLOR_BIT);
+	VK_CHECK(vkCreateImageView(_device, &image_view_info, nullptr, &_deepShadowImage._view));
 
 	vkupload::immediate_submit([&](VkCommandBuffer cmd) {
 		VkImageMemoryBarrier barrier = {};
@@ -1099,7 +1344,7 @@ void RenderEngine::create_shadow_images()
 		barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
 		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		barrier.image = _storageImage;
+		barrier.image = _deepShadowImage._image;
 		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		barrier.subresourceRange.baseMipLevel = 0;
 		barrier.subresourceRange.levelCount = 1;
@@ -1117,47 +1362,152 @@ void RenderEngine::create_shadow_images()
 			0, nullptr,
 			1, &barrier
 		);
-
 		});
 }
 
-void RenderEngine::create_raytracing_pipelines(const int& renderablesCount)
+void RenderEngine::create_shadow_images(const int& lightsCount)
 {
-#pragma region Raytracing pass
-	// Layout Bindings
+	/*
+	VkExtent3D extent =
+	{
+		_windowExtent.width,
+		_windowExtent.height,
+		1
+	};
+	*/
+
+	VkExtent3D extent =
+	{
+		_windowExtent.width,
+		_windowExtent.height,
+		1
+	};
+
+	VkFormat format = VK_FORMAT_R32G32B32A32_SFLOAT;
+
+	VkImageCreateInfo image_info = vkinit::image_create_info(format, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT, extent);
+	
+	VmaAllocationCreateInfo img_alloc_info = {};
+	img_alloc_info.usage = VMA_MEMORY_USAGE_GPU_ONLY;
+	img_alloc_info.requiredFlags = VkMemoryPropertyFlagBits(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+	_shadowImages.resize(lightsCount);
+	_denoisedShadowImages.resize(lightsCount);
+
+	// Raw Shadow Images
+	for(size_t i = 0; i < _shadowImages.size(); i++)
+	{
+		VK_CHECK(vmaCreateImage(_allocator, &image_info, &img_alloc_info, &_shadowImages[i]._image, &_shadowImages[i]._allocation, nullptr));
+		
+		VkImageViewCreateInfo image_view_info = vkinit::imageview_create_info(format, _shadowImages[i]._image, VK_IMAGE_ASPECT_COLOR_BIT);
+		VK_CHECK(vkCreateImageView(_device, &image_view_info, nullptr, &_shadowImages[i]._view));
+		_shadowImages[i]._format = format;
+	}
+
+	// Denoised Shadow Images
+	for (size_t i = 0; i < _denoisedShadowImages.size(); i++)
+	{
+		VK_CHECK(vmaCreateImage(_allocator, &image_info, &img_alloc_info, &_denoisedShadowImages[i]._image, &_denoisedShadowImages[i]._allocation, nullptr));
+		
+		VkImageViewCreateInfo image_view_info = vkinit::imageview_create_info(format, _denoisedShadowImages[i]._image, VK_IMAGE_ASPECT_COLOR_BIT);
+		VK_CHECK(vkCreateImageView(_device, &image_view_info, nullptr, &_denoisedShadowImages[i]._view));
+		_denoisedShadowImages[i]._format = format;
+	}
+
+
+	// Change layout to GENERAL to use the images as storage descriptors
+	std::vector<VkImageMemoryBarrier> barriers;
+	barriers.resize(_shadowImages.size() + _denoisedShadowImages.size());
+
+	VkImageMemoryBarrier barrier = {};
+	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	barrier.subresourceRange.baseMipLevel = 0;
+	barrier.subresourceRange.levelCount = 1;
+	barrier.subresourceRange.baseArrayLayer = 0;
+	barrier.subresourceRange.layerCount = 1;
+	barrier.srcAccessMask = 0;
+	barrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+
+	for(size_t i = 0; i < _shadowImages.size(); i++)
+	{
+		barrier.image = _shadowImages[i]._image;
+		barriers[i] = barrier;
+	}
+
+	for (size_t i = 0; i < _denoisedShadowImages.size(); i++)
+	{
+		barrier.image = _denoisedShadowImages[i]._image;
+		barriers[_shadowImages.size() + i] = barrier;
+	}
+
+	vkupload::immediate_submit([&](VkCommandBuffer cmd) {
+		vkCmdPipelineBarrier(
+			cmd,
+			VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+			0,
+			0, nullptr,
+			0, nullptr,
+			static_cast<uint32_t>(barriers.size()), barriers.data()
+		);
+
+		});
+
+	_mainDeletionQueue.push_function([=]() {
+		for(const auto& image : _shadowImages)
+		{
+			vkDestroyImageView(_device, image._view, nullptr);
+			vmaDestroyImage(_allocator, image._image, image._allocation);
+		}
+
+		for (const auto& image : _denoisedShadowImages)
+		{
+			vkDestroyImageView(_device, image._view, nullptr);
+			vmaDestroyImage(_allocator, image._image, image._allocation);
+		}
+	});
+}
+
+void RenderEngine::create_raytracing_pipelines(const Scene& scene)
+{
+	// RT Shared Layout Bindings
 	// TLAS
 	VkDescriptorSetLayoutBinding accelerationStructureLayoutBinding{};
 	accelerationStructureLayoutBinding.binding = 0;
 	accelerationStructureLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
 	accelerationStructureLayoutBinding.descriptorCount = 1;
 	accelerationStructureLayoutBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
-
-	// Output Image
-	VkDescriptorSetLayoutBinding resultImageLayoutBinding{};
-	resultImageLayoutBinding.binding = 1;
-	resultImageLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-	resultImageLayoutBinding.descriptorCount = 1;
-	resultImageLayoutBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
-
+	
 	// Camera
 	VkDescriptorSetLayoutBinding uniformBufferBinding{};
-	uniformBufferBinding.binding = 2;
+	uniformBufferBinding.binding = 1;
 	uniformBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 	uniformBufferBinding.descriptorCount = 1;
 	uniformBufferBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
+
+	// G-Buffers
+	VkDescriptorSetLayoutBinding gbuffersLayoutBinding{};
+	gbuffersLayoutBinding.binding = 2;
+	gbuffersLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	gbuffersLayoutBinding.descriptorCount = GBUFFER_NUM;
+	gbuffersLayoutBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
 
 	// Vertices
 	VkDescriptorSetLayoutBinding vertexBufferBinding{};
 	vertexBufferBinding.binding = 3;
 	vertexBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-	vertexBufferBinding.descriptorCount = renderablesCount;
+	vertexBufferBinding.descriptorCount = static_cast<uint32_t>(scene._renderables.size());
 	vertexBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
 
 	// Indices
 	VkDescriptorSetLayoutBinding indexBufferBinding{};
 	indexBufferBinding.binding = 4;
 	indexBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-	indexBufferBinding.descriptorCount = renderablesCount;
+	indexBufferBinding.descriptorCount = static_cast<uint32_t>(scene._renderables.size());
 	indexBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
 
 	// Transforms
@@ -1179,14 +1529,14 @@ void RenderEngine::create_raytracing_pipelines(const int& renderablesCount)
 	sceneBufferBinding.binding = 7;
 	sceneBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 	sceneBufferBinding.descriptorCount = 1;
-	sceneBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
+	sceneBufferBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
 	// Materials
 	VkDescriptorSetLayoutBinding materialBufferBinding{};
 	materialBufferBinding.binding = 8;
 	materialBufferBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 	materialBufferBinding.descriptorCount = 1;
-	materialBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
+	materialBufferBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
 
 	// Textures
 	VkDescriptorSetLayoutBinding textureBufferBinding{};
@@ -1195,232 +1545,378 @@ void RenderEngine::create_raytracing_pipelines(const int& renderablesCount)
 	textureBufferBinding.descriptorCount = VKE::Texture::sTexturesLoaded.size();
 	textureBufferBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
 
-	std::vector<VkDescriptorSetLayoutBinding> rt_bindings({
-		accelerationStructureLayoutBinding,
-		resultImageLayoutBinding,
-		uniformBufferBinding,
-		vertexBufferBinding,
-		indexBufferBinding,
-		transformBufferBinding,
-		primitiveBufferBinding,
-		sceneBufferBinding,
-		materialBufferBinding,
-		textureBufferBinding,
-		});
-
-	VkDescriptorSetLayoutCreateInfo desc_set_layout_info{};
-	desc_set_layout_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-	desc_set_layout_info.bindingCount = static_cast<uint32_t>(rt_bindings.size());
-	desc_set_layout_info.pBindings = rt_bindings.data();
-	VK_CHECK(vkCreateDescriptorSetLayout(_device, &desc_set_layout_info, nullptr, &_rayTracingSetLayout));
-
-	VkPushConstantRange pushConstant = {};
-	pushConstant.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
-	pushConstant.offset = 0;
-	pushConstant.size = sizeof(RtPushConstant);
-
-	VkPipelineLayoutCreateInfo pipeline_layout_info{};
-	pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-	pipeline_layout_info.setLayoutCount = 1;
-	pipeline_layout_info.pSetLayouts = &_rayTracingSetLayout;
-	pipeline_layout_info.pushConstantRangeCount = 1;
-	pipeline_layout_info.pPushConstantRanges = &pushConstant;
-	VK_CHECK(vkCreatePipelineLayout(_device, &pipeline_layout_info, nullptr, &_rayTracingPipelineLayout));
-
-	/*
-		Setup ray tracing shader groups
-	*/
-	std::vector<VkPipelineShaderStageCreateInfo> shaderStages;
-
-	// Ray generation group
 	{
-		VkShaderModule raygenShader;
-		if (!vkutil::load_shader_module(_device, "../shaders/raygen.rgen.spv", &raygenShader))
+#pragma region Raytracing Shadow Pass
+		// Layout Bindings
+		// Shadow Images
+		VkDescriptorSetLayoutBinding shadowImagesBinding{};
+		shadowImagesBinding.binding = 10;
+		shadowImagesBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+		shadowImagesBinding.descriptorCount = static_cast<uint32_t>(scene._lights.size());
+		shadowImagesBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
+
+		// Deep Shadow Image for Directional
+		VkDescriptorSetLayoutBinding deepShadowImageBinding{};
+		deepShadowImageBinding.binding = 11;
+		deepShadowImageBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+		deepShadowImageBinding.descriptorCount = 1;
+		deepShadowImageBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
+
+		// Deep Shadow Camera
+		VkDescriptorSetLayoutBinding deepShadowMapCamera{};
+		deepShadowMapCamera.binding = 12;
+		deepShadowMapCamera.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		deepShadowMapCamera.descriptorCount = 1;
+		deepShadowMapCamera.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
+
+		std::vector<VkDescriptorSetLayoutBinding> shadow_bindings =
 		{
-			std::cout << "Error when building the ray generation shader module" << std::endl;
-		}
-		else {
-			std::cout << "Ray generation shader succesfully loaded" << std::endl;
-		}
+			accelerationStructureLayoutBinding,
+			uniformBufferBinding,
+			gbuffersLayoutBinding,
+			vertexBufferBinding,
+			indexBufferBinding,
+			transformBufferBinding,
+			primitiveBufferBinding,
+			sceneBufferBinding,
+			materialBufferBinding,
+			textureBufferBinding,
+			shadowImagesBinding,
+			deepShadowImageBinding,
+			deepShadowMapCamera
+		};
 
-		VkPipelineShaderStageCreateInfo shader_stage_info = vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_RAYGEN_BIT_KHR, raygenShader);
+		VkDescriptorSetLayoutCreateInfo desc_set_layout_info{};
+		desc_set_layout_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+		desc_set_layout_info.bindingCount = static_cast<uint32_t>(shadow_bindings.size());
+		desc_set_layout_info.pBindings = shadow_bindings.data();
+		VK_CHECK(vkCreateDescriptorSetLayout(_device, &desc_set_layout_info, nullptr, &_rtShadowsPipeline._setLayout));
 
-		shaderStages.push_back(shader_stage_info);
-		VkRayTracingShaderGroupCreateInfoKHR shaderGroup{};
-		shaderGroup.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
-		shaderGroup.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
-		shaderGroup.generalShader = static_cast<uint32_t>(shaderStages.size()) - 1;
-		shaderGroup.closestHitShader = VK_SHADER_UNUSED_KHR;
-		shaderGroup.anyHitShader = VK_SHADER_UNUSED_KHR;
-		shaderGroup.intersectionShader = VK_SHADER_UNUSED_KHR;
-		_shaderGroups.push_back(shaderGroup);
-	}
+		VkPushConstantRange pushConstant = {};
+		pushConstant.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
+		pushConstant.offset = 0;
+		pushConstant.size = sizeof(RtPushConstant);
 
-	// Miss group
-	{
-		VkShaderModule missShader;
-		if (!vkutil::load_shader_module(_device, "../shaders/miss.rmiss.spv", &missShader))
+		VkPipelineLayoutCreateInfo pipeline_layout_info{};
+		pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+		pipeline_layout_info.setLayoutCount = 1;
+		pipeline_layout_info.pSetLayouts = &_rtShadowsPipeline._setLayout;
+		pipeline_layout_info.pushConstantRangeCount = 1;
+		pipeline_layout_info.pPushConstantRanges = &pushConstant;
+		VK_CHECK(vkCreatePipelineLayout(_device, &pipeline_layout_info, nullptr, &_rtShadowsPipeline._layout));
+
+		/*
+			Setup ray tracing shader groups
+		*/
+		std::vector<VkPipelineShaderStageCreateInfo> shaderStages;
+
+		// Ray generation group
 		{
-			std::cout << "Error when building the miss shader module" << std::endl;
+			VkShaderModule raygenShader;
+			if (!vkutil::load_shader_module(_device, "../shaders/RtShadows.rgen.spv", &raygenShader))
+			{
+				std::cout << "Error when building the shadows ray generation shader module" << std::endl;
+			}
+			else {
+				std::cout << "Shadows ray generation shader succesfully loaded" << std::endl;
+			}
+
+			VkPipelineShaderStageCreateInfo shader_stage_info = vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_RAYGEN_BIT_KHR, raygenShader);
+
+			shaderStages.push_back(shader_stage_info);
+			VkRayTracingShaderGroupCreateInfoKHR shaderGroup{};
+			shaderGroup.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
+			shaderGroup.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
+			shaderGroup.generalShader = static_cast<uint32_t>(shaderStages.size()) - 1;
+			shaderGroup.closestHitShader = VK_SHADER_UNUSED_KHR;
+			shaderGroup.anyHitShader = VK_SHADER_UNUSED_KHR;
+			shaderGroup.intersectionShader = VK_SHADER_UNUSED_KHR;
+			_rtShadowsPipeline._shaderGroups.push_back(shaderGroup);
 		}
-		else {
-			std::cout << "Miss shader succesfully loaded" << std::endl;
-		}
 
-		VkPipelineShaderStageCreateInfo shader_stage_info = vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_MISS_BIT_KHR, missShader);
-
-		shaderStages.push_back(shader_stage_info);
-		VkRayTracingShaderGroupCreateInfoKHR shaderGroup{};
-		shaderGroup.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
-		shaderGroup.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
-		shaderGroup.generalShader = static_cast<uint32_t>(shaderStages.size()) - 1;
-		shaderGroup.closestHitShader = VK_SHADER_UNUSED_KHR;
-		shaderGroup.anyHitShader = VK_SHADER_UNUSED_KHR;
-		shaderGroup.intersectionShader = VK_SHADER_UNUSED_KHR;
-		_shaderGroups.push_back(shaderGroup);
-	}
-
-	//Shadow miss group
-	{
-		VkShaderModule shadowMissShader;
-		if (!vkutil::load_shader_module(_device, "../shaders/raytraceShadow.rmiss.spv", &shadowMissShader))
+		// Shadow miss group
 		{
-			std::cout << "Error when building the shadow miss shader module" << std::endl;
+			VkShaderModule shadowMissShader;
+			if (!vkutil::load_shader_module(_device, "../shaders/raytraceShadow.rmiss.spv", &shadowMissShader))
+			{
+				std::cout << "Error when building the shadow miss shader module" << std::endl;
+			}
+			else {
+				std::cout << "Shadow miss shader succesfully loaded" << std::endl;
+			}
+			VkPipelineShaderStageCreateInfo shader_stage_info = vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_MISS_BIT_KHR, shadowMissShader);
+
+			shaderStages.push_back(shader_stage_info);
+			VkRayTracingShaderGroupCreateInfoKHR shaderGroup{};
+			shaderGroup.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
+			shaderGroup.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
+			shaderGroup.generalShader = static_cast<uint32_t>(shaderStages.size()) - 1;
+			shaderGroup.closestHitShader = VK_SHADER_UNUSED_KHR;
+			shaderGroup.anyHitShader = VK_SHADER_UNUSED_KHR;
+			shaderGroup.intersectionShader = VK_SHADER_UNUSED_KHR;
+			_rtShadowsPipeline._shaderGroups.push_back(shaderGroup);
 		}
-		else {
-			std::cout << "Shadw miss shader succesfully loaded" << std::endl;
-		}
-		VkPipelineShaderStageCreateInfo shader_stage_info = vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_MISS_BIT_KHR, shadowMissShader);
 
-		shaderStages.push_back(shader_stage_info);
-		VkRayTracingShaderGroupCreateInfoKHR shaderGroup{};
-		shaderGroup.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
-		shaderGroup.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
-		shaderGroup.generalShader = static_cast<uint32_t>(shaderStages.size()) - 1;
-		shaderGroup.closestHitShader = VK_SHADER_UNUSED_KHR;
-		shaderGroup.anyHitShader = VK_SHADER_UNUSED_KHR;
-		shaderGroup.intersectionShader = VK_SHADER_UNUSED_KHR;
-		_shaderGroups.push_back(shaderGroup);
-	}
-
-	// Closest hit shader shared between different hit groups
-	VkShaderModule closestHitShader;
-	if (!vkutil::load_shader_module(_device, "../shaders/closestHit.rchit.spv", &closestHitShader))
-	{
-		std::cout << "Error when building the closest hit shader module" << std::endl;
-	}
-	else {
-		std::cout << "Closest hit shader succesfully loaded" << std::endl;
-	}
-
-	VkPipelineShaderStageCreateInfo chit_shader_stage_info = vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, closestHitShader);
-	shaderStages.push_back(chit_shader_stage_info);
-	uint32_t chitIdx = static_cast<uint32_t>(shaderStages.size() - 1);
-
-	// Closest hit group 0
-	{
-		VkRayTracingShaderGroupCreateInfoKHR shaderGroup{};
-		shaderGroup.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
-		shaderGroup.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
-		shaderGroup.generalShader = VK_SHADER_UNUSED_KHR;
-		shaderGroup.closestHitShader = chitIdx;
-		shaderGroup.anyHitShader = VK_SHADER_UNUSED_KHR;
-		shaderGroup.intersectionShader = VK_SHADER_UNUSED_KHR;
-		_shaderGroups.push_back(shaderGroup);
-	}
-
-	// Closest hit group 1
-	{
-		// Any Hit Shader for shadows
-		VkShaderModule shadowsAnyHitShader;
-		if (!vkutil::load_shader_module(_device, "../shaders/raytrace.rahit.spv", &shadowsAnyHitShader))
+		// Shadow closest hit group
 		{
-			std::cout << "Error when building the shadow any hit shader module" << std::endl;
+			// Closest hit shader shared between different hit groups
+			VkShaderModule closestHitShader;
+			if (!vkutil::load_shader_module(_device, "../shaders/closestHit.rchit.spv", &closestHitShader))
+			{
+				std::cout << "Error when building the closest hit shader module" << std::endl;
+			}
+			else {
+				std::cout << "Closest hit shader succesfully loaded" << std::endl;
+			}
+
+			// Any Hit Shader for shadows
+			VkShaderModule shadowsAnyHitShader;
+			if (!vkutil::load_shader_module(_device, "../shaders/raytrace.rahit.spv", &shadowsAnyHitShader))
+			{
+				std::cout << "Error when building the shadow any hit shader module" << std::endl;
+			}
+			else
+			{
+				std::cout << "Shadow any hit shader succesfully loaded" << std::endl;
+			}
+
+			VkPipelineShaderStageCreateInfo chit_shader_stage_info = vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, closestHitShader);
+			VkPipelineShaderStageCreateInfo ahit_shader_stage_info = vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_ANY_HIT_BIT_KHR, shadowsAnyHitShader);
+
+			shaderStages.push_back(chit_shader_stage_info);
+			shaderStages.push_back(ahit_shader_stage_info);
+			VkRayTracingShaderGroupCreateInfoKHR shaderGroup{};
+			shaderGroup.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
+			shaderGroup.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
+			shaderGroup.generalShader = VK_SHADER_UNUSED_KHR;
+			shaderGroup.closestHitShader = static_cast<uint32_t>(shaderStages.size() - 2);
+			shaderGroup.anyHitShader = static_cast<uint32_t>(shaderStages.size() - 1);
+			shaderGroup.intersectionShader = VK_SHADER_UNUSED_KHR;
+			_rtShadowsPipeline._shaderGroups.push_back(shaderGroup);
+		}
+
+		/*
+			Create the ray tracing pipeline
+		*/
+		VkRayTracingPipelineCreateInfoKHR rt_shadows_pipeline_info{};
+		rt_shadows_pipeline_info.sType = VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR;
+		rt_shadows_pipeline_info.stageCount = static_cast<uint32_t>(shaderStages.size());
+		rt_shadows_pipeline_info.pStages = shaderStages.data();
+		rt_shadows_pipeline_info.groupCount = static_cast<uint32_t>(_rtShadowsPipeline._shaderGroups.size());
+		rt_shadows_pipeline_info.pGroups = _rtShadowsPipeline._shaderGroups.data();
+		rt_shadows_pipeline_info.maxPipelineRayRecursionDepth = 10;
+		rt_shadows_pipeline_info.layout = _rtShadowsPipeline._layout;
+
+		VK_CHECK(vkCreateRayTracingPipelinesKHR(_device, VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &rt_shadows_pipeline_info, nullptr, &_rtShadowsPipeline._pipeline));
+
+#pragma endregion
+	}
+	{
+#pragma region Shadow Denoising Pass
+		VkShaderModule denoiseShader;
+		if (!vkutil::load_shader_module(_device, "../shaders/denoiser.comp.spv", &denoiseShader))
+		{
+			std::cout << "Error when building the denoiser compute shader module" << std::endl;
 		}
 		else
 		{
-			std::cout << "Shadow any hit shader succesfully loaded" << std::endl;
+			std::cout << "Denoiser compute shader succesfully loaded" << std::endl;
 		}
 
-		VkPipelineShaderStageCreateInfo shader_stage_info = vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_ANY_HIT_BIT_KHR, shadowsAnyHitShader);
+		VkPipelineShaderStageCreateInfo shader_stage = vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_COMPUTE_BIT, denoiseShader);
 
-		shaderStages.push_back(shader_stage_info);
-		VkRayTracingShaderGroupCreateInfoKHR shaderGroup{};
-		shaderGroup.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
-		shaderGroup.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
-		shaderGroup.generalShader = VK_SHADER_UNUSED_KHR;
-		shaderGroup.closestHitShader = chitIdx;
-		shaderGroup.anyHitShader = static_cast<uint32_t>(shaderStages.size() - 1);
-		shaderGroup.intersectionShader = VK_SHADER_UNUSED_KHR;
-		_shaderGroups.push_back(shaderGroup);
-	}
+		// Layout bindings
+		// Shadow Images
+		VkDescriptorSetLayoutBinding shadowImageBinding = {};
+		shadowImageBinding.binding = 0;
+		shadowImageBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+		shadowImageBinding.descriptorCount = static_cast<uint32_t>(scene._lights.size());
+		shadowImageBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 
-	/*
-		Create the ray tracing pipeline
-	*/
-	VkRayTracingPipelineCreateInfoKHR raytracing_pipeline_info{};
-	raytracing_pipeline_info.sType = VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR;
-	raytracing_pipeline_info.stageCount = static_cast<uint32_t>(shaderStages.size());
-	raytracing_pipeline_info.pStages = shaderStages.data();
-	raytracing_pipeline_info.groupCount = static_cast<uint32_t>(_shaderGroups.size());
-	raytracing_pipeline_info.pGroups = _shaderGroups.data();
-	raytracing_pipeline_info.maxPipelineRayRecursionDepth = 10;
-	raytracing_pipeline_info.layout = _rayTracingPipelineLayout;
+		// Denoised Shadow Images
+		VkDescriptorSetLayoutBinding denoisedShadowImageBinding = {};
+		denoisedShadowImageBinding.binding = 1;
+		denoisedShadowImageBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+		denoisedShadowImageBinding.descriptorCount = static_cast<uint32_t>(scene._lights.size());
+		denoisedShadowImageBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 
-	VK_CHECK(vkCreateRayTracingPipelinesKHR(_device, VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &raytracing_pipeline_info, nullptr, &_rayTracingPipeline));
+		std::array<VkDescriptorSetLayoutBinding, 2> denoiser_bindings = { shadowImageBinding, denoisedShadowImageBinding };
+
+		// DescriptorSet Layout
+		VkDescriptorSetLayoutCreateInfo denoiser_descriptor_set_layout = {};
+		denoiser_descriptor_set_layout.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+		denoiser_descriptor_set_layout.bindingCount = static_cast<uint32_t>(denoiser_bindings.size());
+		denoiser_descriptor_set_layout.pBindings = denoiser_bindings.data();
+		VK_CHECK(vkCreateDescriptorSetLayout(_device, &denoiser_descriptor_set_layout, nullptr, &_denoiserSetLayout));
+
+		// Pipeline layout
+		VkPipelineLayoutCreateInfo denoiser_pipeline_layout_info = vkinit::pipeline_layout_create_info();
+		denoiser_pipeline_layout_info.setLayoutCount = 1;
+		denoiser_pipeline_layout_info.pSetLayouts = &_denoiserSetLayout;
+		VK_CHECK(vkCreatePipelineLayout(_device, &denoiser_pipeline_layout_info, nullptr, &_denoiserPipelineLayout));
+
+		// Compute pipeline
+		VkComputePipelineCreateInfo compute_pipeline_info = {};
+		compute_pipeline_info.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+		compute_pipeline_info.stage = shader_stage;
+		compute_pipeline_info.layout = _denoiserPipelineLayout;
+
+		VK_CHECK(vkCreateComputePipelines(_device, VK_NULL_HANDLE, 1, &compute_pipeline_info, nullptr, &_denoiserPipeline));
 #pragma endregion
-
-#pragma region Denoising pass
-	VkShaderModule denoiseShader;
-	if(!vkutil::load_shader_module(_device, "../shaders/denoiser.comp.spv", &denoiseShader))
-	{
-		std::cout << "Error when building the denoiser compute shader module" << std::endl;
-	}
-	else
-	{
-		std::cout << "Denoiser compute shader succesfully loaded" << std::endl;
 	}
 
-	VkPipelineShaderStageCreateInfo shader_stage = vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_COMPUTE_BIT, denoiseShader);
-	
-	// Layout bindings
-	// Color Image
-	VkDescriptorSetLayoutBinding colorImageBinding = {};
-	colorImageBinding.binding = 0;
-	colorImageBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-	colorImageBinding.descriptorCount = 1;
-	colorImageBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+	{
+#pragma region Raytracing Final Pass
+		// Layout Bindings
 
-	// Shadow Image
-	VkDescriptorSetLayoutBinding shadowImageBinding = {};
-	shadowImageBinding.binding = 1;
-	shadowImageBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-	shadowImageBinding.descriptorCount = 1;
-	shadowImageBinding.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+		// Output Image
+		VkDescriptorSetLayoutBinding resultImageLayoutBinding{};
+		resultImageLayoutBinding.binding = 10;
+		resultImageLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+		resultImageLayoutBinding.descriptorCount = 1;
+		resultImageLayoutBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
 
-	std::array<VkDescriptorSetLayoutBinding, 2> denoiser_bindings = { colorImageBinding, shadowImageBinding };
+		// Denoised Shadow Images
+		VkDescriptorSetLayoutBinding denoisedShadowsImagesBinding{};
+		denoisedShadowsImagesBinding.binding = 11;
+		denoisedShadowsImagesBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+		denoisedShadowsImagesBinding.descriptorCount = static_cast<uint32_t>(scene._lights.size());
+		denoisedShadowsImagesBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
-	// DescriptorSet Layout
-	VkDescriptorSetLayoutCreateInfo denoiser_descriptor_set_layout = {};
-	denoiser_descriptor_set_layout.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-	denoiser_descriptor_set_layout.bindingCount = static_cast<uint32_t>(denoiser_bindings.size());
-	denoiser_descriptor_set_layout.pBindings = denoiser_bindings.data();
-	VK_CHECK(vkCreateDescriptorSetLayout(_device, &denoiser_descriptor_set_layout, nullptr, &_denoiserSetLayout));
+		// Skybox
+		VkDescriptorSetLayoutBinding skyboxImageLayoutBinding{};
+		skyboxImageLayoutBinding.binding = 12;
+		skyboxImageLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+		skyboxImageLayoutBinding.descriptorCount = 1;
+		skyboxImageLayoutBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
 
-	// Pipeline layout
-	VkPipelineLayoutCreateInfo denoiser_pipeline_layout_info = vkinit::pipeline_layout_create_info();
-	denoiser_pipeline_layout_info.setLayoutCount = 1;
-	denoiser_pipeline_layout_info.pSetLayouts = &_denoiserSetLayout;
-	VK_CHECK(vkCreatePipelineLayout(_device, &denoiser_pipeline_layout_info, nullptr, &_denoiserPipelineLayout));
+		std::vector<VkDescriptorSetLayoutBinding> rt_bindings({
+			accelerationStructureLayoutBinding,
+			uniformBufferBinding,
+			gbuffersLayoutBinding,
+			vertexBufferBinding,
+			indexBufferBinding,
+			transformBufferBinding,
+			primitiveBufferBinding,
+			sceneBufferBinding,
+			materialBufferBinding,
+			textureBufferBinding,
+			resultImageLayoutBinding,
+			denoisedShadowsImagesBinding,
+			//skyboxImageLayoutBinding
+			});
 
-	// Compute pipeline
-	VkComputePipelineCreateInfo compute_pipeline_info = {};
-	compute_pipeline_info.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
-	compute_pipeline_info.stage = shader_stage;
-	compute_pipeline_info.layout = _denoiserPipelineLayout;
+		VkDescriptorSetLayoutCreateInfo desc_set_layout_info{};
+		desc_set_layout_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+		desc_set_layout_info.bindingCount = static_cast<uint32_t>(rt_bindings.size());
+		desc_set_layout_info.pBindings = rt_bindings.data();
+		VK_CHECK(vkCreateDescriptorSetLayout(_device, &desc_set_layout_info, nullptr, &_rtFinalPipeline._setLayout));
 
-	VK_CHECK(vkCreateComputePipelines(_device, VK_NULL_HANDLE, 1, &compute_pipeline_info, nullptr, &_denoiserPipeline));
+		VkPushConstantRange pushConstant = {};
+		pushConstant.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
+		pushConstant.offset = 0;
+		pushConstant.size = sizeof(RtPushConstant);
+
+		VkPipelineLayoutCreateInfo pipeline_layout_info{};
+		pipeline_layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+		pipeline_layout_info.setLayoutCount = 1;
+		pipeline_layout_info.pSetLayouts = &_rtFinalPipeline._setLayout;
+		pipeline_layout_info.pushConstantRangeCount = 1;
+		pipeline_layout_info.pPushConstantRanges = &pushConstant;
+		VK_CHECK(vkCreatePipelineLayout(_device, &pipeline_layout_info, nullptr, &_rtFinalPipeline._layout));
+
+		/*
+			Setup ray tracing shader groups
+		*/
+		std::vector<VkPipelineShaderStageCreateInfo> shaderStages;
+
+		// Ray generation group
+		{
+			VkShaderModule raygenShader;
+			if (!vkutil::load_shader_module(_device, "../shaders/raygen.rgen.spv", &raygenShader))
+			{
+				std::cout << "Error when building the ray generation shader module" << std::endl;
+			}
+			else {
+				std::cout << "Ray generation shader succesfully loaded" << std::endl;
+			}
+
+			VkPipelineShaderStageCreateInfo shader_stage_info = vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_RAYGEN_BIT_KHR, raygenShader);
+
+			shaderStages.push_back(shader_stage_info);
+			VkRayTracingShaderGroupCreateInfoKHR shaderGroup{};
+			shaderGroup.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
+			shaderGroup.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
+			shaderGroup.generalShader = static_cast<uint32_t>(shaderStages.size()) - 1;
+			shaderGroup.closestHitShader = VK_SHADER_UNUSED_KHR;
+			shaderGroup.anyHitShader = VK_SHADER_UNUSED_KHR;
+			shaderGroup.intersectionShader = VK_SHADER_UNUSED_KHR;
+			_rtFinalPipeline._shaderGroups.push_back(shaderGroup);
+		}
+
+		// Miss group
+		{
+			VkShaderModule missShader;
+			if (!vkutil::load_shader_module(_device, "../shaders/miss.rmiss.spv", &missShader))
+			{
+				std::cout << "Error when building the miss shader module" << std::endl;
+			}
+			else {
+				std::cout << "Miss shader succesfully loaded" << std::endl;
+			}
+
+			VkPipelineShaderStageCreateInfo shader_stage_info = vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_MISS_BIT_KHR, missShader);
+
+			shaderStages.push_back(shader_stage_info);
+			VkRayTracingShaderGroupCreateInfoKHR shaderGroup{};
+			shaderGroup.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
+			shaderGroup.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
+			shaderGroup.generalShader = static_cast<uint32_t>(shaderStages.size()) - 1;
+			shaderGroup.closestHitShader = VK_SHADER_UNUSED_KHR;
+			shaderGroup.anyHitShader = VK_SHADER_UNUSED_KHR;
+			shaderGroup.intersectionShader = VK_SHADER_UNUSED_KHR;
+			_rtFinalPipeline._shaderGroups.push_back(shaderGroup);
+		}
+
+		// Closest hit group
+		{
+			VkShaderModule closestHitShader;
+			if (!vkutil::load_shader_module(_device, "../shaders/closestHit.rchit.spv", &closestHitShader))
+			{
+				std::cout << "Error when building the closest hit shader module" << std::endl;
+			}
+			else {
+				std::cout << "Closest hit shader succesfully loaded" << std::endl;
+			}
+
+			VkPipelineShaderStageCreateInfo chit_shader_stage_info = vkinit::pipeline_shader_stage_create_info(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, closestHitShader);
+			
+			shaderStages.push_back(chit_shader_stage_info);
+			VkRayTracingShaderGroupCreateInfoKHR shaderGroup{};
+			shaderGroup.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
+			shaderGroup.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
+			shaderGroup.generalShader = VK_SHADER_UNUSED_KHR;
+			shaderGroup.closestHitShader = static_cast<uint32_t>(shaderStages.size() - 1);
+			shaderGroup.anyHitShader = VK_SHADER_UNUSED_KHR;
+			shaderGroup.intersectionShader = VK_SHADER_UNUSED_KHR;
+			_rtFinalPipeline._shaderGroups.push_back(shaderGroup);
+		}
+
+		/*
+			Create the ray tracing pipeline
+		*/
+		VkRayTracingPipelineCreateInfoKHR raytracing_pipeline_info{};
+		raytracing_pipeline_info.sType = VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR;
+		raytracing_pipeline_info.stageCount = static_cast<uint32_t>(shaderStages.size());
+		raytracing_pipeline_info.pStages = shaderStages.data();
+		raytracing_pipeline_info.groupCount = static_cast<uint32_t>(_rtFinalPipeline._shaderGroups.size());
+		raytracing_pipeline_info.pGroups = _rtFinalPipeline._shaderGroups.data();
+		raytracing_pipeline_info.maxPipelineRayRecursionDepth = 10;
+		raytracing_pipeline_info.layout = _rtFinalPipeline._layout;
+
+		VK_CHECK(vkCreateRayTracingPipelinesKHR(_device, VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &raytracing_pipeline_info, nullptr, &_rtFinalPipeline._pipeline));
 #pragma endregion
+	}
 }
 
 void RenderEngine::create_pospo_structures()
@@ -1484,8 +1980,17 @@ void RenderEngine::create_pospo_structures()
 	//Pospo Layout
 	VkPipelineLayoutCreateInfo pospo_pipeline_layout_info = vkinit::pipeline_layout_create_info();
 
-	pospo_pipeline_layout_info.setLayoutCount = 1;
-	pospo_pipeline_layout_info.pSetLayouts = &_singleTextureSetLayout;
+	std::array<VkDescriptorSetLayout, 2> setLayouts = { _singleTextureSetLayout, _storageTextureSetLayout };
+
+	VkPushConstantRange pushConstantRange = {};
+	pushConstantRange.offset = 0;
+	pushConstantRange.size = sizeof(FlagsPushConstant);
+	pushConstantRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+	pospo_pipeline_layout_info.setLayoutCount = 2;
+	pospo_pipeline_layout_info.pSetLayouts = setLayouts.data();
+	pospo_pipeline_layout_info.pushConstantRangeCount = 1;
+	pospo_pipeline_layout_info.pPushConstantRanges = &pushConstantRange;
 
 	VK_CHECK(vkCreatePipelineLayout(_device, &pospo_pipeline_layout_info, nullptr, &pospo._pipelineLayout));
 
@@ -1571,64 +2076,99 @@ void RenderEngine::create_shader_binding_table()
 {
 	const uint32_t handleSize = _rayTracingPipelineProperties.shaderGroupHandleSize;
 	const uint32_t handleSizeAligned = vkutil::get_aligned_size(_rayTracingPipelineProperties.shaderGroupHandleSize, _rayTracingPipelineProperties.shaderGroupHandleAlignment);
-	const uint32_t groupCount = static_cast<uint32_t>(_shaderGroups.size());
-	const uint32_t sbtSize = groupCount * handleSizeAligned;
 
-	std::vector<uint8_t> shaderHandleStorage(sbtSize);
-	VK_CHECK(vkGetRayTracingShaderGroupHandlesKHR(_device, _rayTracingPipeline, 0, groupCount, sbtSize, shaderHandleStorage.data()));
+	// SBT for Shadow Pipeline
+	{
+		const uint32_t groupCount = static_cast<uint32_t>(_rtShadowsPipeline._shaderGroups.size());
+		const uint32_t sbtSize = groupCount * handleSizeAligned;
 
-	const VkBufferUsageFlags bufferUsageFlags = VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-	const VmaMemoryUsage memoryUsageFlags = VMA_MEMORY_USAGE_CPU_TO_GPU;
+		std::vector<uint8_t> shaderHandleStorage(sbtSize);
+		VK_CHECK(vkGetRayTracingShaderGroupHandlesKHR(_device, _rtShadowsPipeline._pipeline, 0, groupCount, sbtSize, shaderHandleStorage.data()));
 
-	_raygenShaderBindingTable = vkutil::create_buffer(
-		_allocator, handleSize, bufferUsageFlags, memoryUsageFlags);
+		const VkBufferUsageFlags bufferUsageFlags = VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+		const VmaMemoryUsage memoryUsageFlags = VMA_MEMORY_USAGE_CPU_TO_GPU;
 
-	_missShaderBindingTable = vkutil::create_buffer(
-		_allocator, handleSize * 2, bufferUsageFlags, memoryUsageFlags);
+		_rtShadowsPipeline._raygenShaderBindingTable = vkutil::create_buffer(
+			_allocator, handleSize, bufferUsageFlags, memoryUsageFlags);
 
-	_hitShaderBindingTable = vkutil::create_buffer(
-		_allocator, handleSize * 2, bufferUsageFlags, memoryUsageFlags);
+		_rtShadowsPipeline._missShaderBindingTable = vkutil::create_buffer(
+			_allocator, handleSize, bufferUsageFlags, memoryUsageFlags);
 
-	// Copy handles
-	void* raygen_data;
-	vmaMapMemory(_allocator, _raygenShaderBindingTable._allocation, &raygen_data);
-	memcpy(raygen_data, shaderHandleStorage.data(), handleSize);
-	vmaUnmapMemory(_allocator, _raygenShaderBindingTable._allocation);
+		_rtShadowsPipeline._hitShaderBindingTable = vkutil::create_buffer(
+			_allocator, handleSize, bufferUsageFlags, memoryUsageFlags);
 
-	void* miss_data;
-	vmaMapMemory(_allocator, _missShaderBindingTable._allocation, &miss_data);
-	memcpy(miss_data, shaderHandleStorage.data() + handleSizeAligned, handleSize * 2);
-	vmaUnmapMemory(_allocator, _missShaderBindingTable._allocation);
+		// Copy handles
+		void* raygen_data;
+		vmaMapMemory(_allocator, _rtShadowsPipeline._raygenShaderBindingTable._allocation, &raygen_data);
+		memcpy(raygen_data, shaderHandleStorage.data(), handleSize);
+		vmaUnmapMemory(_allocator, _rtShadowsPipeline._raygenShaderBindingTable._allocation);
 
-	void* hit_data;
-	vmaMapMemory(_allocator, _hitShaderBindingTable._allocation, &hit_data);
-	memcpy(hit_data, shaderHandleStorage.data() + handleSizeAligned * 3, handleSize * 2);
-	vmaUnmapMemory(_allocator, _hitShaderBindingTable._allocation);
+		void* miss_data;
+		vmaMapMemory(_allocator, _rtShadowsPipeline._missShaderBindingTable._allocation, &miss_data);
+		memcpy(miss_data, shaderHandleStorage.data() + handleSizeAligned, handleSize);
+		vmaUnmapMemory(_allocator, _rtShadowsPipeline._missShaderBindingTable._allocation);
+
+		void* hit_data;
+		vmaMapMemory(_allocator, _rtShadowsPipeline._hitShaderBindingTable._allocation, &hit_data);
+		memcpy(hit_data, shaderHandleStorage.data() + handleSizeAligned * 2, handleSize);
+		vmaUnmapMemory(_allocator, _rtShadowsPipeline._hitShaderBindingTable._allocation);
+	}
+
+	// SBT for Final Pipeline
+	{
+		const uint32_t groupCount = static_cast<uint32_t>(_rtFinalPipeline._shaderGroups.size());
+		const uint32_t sbtSize = groupCount * handleSizeAligned;
+
+		std::vector<uint8_t> shaderHandleStorage(sbtSize);
+		VK_CHECK(vkGetRayTracingShaderGroupHandlesKHR(_device, _rtFinalPipeline._pipeline, 0, groupCount, sbtSize, shaderHandleStorage.data()));
+
+		const VkBufferUsageFlags bufferUsageFlags = VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+		const VmaMemoryUsage memoryUsageFlags = VMA_MEMORY_USAGE_CPU_TO_GPU;
+
+		_rtFinalPipeline._raygenShaderBindingTable = vkutil::create_buffer(
+			_allocator, handleSize, bufferUsageFlags, memoryUsageFlags);
+
+		_rtFinalPipeline._missShaderBindingTable = vkutil::create_buffer(
+			_allocator, handleSize, bufferUsageFlags, memoryUsageFlags);
+
+		_rtFinalPipeline._hitShaderBindingTable = vkutil::create_buffer(
+			_allocator, handleSize, bufferUsageFlags, memoryUsageFlags);
+
+		// Copy handles
+		void* raygen_data;
+		vmaMapMemory(_allocator, _rtFinalPipeline._raygenShaderBindingTable._allocation, &raygen_data);
+		memcpy(raygen_data, shaderHandleStorage.data(), handleSize);
+		vmaUnmapMemory(_allocator, _rtFinalPipeline._raygenShaderBindingTable._allocation);
+
+		void* miss_data;
+		vmaMapMemory(_allocator, _rtFinalPipeline._missShaderBindingTable._allocation, &miss_data);
+		memcpy(miss_data, shaderHandleStorage.data() + handleSizeAligned, handleSize);
+		vmaUnmapMemory(_allocator, _rtFinalPipeline._missShaderBindingTable._allocation);
+
+		void* hit_data;
+		vmaMapMemory(_allocator, _rtFinalPipeline._hitShaderBindingTable._allocation, &hit_data);
+		memcpy(hit_data, shaderHandleStorage.data() + handleSizeAligned * 2, handleSize);
+		vmaUnmapMemory(_allocator, _rtFinalPipeline._hitShaderBindingTable._allocation);
+	}
 }
 
 void RenderEngine::create_raytracing_descriptor_pool()
 {
 	//used by raytracing and also pospo
 	std::vector<VkDescriptorPoolSize> poolSizes = {
-	{VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1},
-	{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1},
-	{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1},
-	{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1},
-	{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1},
-	{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1},
-	{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1},
-	{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1},
-	{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1},
-	{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1},
-	{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 10},
-	{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 10},
+	{VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 2},
+	{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 100},
+	{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 10},
+	{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 20},
 	};
+
+	VkResult result;
 
 	VkDescriptorPoolCreateInfo dp_info = {};
 	dp_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
 	dp_info.pNext = nullptr;
 	dp_info.flags = 0;
-	dp_info.maxSets = 3;
+	dp_info.maxSets = 6;
 	dp_info.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
 	dp_info.pPoolSizes = poolSizes.data();
 
@@ -1799,14 +2339,16 @@ void RenderEngine::get_enabled_features()
 	_enabledAccelerationStructureFeatures.accelerationStructure = VK_TRUE;
 	_enabledAccelerationStructureFeatures.pNext = &_enabledRayTracingPipelineFeatures;
 
+	_enabledPhysicalDeviceFeatures.fragmentStoresAndAtomics = VK_TRUE;
+
 	deviceCreatepNextChain = &_enabledAccelerationStructureFeatures;
 }
 
 void RenderEngine::create_raytracing_scene_structures(const Scene& scene)
 {
-	create_shadow_images();
+	create_shadow_images(scene._lights.size());
 
-	create_raytracing_pipelines(scene._renderables.size());
+	create_raytracing_pipelines(scene);
 	create_shader_binding_table();
 
 	create_bottom_level_acceleration_structure(scene);
@@ -1901,16 +2443,9 @@ void RenderEngine::cleanup()
 	}
 }
 
-void RenderEngine::reset_imgui(RenderMode renderMode)
+void RenderEngine::reset_imgui()
 {
-	if(renderMode == RENDER_MODE_FORWARD || renderMode == RENDER_MODE_DEFERRED)
-	{
-		init_imgui(_defaultRenderPass);
-	}
-	else
-	{
-		init_imgui(pospo._renderPass);
-	}
+	init_imgui(pospo._renderPass);
 }
 
 VkPipeline PipelineBuilder::build_pipeline(VkDevice device, VkRenderPass pass)

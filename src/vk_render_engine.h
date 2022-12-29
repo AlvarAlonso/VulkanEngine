@@ -16,6 +16,10 @@
 const int MAX_OBJECTS = 100;
 const int MAX_MATERIALS = 100;
 const int MAX_TEXTURES = 100;
+const int GBUFFER_NUM = 5;
+const float SHADOW_BIAS = 0.65f;
+const float SHADOW_MAP_WIDTH = 1024.0f;
+const float SHADOW_MAP_HEIGHT = 1024.0f;
 
 struct RenderObject;
 class Scene;
@@ -36,6 +40,7 @@ struct Pospo {
 	VkPipelineLayout _pipelineLayout;
 	VkRenderPass _renderPass;
 	VkDescriptorSet _textureSet;
+	VkDescriptorSet _additionalTextureSet;
 	std::vector<VkFramebuffer> _framebuffers;
 };
 
@@ -80,6 +85,8 @@ public:
 	bool _isInitialized{ false };
 
 	VkExtent2D _windowExtent{ 1920 , 1080 };
+	//VkExtent2D _windowExtent{ 2048 , 2048 };
+
 	static const uint32_t workgroup_width = 16;
 	static const uint32_t workgroup_height = 8;
 
@@ -125,40 +132,50 @@ public:
 	VkDescriptorSetLayout			_objectSetLayout;
 	static VkDescriptorSetLayout	_materialsSetLayout;
 	VkDescriptorSetLayout			_singleTextureSetLayout;
+	VkDescriptorSetLayout			_storageTextureSetLayout;
 	VkDescriptorSetLayout			_camSetLayout;
+	VkDescriptorSetLayout			_skyboxSetLayout;
 
 	// - Pipeline Layouts
-	VkPipelineLayout _forwardPipelineLayout;
 	VkPipelineLayout _texPipelineLayout;
-	VkPipelineLayout _deferredPipelineLayout;
+	VkPipelineLayout _gbuffersPipelineLayout;
 	VkPipelineLayout _lightPipelineLayout;
+	VkPipelineLayout _skyboxPipelineLayout;
+	VkPipelineLayout _dsmPipelineLayout;
 
 	// Pipelines
-	VkPipeline	_forwardPipeline;
 	VkPipeline	_texPipeline;
-	VkPipeline _deferredPipeline;
-	VkPipeline _lightPipeline;
+	VkPipeline	_gbuffersPipeline;
+	VkPipeline	_skyboxPipeline;
+	VkPipeline	_dsmPipeline;
 
 	//Depth Buffer
 	Image _depthImage;
 
-	// Deferred
-	// - Deferred attachments
+	// Skybox pass
+
+	// G-Buffers
+	// - G-Buffers attachments
 	Image _positionImage;
 	Image _normalImage;
 	Image _albedoImage;
+	Image _motionVectorImage;
 
-	// - Deferred Descriptors
+	// - G-Buffers Descriptors
 	VkDescriptorPool _gbuffersPool;
 	VkDescriptorSetLayout _gbuffersSetLayout;
 	VkDescriptorSet _gbuffersDescriptorSet;
 
 	// Render passes
 	VkRenderPass _defaultRenderPass;
-	VkRenderPass _deferredRenderPass;
+	VkRenderPass _gbuffersRenderPass;
+	VkRenderPass _singleAttachmentRenderPass;
+	VkRenderPass _skyboxRenderPass;
 
 	// Framebuffers
 	std::vector<VkFramebuffer> _framebuffers;
+	VkFramebuffer _dsm_framebuffer;
+	VkFramebuffer _skybox_framebuffer;
 	VkFramebuffer _offscreen_framebuffer;
 
 	//FEATURES
@@ -171,6 +188,7 @@ public:
 	// - Properties and features
 	VkPhysicalDeviceRayTracingPipelinePropertiesKHR  _rayTracingPipelineProperties{};
 	VkPhysicalDeviceAccelerationStructureFeaturesKHR _accelerationStructureFeatures{};
+	VkPhysicalDeviceFeatures _enabledPhysicalDeviceFeatures{};
 
 	void* deviceCreatepNextChain = nullptr;
 
@@ -192,25 +210,17 @@ public:
 	AccelerationStructure _topLevelAS{};
 	std::vector<AccelerationStructure> _bottomLevelAS{};
 
-	std::vector<AllocatedBuffer>						_transformBuffers; //for bottom AS
-	std::vector<VkRayTracingShaderGroupCreateInfoKHR>	_shaderGroups{};
-	
-	AllocatedBuffer _raygenShaderBindingTable;
-	AllocatedBuffer	_missShaderBindingTable;
-	AllocatedBuffer	_hitShaderBindingTable;
+	std::vector<AllocatedBuffer> _transformBuffers; //for bottom AS
+
+	RtPipeline				_rtShadowsPipeline;
+	RtPipeline				_rtFinalPipeline;
+
+	VkPipeline				_denoiserPipeline;
+	VkPipelineLayout		_denoiserPipelineLayout;
+	VkDescriptorSetLayout	_denoiserSetLayout;
+	VkDescriptorPool		_rayTracingDescriptorPool;
 
 	Pospo pospo;
-
-	VkPipeline				_rayTracingPipeline;
-	VkPipeline				_denoiserPipeline;
-	RtPushConstant			_rtPushConstant;
-	VkPipelineLayout		_rayTracingPipelineLayout;
-	VkPipelineLayout		_denoiserPipelineLayout;
-	VkDescriptorPool		_rayTracingDescriptorPool;
-	VkDescriptorSetLayout	_rayTracingSetLayout;
-	VkDescriptorSetLayout	_denoiserSetLayout;
-	VkDescriptorSet			_denoiserSet;
-
 
 	struct UniformData {
 		glm::mat4 viewInverse;
@@ -223,8 +233,12 @@ public:
 	VkImageView _storageImageView;
 
 	//shadow images
-	Image _shadowImage;
+	std::vector<Image> _shadowImages;
+	std::vector<Image> _denoisedShadowImages;
 
+	//deep shadow images
+	Image _deepShadowImage;
+	Image _directionalLightDepthBuffer;
 
 	//init the render engine
 	void init();
@@ -239,7 +253,7 @@ public:
 
 	void create_top_level_acceleration_structure(const Scene& scene, bool recreated);
 
-	void reset_imgui(RenderMode renderMode);
+	void reset_imgui();
 
 private:
 
@@ -263,8 +277,6 @@ private:
 
 	void init_raster_structures();
 
-	void init_depth_buffer();
-
 	void init_deferred_attachments();
 
 	void init_render_passes();
@@ -283,9 +295,11 @@ private:
 
 	void create_storage_image();
 
-	void create_shadow_images();
+	void create_deep_shadow_images(const int& lightsCount);
 
-	void create_raytracing_pipelines(const int& renderablesCount);
+	void create_shadow_images(const int& lightsCount);
+
+	void create_raytracing_pipelines(const Scene& scene);
 
 	void create_pospo_structures();
 

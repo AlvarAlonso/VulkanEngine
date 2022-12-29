@@ -11,7 +11,7 @@ using namespace VKE;
 
 std::map<std::string, Mesh*> Mesh::sMeshesLoaded;
 
-VertexInputDescription Vertex::get_vertex_description()
+VertexInputDescription Vertex::get_vertex_description(bool onlyPosition)
 {
     VertexInputDescription description;
 
@@ -28,13 +28,18 @@ VertexInputDescription Vertex::get_vertex_description()
     positionAttribute.format = VK_FORMAT_R32G32B32_SFLOAT;
     positionAttribute.offset = offsetof(Vertex, position);
 
+    if(onlyPosition)
+    {
+        description.attributes.push_back(positionAttribute);
+        return description;
+    }
+
     VkVertexInputAttributeDescription normalAttribute = {};
     normalAttribute.binding = 0;
     normalAttribute.location = 1;
     normalAttribute.format = VK_FORMAT_R32G32B32_SFLOAT;
     normalAttribute.offset = offsetof(Vertex, normal);
 
-    
     VkVertexInputAttributeDescription colorAttribute = {};
     colorAttribute.binding = 0;
     colorAttribute.location = 2;
@@ -76,70 +81,6 @@ void Mesh::upload_to_gpu()
     {
         std::cout << "Failed tu upload mesh to the gpu!" << std::endl;
     }
-}
-
-bool Mesh::load_from_obj(const char* filename)
-{
-    tinyobj::attrib_t attrib;
-
-    std::vector<tinyobj::shape_t> shapes;
-
-    std::vector<tinyobj::material_t> materials;
-
-    std::string warn;
-    std::string err;
-
-    tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, filename, nullptr);
-    
-    if(!warn.empty())
-    {
-        std::cout << "WARN: " << warn << std::endl;
-    }
-
-    if (!err.empty())
-    {
-        std::cerr << err << std::endl;
-        return false;
-    }
-
-    std::unordered_map<Vertex, uint32_t> uniqueVertices{};
-
-    for(const auto& shape : shapes)
-    {
-        for(const auto& index : shape.mesh.indices)
-        {
-            Vertex vertex{};
-
-            vertex.position = {
-                attrib.vertices[3 * index.vertex_index + 0],
-                attrib.vertices[3 * index.vertex_index + 1],
-                attrib.vertices[3 * index.vertex_index + 2]
-            };
-
-            vertex.normal = {
-                attrib.normals[3 * index.normal_index + 0],
-                attrib.normals[3 * index.normal_index + 1],
-                attrib.normals[3 * index.normal_index + 2]
-            };
-
-            vertex.uv = {
-                attrib.texcoords[2 * index.texcoord_index + 0],
-                1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
-            };
-
-            vertex.color = { 1.0f, 1.0f, 1.0f };
-            
-            if(uniqueVertices.count(vertex) == 0) 
-            {
-                uniqueVertices[vertex] = static_cast<uint32_t>(_vertices.size());
-                _vertices.push_back(vertex);
-            }
-            
-            _indices.push_back(uniqueVertices[vertex]);
-        }
-    }
-
-    return true;
 }
 
 void Mesh::create_vertex_buffer()
@@ -348,22 +289,20 @@ void Mesh::create_cube()
     upload_to_gpu();
 }
 
-Mesh* VKE::Mesh::get(const char* filename, bool skip_load)
+Mesh* VKE::Mesh::get(const char* name)
 {
-    assert(filename);
-    std::map<std::string, Mesh*>::iterator it = sMeshesLoaded.find(filename);
+    assert(name);
+    std::map<std::string, VKE::Mesh*>::iterator it = sMeshesLoaded.find(name);
     if (it != sMeshesLoaded.end())
         return it->second;
-
-    VKE::Mesh* mesh = new VKE::Mesh();
-    mesh->load_from_obj(filename);
-    mesh->upload_to_gpu();
-    return mesh;
+    return nullptr;
+    
 }
 
-void VKE::Mesh::register_mesh(std::string name)
+void VKE::Mesh::register_mesh(const char* name)
 {
-    // TODO:
+    _name = name;
+    sMeshesLoaded[name] = this;
 }
 
 void Primitive::primitive_to_vulkan_geometry(VkDeviceOrHostAddressConstKHR& vertexBufferDeviceAddress, VkDeviceOrHostAddressConstKHR& indexBufferDeviceAddress, std::vector<BlasInput>& inputVector)
@@ -422,4 +361,83 @@ void Primitive::primitive_to_vulkan_geometry(VkDeviceOrHostAddressConstKHR& vert
 void Primitive::draw(glm::mat4& model, VkCommandBuffer commandBuffer, VkPipelineLayout layout)
 {
     // TODO:
+}
+
+bool vkutil::load_meshes_from_obj(const std::string* filename, const std::string* customName)
+{
+    assert(filename);
+
+    //VKE::Mesh* mesh = new VKE::Mesh();
+    //mesh->load_from_obj(filename->c_str());
+    //mesh->upload_to_gpu();
+    //return mesh;
+
+    tinyobj::attrib_t attrib;
+
+    std::vector<tinyobj::shape_t> shapes;
+
+    std::vector<tinyobj::material_t> materials;
+
+    std::string warn;
+    std::string err;
+
+    tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, filename->c_str(), nullptr);
+
+    if (!warn.empty())
+    {
+        std::cout << "WARN: " << warn << std::endl;
+    }
+
+    if (!err.empty())
+    {
+        std::cerr << err << std::endl;
+        return false;
+    }
+
+    std::unordered_map<Vertex, uint32_t> uniqueVertices{};
+
+    int i = 0;
+    for (const auto& shape : shapes)
+    {
+        uniqueVertices.clear();
+        VKE::Mesh* mesh = new VKE::Mesh();
+
+        for (const auto& index : shape.mesh.indices)
+        {
+            Vertex vertex{};
+
+            vertex.position = {
+                attrib.vertices[3 * index.vertex_index + 0],
+                attrib.vertices[3 * index.vertex_index + 1],
+                attrib.vertices[3 * index.vertex_index + 2]
+            };
+
+            vertex.normal = {
+                attrib.normals[3 * index.normal_index + 0],
+                attrib.normals[3 * index.normal_index + 1],
+                attrib.normals[3 * index.normal_index + 2]
+            };
+
+            vertex.uv = {
+                attrib.texcoords[2 * index.texcoord_index + 0],
+                1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
+            };
+
+            vertex.color = { 1.0f, 1.0f, 1.0f };
+
+            if (uniqueVertices.count(vertex) == 0)
+            {
+                uniqueVertices[vertex] = static_cast<uint32_t>(mesh->_vertices.size());
+                mesh->_vertices.push_back(vertex);
+            }
+
+            mesh->_indices.push_back(uniqueVertices[vertex]);
+        }
+
+        mesh->register_mesh((*customName + std::to_string(i)).c_str());
+        mesh->upload_to_gpu();
+        i++;
+    }
+
+    return true;
 }

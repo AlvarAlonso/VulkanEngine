@@ -18,7 +18,7 @@ namespace VKE
 		//Manager to cache loaded textures
 		static int textureCount;
 		static std::map<std::string, Texture*> sTexturesLoaded;
-		static VKE::Texture* get(const char* filename);
+		static VKE::Texture* get(const char* name);
 		void register_texture(const char* name);
 
 		static bool ComparePtrToTexture(const VKE::Texture* l, const VKE::Texture* r) {	
@@ -29,6 +29,10 @@ namespace VKE
 
 namespace vkutil {
 
-	bool load_image_from_file(VulkanEngine& engine, const char* file, AllocatedImage& outImage);
+	bool load_image_from_file(const std::string* file, AllocatedImage& outImage);
+
+	bool load_image_from_file(const std::string* file, int& width, int& height, void** data);
+
+	bool load_cubemap(const std::string* filename, VkFormat format, AllocatedImage& outImage, VkImageView& outImageView);
 }
 

@@ -27,7 +27,7 @@ struct Vertex {
 	glm::vec3 color;
 	glm::vec2 uv;
 
-	static VertexInputDescription get_vertex_description();
+	static VertexInputDescription get_vertex_description(bool onlyPosition = false);
 	
 	bool operator==(const Vertex& other) const {
 		return position == other.position && normal == other.normal && uv == other.uv;
@@ -80,6 +80,7 @@ namespace VKE
 	class Mesh
 	{
 	public:
+		std::string _name;
 		static std::map<std::string, Mesh*> sMeshesLoaded;
 		Mesh();
 		~Mesh();
@@ -94,8 +95,6 @@ namespace VKE
 
 		void upload_to_gpu();
 
-		bool load_from_obj(const char* filename);
-
 		void create_vertex_buffer();
 		void create_index_buffer();
 
@@ -106,9 +105,14 @@ namespace VKE
 		void create_cube();
 
 		//loader
-		static Mesh* get(const char* filename, bool skip_load = false);
-		void register_mesh(std::string name);
+		static Mesh* get(const char* name);
+		void register_mesh(const char* name);
 	};
+}
+
+namespace vkutil
+{
+	bool load_meshes_from_obj(const std::string* filename, const std::string* customName);
 }
 
 

@@ -1,0 +1,281 @@
+#version 460
+#extension GL_EXT_ray_tracing : enable
+#extension GL_EXT_nonuniform_qualifier : enable
+#extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_scalar_block_layout : require
+
+#include "random.h"
+#include "shaderCommon.h"
+
+const int MAX_MATERIALS = 100;
+
+layout(binding = 0, set = 0) uniform accelerationStructureEXT topLevelAS;
+layout(binding = 2, set = 0) uniform sampler2D gbuffers[]; // 0 = position, 1 = normal, 2 = albedo, 3 = depth, 4 = motion vector
+layout(binding = 7, set = 0, std140) uniform Lights { Light l[5]; } lights;
+layout(binding = 8, set = 0) buffer Materials { Material m[]; } materials;
+layout(binding = 9, set = 0) uniform sampler2D textures[];
+layout(binding = 10, set = 0, rgba32f) uniform image2D shadowTextures[];
+layout(binding = 11, set = 0) uniform usampler2D deepShadowMap;
+layout(binding = 12, set = 0) uniform ShadowCamera
+{
+	mat4 view;
+	mat4 proj;
+	mat4 viewproj;
+	mat4 viewproj_lastFrame;
+} shadowCam;
+
+layout( push_constant ) uniform RtPushConstant {
+	vec4 frame_bias; // x = frame number, y = shadow bias, z = visibility bias
+	ivec4 flags; // x = render mode (0 = full any-hit, 1 = shadow map, 2 = shadow map + any-hit)
+				 // y = kernel size
+} pushConstant;
+
+// Payload
+layout(location = 0) rayPayloadEXT RayPayload prd;
+layout(location = 1) rayPayloadEXT ShadowRayPayload shadowPrd;
+
+const uint MAX_RECURSION = 10;
+
+const float SHADOW_MAP_WIDTH = 1024;
+const float SHADOW_MAP_HEIGHT = 1024;
+
+const uint MAX_UINT = 0xFFFFFFFF;
+const uint MAX_24UINT = 0x00FFFFFF;
+const uint MAX_8UINT = 0x000000FF;
+
+float getVisibilitySample(float real_depth, vec2 shadow_uv)
+{
+	uvec4 iDepth_Visibility = texture(deepShadowMap, shadow_uv);
+
+	uint samplesVisibility[NUM_SAMPLES] = { iDepth_Visibility.x & 0x000000FF, iDepth_Visibility.y & 0x000000FF, 
+	iDepth_Visibility.z & 0x000000FF, iDepth_Visibility.w & 0x000000FF };
+
+	double samplesDepth[NUM_SAMPLES] = { double(iDepth_Visibility.x >> 8) / MAX_24UINT, double(iDepth_Visibility.y >> 8) / MAX_24UINT, 
+	double(iDepth_Visibility.z >> 8) / MAX_24UINT, double(iDepth_Visibility.w >> 8) / MAX_24UINT };
+
+	if(samplesDepth[MAX_SAMPLE] != 0 && real_depth > samplesDepth[MAX_SAMPLE])
+	{
+		return float(iDepth_Visibility.w & 0x000000FF) / MAX_8UINT;
+	}
+
+	float distanceX = 0;
+	float distanceY = 0;
+
+	for(int numSample = THIRD_SAMPLE; numSample >= MIN_SAMPLE; numSample--)
+	{
+		if(samplesDepth[numSample] != 0 && real_depth > samplesDepth[numSample])
+		{
+			distanceX = abs(real_depth - float(samplesDepth[numSample + 1]));
+			distanceY = abs(real_depth - float(samplesDepth[numSample]));
+
+			float alpha = distanceX / (distanceX + distanceY);
+
+			return float(mix(iDepth_Visibility.w & 0x000000FF, samplesVisibility[numSample] & 0x000000FF, alpha)) / MAX_8UINT;
+		}
+	}
+
+	return 1.0;
+}
+
+void main() 
+{
+	prd.seed = tea(gl_LaunchIDEXT.y * gl_LaunchSizeEXT.x + gl_LaunchIDEXT.x, uint(pushConstant.frame_bias.x));
+	
+	const vec2 pixelCenter = vec2(gl_LaunchIDEXT.xy) + vec2(0.5);
+	vec2 gbufferUV = vec2(pixelCenter.x / gl_LaunchSizeEXT.x, pixelCenter.y / gl_LaunchSizeEXT.y);
+	
+	vec3 worldPos = texture(gbuffers[0], gbufferUV).xyz;
+	vec3 N = normalize(texture(gbuffers[1], gbufferUV).xyz * 2.0 - vec3(1.0));
+	vec3 albedo = texture(gbuffers[2], gbufferUV).xyz;
+	int matIdx = int(texture(gbuffers[2], gbufferUV).w * MAX_MATERIALS);
+	float realDepth = texture(gbuffers[3], gbufferUV).x;
+
+	Material material = materials.m[matIdx];
+
+	float alpha = 0.3f;
+	// Reproject screenTexCoord to where it was last frame
+	vec2 motionVector = texture(gbuffers[4], gbufferUV).xy;
+	motionVector.y = 1.f - motionVector.y;
+	motionVector = motionVector * 2.f - 1.0f;
+
+	ivec2 reprojectedTexCoord = ivec2(gl_LaunchIDEXT.xy - motionVector);
+
+	for(int i = 0; i < lights.l.length(); i++)
+	{
+		// light info
+		float lightMaxDist = lights.l[i].position_maxDist.w;
+		vec3 lightPosition = lights.l[i].position_maxDist.xyz;
+		float lightType = lights.l[i].properties_type.w;
+
+		// Point light
+		vec3 lDir      = lightPosition - worldPos;
+		float lightDistance  = length(lDir);
+
+		vec3 L = normalize(lDir);
+		float NdotL = clamp( dot( N, L ), 0.0, 1.0 );
+
+		float shadowFactor = 1.0;
+		
+		// Tracing shadow ray only if the light is visible from the surface
+		
+		if(NdotL > 0.0)
+		{
+			if(pushConstant.flags.x != 0)
+			{
+				const int KERNEL_SIZE = pushConstant.flags.y;
+				
+				vec4 proj_pos = shadowCam.viewproj * vec4(worldPos, 1.0);
+
+				vec2 shadow_uv = proj_pos.xy / proj_pos.w;
+
+				shadow_uv = shadow_uv * 0.5 + vec2(0.5);
+
+				float real_depth = (proj_pos.z - pushConstant.frame_bias.y) / proj_pos.w;
+				real_depth = real_depth * 0.5 + 0.5;
+				
+				if(shadow_uv.x > 1.0 || shadow_uv.x < 0.0 || shadow_uv.y > 1.0 || shadow_uv.y < 0.0)
+				{
+					imageStore(shadowTextures[0], ivec2(gl_LaunchIDEXT.xy), vec4(vec3(1.0), 1.0));
+					return;
+				}
+
+				// take sample with the z closest to the real_depth. Linear interpolate between 2 closest z values
+				float visibility = getVisibilitySample(real_depth, shadow_uv);
+
+				if(pushConstant.flags.x == 1)
+				{
+
+					imageStore(shadowTextures[0], ivec2(gl_LaunchIDEXT.xy), vec4(vec3(visibility), 1.0));
+
+					/*
+					if(visibility > 0.95)
+					{
+						imageStore(shadowTextures[0], ivec2(gl_LaunchIDEXT.xy), vec4(vec3(visibility), 1.0));
+					}
+					else
+					{
+						imageStore(shadowTextures[0], ivec2(gl_LaunchIDEXT.xy), vec4(vec3(0.0), 1.0));
+					}
+					*/
+
+					return;
+				}
+
+				if((visibility >= 0.0 && visibility <= 0.001) || (visibility <= 1.0 && visibility >= 0.999))
+				{
+					imageStore(shadowTextures[0], ivec2(gl_LaunchIDEXT.xy), vec4(vec3(visibility), 1.0));
+					return;
+				}
+
+				// kernel to compute variance around the pixel and decide if a ray must be cast or not
+				bool castRay = false;
+				for(int i = -KERNEL_SIZE; i <= KERNEL_SIZE; i++)
+				{
+					for(int j = -KERNEL_SIZE; j <= KERNEL_SIZE; j++)
+					{
+						vec2 current_shadow_uv = shadow_uv + vec2(float(i) / SHADOW_MAP_WIDTH, float(j) / SHADOW_MAP_HEIGHT);
+
+						float current_visibility = getVisibilitySample(real_depth, current_shadow_uv);
+
+						if(abs(visibility - current_visibility) > pushConstant.frame_bias.z)
+						{
+							castRay = true;
+						}
+					}
+
+					if(castRay)
+					{
+						break;
+					}
+				}
+
+				if(!castRay)
+				{
+					imageStore(shadowTextures[0], ivec2(gl_LaunchIDEXT.xy), vec4(vec3(visibility), 1.0));
+					return;
+				}
+			}
+
+			vec3 direction;
+			
+			if(lightType < 0.01)
+			{
+				direction = normalize(lightPosition - lights.l[i].properties_type.xyz);
+			}
+			else
+			{
+				float radius = lights.l[i].properties_type.x;
+				vec3 perpL = cross(L, vec3(0.0, 1.0, 0.0));
+				// Handle case where L = up -> perpL should then be (1, 0, 0)
+				if(perpL == vec3(0))
+				{
+					perpL.x = 1.0;
+				}
+			
+				vec3 toLightEdge = normalize((lightPosition + perpL * radius) - worldPos);
+
+				float coneAngle = acos(dot(L, toLightEdge)) * 2.0f;
+
+				vec3 sampledDirection = normalize(getConeSample(prd.seed, L, coneAngle));
+				direction = -sampledDirection;
+			}
+
+			float tMin   = 0.001;
+			float tMax   = length(lightDistance);
+			uint  flags = gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsOpaqueEXT | gl_RayFlagsSkipClosestHitShaderEXT;
+			shadowPrd.alpha = 1.0f;
+			shadowPrd.hardShadowed = true;
+			
+			vec3 origin = worldPos + direction * 0.1;
+
+			// trace to the first opaque surface
+			traceRayEXT(topLevelAS, flags, 0xFE, 0, 0, 0, origin, tMin, direction, tMax, 1);
+			
+			if(shadowPrd.hardShadowed == true)
+			{
+				float a         = 1.0f / float(pushConstant.frame_bias.x + 1);
+				vec3  old_shadow = imageLoad(shadowTextures[i], reprojectedTexCoord).xyz;
+				vec3 shadow = vec3(0);
+
+				if(pushConstant.frame_bias.x > 0)
+				{
+					imageStore(shadowTextures[i], ivec2(gl_LaunchIDEXT.xy), vec4(mix(old_shadow, shadow, a), 1.0f));
+				}
+				else
+				{
+					shadow = alpha * (shadow) + (1.0f - alpha) * old_shadow;
+					imageStore(shadowTextures[i], ivec2(gl_LaunchIDEXT.xy), vec4(shadow, 1.0));
+				}
+				
+				continue;
+			}
+			
+			flags = gl_RayFlagsSkipClosestHitShaderEXT;
+
+			traceRayEXT(topLevelAS, flags, 0xFD, 0, 0, 0, origin, tMin, direction, tMax, 1);
+
+			shadowFactor = shadowPrd.alpha;
+
+			float a         = 1.0f / float(pushConstant.frame_bias.x + 1);
+			vec3  old_shadow = imageLoad(shadowTextures[i], reprojectedTexCoord).xyz;
+			vec3 shadow = vec3(shadowFactor);
+
+			ivec2 storePos = ivec2(gl_LaunchIDEXT.xy);
+
+			if(pushConstant.frame_bias.x > 0)
+			{
+				imageStore(shadowTextures[i], storePos, vec4(mix(old_shadow, shadow, a), 1.0f));
+			}
+			else
+			{
+				shadow = alpha * (shadow) + (1.0f - alpha) * old_shadow;
+				imageStore(shadowTextures[i], storePos, vec4(shadow, 1.0));
+			}
+		}
+		else
+		{
+			// No shadow, store white color
+			imageStore(shadowTextures[i], ivec2(gl_LaunchIDEXT.xy), vec4(1.0));
+		}		
+	}
+}

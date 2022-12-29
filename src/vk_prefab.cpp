@@ -136,6 +136,55 @@ void VKE::Node::node_to_TLAS_instance(const glm::mat4& prefabModel, std::vector<
     }
 }
 
+void VKE::Node::get_primitive_to_shader_info(const glm::mat4& model, std::vector<PrimitiveToShader>& primitivesInfo, std::vector<glm::mat4>& transforms, const int renderableIndex)
+{
+    if (_children.size() > 0)
+    {
+        for (const auto& child : _children)
+        {
+            child->get_primitive_to_shader_info(model, primitivesInfo, transforms, renderableIndex);
+        }
+    }
+
+    if (_mesh != nullptr && _mesh->_primitives.size() > 0)
+    {
+        glm::mat4 global_matrix = model * get_global_matrix();
+
+        for (const auto& primitive : _mesh->_primitives)
+        {
+            PrimitiveToShader primitiveInfo{};
+            primitiveInfo.firstIdx_rndIdx_matIdx_transIdx.x = primitive->firstIndex;
+            primitiveInfo.firstIdx_rndIdx_matIdx_transIdx.y = renderableIndex;
+            primitiveInfo.firstIdx_rndIdx_matIdx_transIdx.z = primitive->material._id;
+            primitiveInfo.firstIdx_rndIdx_matIdx_transIdx.w = transforms.size();
+
+            primitivesInfo.push_back(primitiveInfo);
+        }
+
+        transforms.emplace_back(global_matrix);
+    }
+}
+
+void VKE::Node::get_nodes_transforms(const glm::mat4& model, std::vector<glm::mat4>& transforms)
+{
+    if (_children.size() > 0)
+    {
+        for (const auto& child : _children)
+        {
+            child->get_nodes_transforms(model, transforms);
+        }
+    }
+
+    if (_mesh != nullptr)
+    {
+        if (_mesh->_primitives.size() > 0)
+        {
+            glm::mat4 globalMatrix = model * get_global_matrix();
+            transforms.emplace_back(globalMatrix);
+        }
+    }
+}
+
 Prefab::Prefab()
 {
 }
@@ -228,12 +277,12 @@ Prefab* Prefab::get(const char* filename)
         return nullptr;
     }
 
-    std::string name = filename;
+    const char* name = filename;
     prefab->register_prefab(name);
     return prefab;
 }
 
-void Prefab::register_prefab(std::string name)
+void Prefab::register_prefab(const char* name)
 {
     _name = name;
     sPrefabsLoaded[name] = this;

@@ -16,7 +16,10 @@
     <Filter Include="Shaders">
       <UniqueIdentifier>{560830ad-88ac-48bf-b76e-d64c51dab82f}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Source Files\ImGui">
+    <Filter Include="Source Files\extra">
+      <UniqueIdentifier>{43b4a53d-34b4-4420-85a4-98f6b3790f77}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\extra\imgui">
       <UniqueIdentifier>{5bd38f1d-94f7-43e2-b51e-681ab26e953c}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
@@ -57,24 +60,6 @@
     <ClCompile Include="..\src\vk_render_engine.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\src\imgui.cpp">
-      <Filter>Source Files\ImGui</Filter>
-    </ClCompile>
-    <ClCompile Include="..\src\imgui_demo.cpp">
-      <Filter>Source Files\ImGui</Filter>
-    </ClCompile>
-    <ClCompile Include="..\src\imgui_draw.cpp">
-      <Filter>Source Files\ImGui</Filter>
-    </ClCompile>
-    <ClCompile Include="..\src\imgui_impl_sdl.cpp">
-      <Filter>Source Files\ImGui</Filter>
-    </ClCompile>
-    <ClCompile Include="..\src\imgui_impl_vulkan.cpp">
-      <Filter>Source Files\ImGui</Filter>
-    </ClCompile>
-    <ClCompile Include="..\src\imgui_widgets.cpp">
-      <Filter>Source Files\ImGui</Filter>
-    </ClCompile>
     <ClCompile Include="..\src\vk_prefab.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -83,6 +68,36 @@
     </ClCompile>
     <ClCompile Include="..\src\vk_material.cpp">
       <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\extra\imgui\ImCurveEdit.cpp">
+      <Filter>Source Files\extra\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\extra\imgui\ImGradient.cpp">
+      <Filter>Source Files\extra\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\extra\imgui\imgui.cpp">
+      <Filter>Source Files\extra\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\extra\imgui\imgui_demo.cpp">
+      <Filter>Source Files\extra\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\extra\imgui\imgui_draw.cpp">
+      <Filter>Source Files\extra\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\extra\imgui\imgui_impl_sdl.cpp">
+      <Filter>Source Files\extra\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\extra\imgui\imgui_impl_vulkan.cpp">
+      <Filter>Source Files\extra\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\extra\imgui\imgui_widgets.cpp">
+      <Filter>Source Files\extra\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\extra\imgui\ImGuizmo.cpp">
+      <Filter>Source Files\extra\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src\extra\imgui\ImSequencer.cpp">
+      <Filter>Source Files\extra\imgui</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -130,6 +145,45 @@
     </ClInclude>
     <ClInclude Include="..\shaders\shaderCommon.h">
       <Filter>Shaders</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\extra\imgui\imconfig.h">
+      <Filter>Source Files\extra\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\extra\imgui\ImCurveEdit.h">
+      <Filter>Source Files\extra\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\extra\imgui\ImGradient.h">
+      <Filter>Source Files\extra\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\extra\imgui\imgui.h">
+      <Filter>Source Files\extra\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\extra\imgui\imgui_impl_sdl.h">
+      <Filter>Source Files\extra\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\extra\imgui\imgui_impl_vulkan.h">
+      <Filter>Source Files\extra\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\extra\imgui\imgui_internal.h">
+      <Filter>Source Files\extra\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\extra\imgui\ImGuizmo.h">
+      <Filter>Source Files\extra\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\extra\imgui\ImSequencer.h">
+      <Filter>Source Files\extra\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\extra\imgui\imstb_rectpack.h">
+      <Filter>Source Files\extra\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\extra\imgui\imstb_textedit.h">
+      <Filter>Source Files\extra\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\extra\imgui\imstb_truetype.h">
+      <Filter>Source Files\extra\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src\extra\imgui\ImZoomSlider.h">
+      <Filter>Source Files\extra\imgui</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -179,6 +233,21 @@
       <Filter>Shaders</Filter>
     </None>
     <None Include="..\shaders\denoiser.comp">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="..\shaders\RtShadows.rgen">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="..\shaders\skybox.vert">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="..\shaders\skybox.frag">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="..\shaders\flat.vert">
+      <Filter>Shaders</Filter>
+    </None>
+    <None Include="..\shaders\flat.frag">
       <Filter>Shaders</Filter>
     </None>
   </ItemGroup>

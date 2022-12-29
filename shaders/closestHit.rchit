@@ -15,20 +15,19 @@ layout(location = 1) rayPayloadEXT ShadowRayPayload shadowPrd;
 
 // Descriptors
 layout(binding = 0, set = 0) uniform accelerationStructureEXT topLevelAS;
-layout(binding = 2, set = 0) uniform CameraProperties 
+layout(binding = 1, set = 0) uniform CameraProperties 
 {
 	mat4 viewInverse;
 	mat4 projInverse;
 	vec4 position;
 } cam;
-
 layout(binding = 3, set = 0, scalar) buffer Vertices { Vertex v[]; } vertices[];
 layout(binding = 4, set = 0) buffer Indices { uint i[]; } indices[];
 layout(binding = 5, set = 0) buffer Transforms { mat4 t[]; } transforms;
 layout(binding = 6, set = 0) buffer Primitives { Primitive p[]; } primitives;
 layout(binding = 7, set = 0) uniform Lights { Light l[5]; } lights;
 layout(binding = 8, set = 0) buffer Materials { Material m[]; } materials;
-layout(binding = 9, set = 0) uniform sampler2D textures[]; //image2D ?
+layout(binding = 9, set = 0) uniform sampler2D textures[];
 
 void main()
 {
@@ -71,7 +70,7 @@ void main()
 	int occlusionTextureIdx = int(material.emissive_metRough_occlusion_normal_indices.z);
 	vec3 occlusion_texture = texture(textures[occlusionTextureIdx], uv).xyz;
 	
-	if(occlusionTextureIdx >= 0 && occlusion_texture.x < 0.2 && occlusion_texture.y < 0.2 && occlusion_texture.z < 0.2)
+	if(occlusionTextureIdx >= 0 && occlusion_texture.x < 0.001 && occlusion_texture.y < 0.001 && occlusion_texture.z < 0.001)
 	{
 		prd.color_dist.w = gl_RayTmaxEXT;
 		prd.origin.xyz = offsetPositionAlongNormal(worldPos, -N);
@@ -105,18 +104,13 @@ void main()
 	//COMPUTE LIGHT
 	vec3 totalLight = vec3(0);
 
-	// Update seed
-	//prd.seed = uint(renderableIndex * gl_PrimitiveID / gl_InstanceCustomIndexEXT);
-
-	//uint seed = tea(gl_LaunchIDEXT.y * gl_LaunchSizeEXT.x + gl_LaunchIDEXT.x, gl_LaunchIDEXT.x * gl_LaunchSizeEXT.y);
-
   for(int i = 0; i < 1; i++)
   {
 	  // light info
 	  float lightIntensity = lights.l[i].color_intensity.w;
 	  float lightMaxDist  = lights.l[i].position_maxDist.w;
 	  vec3 lightPosition = lights.l[i].position_maxDist.xyz;
-	  float radius = lights.l[i].radius;
+	  float radius = lights.l[i].properties_type.x; // TODO
 
 	  // Point light
 	  vec3 lDir      = lightPosition - worldPos;

@@ -8,6 +8,7 @@
 struct rtVertex;
 struct Vertex;
 struct BlasInput;
+struct PrimitiveToShader;
 
 namespace VKE
 {
@@ -41,6 +42,9 @@ namespace VKE
 		void node_to_vulkan_geometry(VkDeviceOrHostAddressConstKHR& vertexBufferDeviceAddress, 
 			VkDeviceOrHostAddressConstKHR& indexBufferDeviceAddress, std::vector<BlasInput>& inputVector);
 		void node_to_TLAS_instance(const glm::mat4& prefabModel, std::vector<AccelerationStructure>& bottomLevelAS, std::vector<VkAccelerationStructureInstanceKHR>& instances);
+		void get_primitive_to_shader_info(const glm::mat4& model,
+			std::vector<PrimitiveToShader>& primitivesInfo, std::vector<glm::mat4>& transforms, const int renderableIndex);
+		void get_nodes_transforms(const glm::mat4& model, std::vector<glm::mat4>& transforms);
 	};
 
 	class Prefab
@@ -76,7 +80,7 @@ namespace VKE
 		//Manager to cache loaded prefabs
 		static std::map<std::string, Prefab*> sPrefabsLoaded;
 		static Prefab* get(const char* filename);
-		void register_prefab(std::string name);
+		void register_prefab(const char* name);
 	};
 }
 
